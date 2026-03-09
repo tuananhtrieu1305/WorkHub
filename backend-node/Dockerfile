@@ -4,9 +4,7 @@ WORKDIR /app
 
 COPY package.json package-lock.json ./
 RUN npm install
-RUN npm install -g prisma
 COPY . .
-RUN npx prisma generate
 # Giả sử backend chạy port 3000
 EXPOSE 3000
 

@@ -1,0 +1,17 @@
+# Bỏ qua thư viện cài ở máy thật (Quan trọng nhất)
+node_modules
+npm-debug.log
+
+# Bỏ qua file build cũ
+dist
+build
+
+# Bỏ qua Git
+.git
+.gitignore
+
+
+# Bỏ qua file Docker (đỡ copy chính nó vào)
+Dockerfile
+docker-compose.yml
+.dockerignore

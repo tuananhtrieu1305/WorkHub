@@ -1,69 +1,53 @@
-services:
-  # MySQL Database
-  db:
-    image: mysql:8.0
-    container_name: movie_db
-    restart: always
-    environment:
-      MYSQL_ROOT_PASSWORD: rootpassword
-      MYSQL_DATABASE: movie_streaming_db
-    ports:
-      - "3306:3306"
-    volumes:
-      - db_data:/var/lib/mysql
-      - ./database:/docker-entrypoint-initdb.d
-    command: --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
+version: "3.8"
 
-  # Backend Node (JS)
+services:
+  # Redis Database (Hỗ trợ Realtime Socket.io cho WorkHub)
+  redis:
+    image: redis:7-alpine
+    container_name: workhub_redis
+    ports:
+      - "6379:6379"
+    restart: always
+
+  # Backend Node (JS) - Core API & Realtime
   backend-node:
     build: ./backend-node
-    container_name: backend_node
+    container_name: workhub_node
     restart: always
     ports:
-      - "3000:3000"
-    environment:
-      DATABASE_URL: mysql://root:rootpassword@db:3306/movie_streaming_db
-      PORT: 3000
+      - "5000:5000"
+    env_file:
+      - .env
     depends_on:
-      - db
+      - redis
     volumes:
       - ./backend-node:/app
       - /app/node_modules
     command: sh -c "npm install && npm run dev"
 
-  # Python Video Service
-  video-processor:
-    build: ./backend-python/video-processor
-    container_name: video_service
+  # Python Service
+  backend-python:
+    build: ./backend-python
+    container_name: workhub_python
     ports:
-      - "8001:8001"
+      - "8000:8000"
     volumes:
-      - ./backend-python/video-processor:/app
-    command: sh -c "pip install -r requirements.txt && uvicorn src.main:app --host 0.0.0.0 --port 8001 --reload"
-
-  # Python AI Service
-  ai-chatbot:
-    build: ./backend-python/ai-chatbot
-    container_name: ai_service
-    ports:
-      - "8002:8002"
-    volumes:
-      - ./backend-python/ai-chatbot:/app
-    command: sh -c "pip install -r requirements.txt && uvicorn src.main:app --host 0.0.0.0 --port 8002 --reload"
+      - ./backend-python:/app
+    env_file:
+      - .env
+    command: sh -c "pip install -r requirements.txt && uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
 
   # Frontend React
   frontend:
     build: ./frontend
-    container_name: frontend_react
+    container_name: workhub_frontend
     ports:
       - "5173:5173"
     environment:
-      - VITE_API_URL=http://localhost:3000
+      - VITE_NODE_API_URL=http://localhost:5000
+      - VITE_PYTHON_API_URL=http://localhost:8000
     volumes:
       - ./frontend:/app
       - /app/node_modules
     stdin_open: true
     command: sh -c "npm install && npm run dev"
-
-volumes:
-  db_data:

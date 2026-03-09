@@ -1,0 +1,19 @@
+# Bỏ qua môi trường ảo Python
+venv
+env
+.venv
+
+# Bỏ qua file rác khi chạy Python (Compiled files)
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+
+# Bỏ qua Git
+.git
+.gitignore
+
+
+# Bỏ qua file Docker
+Dockerfile
+.dockerignore
