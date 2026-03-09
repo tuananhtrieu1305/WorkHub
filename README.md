@@ -19,8 +19,7 @@
 Mở Terminal (hoặc Git Bash) và chạy:
 
 ```bash
-git clone <LINK_GITHUB_CUA_NHOM_O_DAY>
-cd CNPM
+git clone [<LINK_GITHUB_CUA_NHOM_O_DAY>](https://github.com/tuananhtrieu1305/WorkHub.git)
 ```
 
 ### Bước 2: Khởi động hệ thống
@@ -71,3 +70,4 @@ cd ../backend-node && npm install
 ```
 
 _(Bước này chỉ làm 1 lần khi mới clone về)_
+
