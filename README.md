@@ -47,7 +47,6 @@ docker compose up --build
 ### 1. Code hàng ngày
 
 - **Frontend/Node.js:** Code có tính năng **Hot Reload**. Bạn cứ sửa file và Save (`Ctrl+S`), web sẽ tự cập nhật ngay lập tức mà không cần chạy lại Docker.
-- **Database:** Dữ liệu được lưu trong thư mục `database/init.sql` và volume docker.
 
 ### 2. Cài thêm thư viện mới
 
@@ -70,5 +69,6 @@ cd ../backend-node && npm install
 ```
 
 _(Bước này chỉ làm 1 lần khi mới clone về)_
+
 
 
