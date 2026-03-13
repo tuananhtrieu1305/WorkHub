@@ -9,7 +9,7 @@ const api = axios.create({
   },
 });
 
-// Attach token to every request if available
+
 api.interceptors.request.use((config) => {
   const token = localStorage.getItem("workhub_token");
   if (token) {

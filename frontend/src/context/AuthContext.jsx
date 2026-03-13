@@ -21,7 +21,7 @@ export const AuthProvider = ({ children }) => {
   const [token, setToken] = useState(localStorage.getItem("workhub_token"));
   const [loading, setLoading] = useState(true);
 
-  // On mount, check if we have a stored token and fetch user
+  
   useEffect(() => {
     const initAuth = async () => {
       if (token) {
@@ -29,7 +29,7 @@ export const AuthProvider = ({ children }) => {
           const userData = await getMe();
           setUser(userData);
         } catch {
-          // Token is invalid, clear it
+          
           localStorage.removeItem("workhub_token");
           setToken(null);
           setUser(null);
@@ -49,9 +49,9 @@ export const AuthProvider = ({ children }) => {
   };
 
   const register = async (fullName, email, password) => {
-    // Registration no longer returns a token — user must verify email first
+    
     const data = await registerUser(fullName, email, password);
-    return data; // { message, email }
+    return data; 
   };
 
   const verifyAndLogin = async (email, otp) => {

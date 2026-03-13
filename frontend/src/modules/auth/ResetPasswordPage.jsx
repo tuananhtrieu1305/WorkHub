@@ -1,13 +1,9 @@
 import { useState } from "react";
 import { useParams, Link, useNavigate } from "react-router-dom";
 import { resetPassword } from "../../services/authService";
-import {
-  EyeInvisibleOutlined,
-  EyeOutlined,
-  LoadingOutlined,
-  CheckCircleFilled,
-  LockOutlined,
-} from "@ant-design/icons";
+import workHubLogo from "../../assets/WorkHub_logo_blue_background.png";
+import InteractiveBackground from "./InteractiveBackground";
+import AuthFormBackground from "./AuthFormBackground";
 
 const ResetPasswordPage = () => {
   const { token } = useParams();
@@ -27,19 +23,19 @@ const ResetPasswordPage = () => {
     setError("");
 
     if (!password || !confirmPassword) {
-      setError("Please fill in all fields");
+      setError("Vui lòng điền đầy đủ thông tin");
       triggerShake();
       return;
     }
 
     if (password.length < 6) {
-      setError("Password must be at least 6 characters");
+      setError("Mật khẩu phải có ít nhất 6 ký tự");
       triggerShake();
       return;
     }
 
     if (password !== confirmPassword) {
-      setError("Passwords do not match");
+      setError("Mật khẩu xác nhận không khớp");
       triggerShake();
       return;
     }
@@ -52,7 +48,7 @@ const ResetPasswordPage = () => {
     } catch (err) {
       setError(
         err.response?.data?.message ||
-          "Something went wrong. Please try again.",
+          "Đã xảy ra lỗi. Vui lòng thử lại."
       );
       triggerShake();
     } finally {
@@ -65,246 +61,220 @@ const ResetPasswordPage = () => {
     setTimeout(() => setShakeError(false), 600);
   };
 
+  
+  const getStrength = (pw) => {
+    if (pw.length >= 12) return { level: 4, label: "Rất mạnh", color: "#10b981" };
+    if (pw.length >= 9) return { level: 3, label: "Tốt", color: "#eab308" };
+    if (pw.length >= 6) return { level: 2, label: "Trung bình", color: "#f97316" };
+    return { level: 1, label: "Quá ngắn", color: "#ef4444" };
+  };
+
+  const strengthClasses = ["weak", "fair", "good", "strong"];
+
   return (
-    <div className="min-h-screen flex bg-white">
-      {/* Left Panel - Hero Image */}
-      <div className="hidden lg:flex lg:w-1/2 relative overflow-hidden animate-fade-in">
+    <div className="auth-page">
+      {}
+      <div className="auth-hero hidden lg:flex lg:w-1/2">
         <img
           src="/login-hero.png"
           alt="Team collaboration"
-          className="absolute inset-0 w-full h-full object-cover"
+          className="auth-hero-image"
         />
-        <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/30 to-transparent" />
-
-        <div className="relative z-10 flex flex-col justify-end p-12 pb-16 text-white">
-          <div className="flex items-center gap-3 mb-6 animate-slide-up" style={{ animationDelay: "0.3s" }}>
-            <div className="w-10 h-10 bg-blue-500 rounded-xl flex items-center justify-center shadow-lg shadow-blue-500/30">
-              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                <rect x="2" y="3" width="20" height="14" rx="2" ry="2"/>
-                <line x1="8" y1="21" x2="16" y2="21"/>
-                <line x1="12" y1="17" x2="12" y2="21"/>
-              </svg>
-            </div>
-            <span className="text-xl font-bold tracking-tight">WorkHub</span>
+        <div className="auth-hero-content">
+          <div className="auth-hero-logo">
+            <img src={workHubLogo} alt="WorkHub" />
+            <span>WorkHub</span>
           </div>
 
-          <h1 className="text-4xl xl:text-5xl font-bold leading-tight mb-4 animate-slide-up" style={{ animationDelay: "0.5s" }}>
-            Create a new
+          <h1>
+            Thiết lập mật khẩu
             <br />
-            <span className="bg-gradient-to-r from-blue-400 to-cyan-300 bg-clip-text text-transparent">
-              secure password.
-            </span>
+            <span className="highlight">mới an toàn.</span>
           </h1>
 
-          <p className="text-lg text-gray-300 max-w-md animate-slide-up" style={{ animationDelay: "0.7s" }}>
-            Choose a strong password to keep your account safe and secure.
+          <p>
+            Chọn một mật khẩu mạnh để bảo vệ tài khoản của bạn luôn được an
+            toàn.
           </p>
         </div>
 
-        <div className="absolute inset-0 pointer-events-none overflow-hidden">
-          {[...Array(6)].map((_, i) => (
-            <div
-              key={i}
-              className="absolute w-1 h-1 bg-white/20 rounded-full animate-float"
-              style={{
-                left: `${15 + i * 15}%`,
-                top: `${20 + (i % 3) * 25}%`,
-                animationDelay: `${i * 0.8}s`,
-                animationDuration: `${3 + i * 0.5}s`,
-              }}
-            />
-          ))}
-        </div>
+        <InteractiveBackground />
       </div>
 
-      {/* Right Panel */}
-      <div className="w-full lg:w-1/2 flex items-center justify-center p-6 sm:p-8 md:p-12">
-        <div className="w-full max-w-md animate-fade-slide-right">
-          {/* Mobile Logo */}
-          <div className="flex items-center gap-3 mb-8 lg:hidden animate-slide-up">
-            <div className="w-10 h-10 bg-blue-500 rounded-xl flex items-center justify-center shadow-lg shadow-blue-500/30">
-              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                <rect x="2" y="3" width="20" height="14" rx="2" ry="2"/>
-                <line x1="8" y1="21" x2="16" y2="21"/>
-                <line x1="12" y1="17" x2="12" y2="21"/>
-              </svg>
-            </div>
-            <span className="text-xl font-bold tracking-tight text-gray-900">WorkHub</span>
-          </div>
-
-          {isSuccess ? (
-            // ===== Success State =====
-            <div className="text-center">
-              <div className="inline-flex items-center justify-center w-20 h-20 bg-emerald-100 rounded-full mb-6 animate-slide-up">
-                <CheckCircleFilled
-                  style={{ fontSize: 44, color: "#10b981" }}
-                />
-              </div>
-              <h2 className="text-3xl font-bold text-gray-900 mb-3 animate-slide-up" style={{ animationDelay: "0.1s" }}>
-                Password Reset!
-              </h2>
-              <p className="text-gray-500 mb-8 animate-slide-up" style={{ animationDelay: "0.2s" }}>
-                Your password has been updated successfully.
-                <br />
-                Redirecting you to sign in...
-              </p>
-              <div className="animate-slide-up" style={{ animationDelay: "0.3s" }}>
-                <LoadingOutlined className="text-2xl text-blue-500 animate-spin" />
-              </div>
-              <Link
-                to="/login"
-                className="inline-block mt-6 text-sm text-blue-500 hover:text-blue-600 font-semibold transition-colors animate-slide-up"
-                style={{ animationDelay: "0.4s" }}
-              >
-                Go to Sign In now
-              </Link>
-            </div>
-          ) : (
-            // ===== Form State =====
-            <>
-              {/* Header */}
-              <div className="mb-8">
-                <div className="inline-flex items-center justify-center w-14 h-14 bg-blue-100 rounded-full mb-4 animate-slide-up" style={{ animationDelay: "0.1s" }}>
-                  <LockOutlined style={{ fontSize: 24, color: "#3b82f6" }} />
+      {}
+      <div className="auth-form-panel w-full lg:w-1/2">
+        <AuthFormBackground />
+        <div className="auth-wrapper">
+          <div className="auth-form-box">
+            {isSuccess ? (
+              
+              <div style={{ textAlign: "center" }}>
+                <div className="auth-success-icon">
+                  <ion-icon
+                    name="checkmark-circle"
+                    style={{ fontSize: 44, color: "#10b981" }}
+                  ></ion-icon>
                 </div>
-                <h2 className="text-3xl font-bold text-gray-900 mb-2 animate-slide-up" style={{ animationDelay: "0.15s" }}>
-                  Set new password
-                </h2>
-                <p className="text-gray-500 animate-slide-up" style={{ animationDelay: "0.2s" }}>
-                  Your new password must be at least 6 characters and different from your previous password.
+                <h2 className="auth-success-title">Đặt lại mật khẩu thành công!</h2>
+                <p className="auth-success-text">
+                  Mật khẩu của bạn đã được cập nhật thành công.
+                  <br />
+                  Đang chuyển hướng đến trang đăng nhập...
                 </p>
-              </div>
-
-              {/* Error Alert */}
-              {error && (
-                <div className={`mb-6 p-3 bg-red-50 border border-red-200 rounded-xl text-red-600 text-sm flex items-center gap-2 animate-fade-in ${shakeError ? "animate-shake" : ""}`}>
-                  <svg className="w-4 h-4 shrink-0" fill="currentColor" viewBox="0 0 20 20">
-                    <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
-                  </svg>
-                  {error}
+                <div style={{ marginBottom: 16 }}>
+                  <span className="spinner" style={{
+                    display: "inline-block",
+                    width: 24,
+                    height: 24,
+                    border: "2px solid rgba(255,255,255,0.2)",
+                    borderTopColor: "var(--auth-primary)",
+                    borderRadius: "50%",
+                    animation: "authSpin 0.8s linear infinite",
+                  }}></span>
                 </div>
-              )}
+                <Link to="/login" className="auth-resend-btn">
+                  Đi đến đăng nhập ngay
+                </Link>
+              </div>
+            ) : (
+              
+              <>
+                <h2>Đặt mật khẩu mới</h2>
+                <p className="auth-subtitle">
+                  Mật khẩu mới phải có ít nhất 6 ký tự và khác với mật khẩu cũ
+                  của bạn.
+                </p>
 
-              <form onSubmit={handleSubmit} className="space-y-5">
-                {/* New Password */}
-                <div className="animate-slide-up" style={{ animationDelay: "0.25s" }}>
-                  <label className="block text-sm font-semibold text-gray-700 mb-1.5">
-                    New Password
-                  </label>
-                  <div className="relative group">
+                {}
+                {error && (
+                  <div
+                    className={`auth-info-box auth-info-box--error ${shakeError ? "auth-shake" : ""}`}
+                  >
+                    <ion-icon
+                      name="alert-circle"
+                      style={{ fontSize: 18, flexShrink: 0, marginTop: 2 }}
+                    ></ion-icon>
+                    {error}
+                  </div>
+                )}
+
+                <form onSubmit={handleSubmit}>
+                  {}
+                  <div className="auth-input-box">
                     <input
                       id="reset-password"
                       type={showPassword ? "text" : "password"}
                       value={password}
                       onChange={(e) => setPassword(e.target.value)}
-                      placeholder="••••••••"
-                      className="auth-input pr-11"
+                      required
+                      placeholder=" "
                       autoComplete="new-password"
                       autoFocus
                     />
-                    <button
-                      type="button"
+                    <label htmlFor="reset-password">Mật khẩu mới</label>
+                    <span
+                      className="icon clickable"
                       onClick={() => setShowPassword(!showPassword)}
-                      className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors p-1"
+                      title="Hiển thị/Ẩn mật khẩu"
                     >
-                      {showPassword ? <EyeOutlined className="text-lg" /> : <EyeInvisibleOutlined className="text-lg" />}
-                    </button>
+                      <ion-icon
+                        name={showPassword ? "eye-off" : "eye"}
+                      ></ion-icon>
+                    </span>
                   </div>
-                  {/* Password Strength Indicator */}
+
+                  {}
                   {password && (
-                    <div className="mt-2 animate-fade-in">
-                      <div className="flex gap-1 mb-1">
+                    <div style={{ marginBottom: 8 }}>
+                      <div className="auth-strength-bars">
                         {[1, 2, 3, 4].map((level) => (
                           <div
                             key={level}
-                            className={`h-1 flex-1 rounded-full transition-all duration-500 ${
-                              password.length >= level * 3
-                                ? level <= 1
-                                  ? "bg-red-400"
-                                  : level <= 2
-                                  ? "bg-orange-400"
-                                  : level <= 3
-                                  ? "bg-yellow-400"
-                                  : "bg-emerald-400"
-                                : "bg-gray-200"
+                            className={`auth-strength-bar ${
+                              getStrength(password).level >= level
+                                ? `auth-strength-bar--${strengthClasses[level - 1]}`
+                                : ""
                             }`}
                           />
                         ))}
                       </div>
-                      <p className={`text-xs transition-colors ${
-                        password.length >= 12 ? "text-emerald-500" : password.length >= 9 ? "text-yellow-500" : password.length >= 6 ? "text-orange-500" : "text-red-500"
-                      }`}>
-                        {password.length >= 12 ? "Strong password" : password.length >= 9 ? "Good password" : password.length >= 6 ? "Fair password" : "Too short"}
+                      <p
+                        className="auth-strength-text"
+                        style={{ color: getStrength(password).color }}
+                      >
+                        {getStrength(password).label}
                       </p>
                     </div>
                   )}
-                </div>
 
-                {/* Confirm Password */}
-                <div className="animate-slide-up" style={{ animationDelay: "0.3s" }}>
-                  <label className="block text-sm font-semibold text-gray-700 mb-1.5">
-                    Confirm New Password
-                  </label>
-                  <div className="relative group">
+                  {}
+                  <div className="auth-input-box">
                     <input
                       id="reset-confirm-password"
                       type={showConfirmPassword ? "text" : "password"}
                       value={confirmPassword}
                       onChange={(e) => setConfirmPassword(e.target.value)}
-                      placeholder="••••••••"
-                      className={`auth-input pr-11 ${
-                        confirmPassword && confirmPassword !== password
-                          ? "!border-red-300 !ring-red-100"
-                          : confirmPassword && confirmPassword === password
-                          ? "!border-emerald-300 !ring-emerald-100"
-                          : ""
-                      }`}
+                      required
+                      placeholder=" "
                       autoComplete="new-password"
                     />
-                    <button
-                      type="button"
-                      onClick={() => setShowConfirmPassword(!showConfirmPassword)}
-                      className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors p-1"
+                    <label htmlFor="reset-confirm-password">
+                      Xác nhận mật khẩu mới
+                    </label>
+                    <span
+                      className="icon clickable"
+                      onClick={() =>
+                        setShowConfirmPassword(!showConfirmPassword)
+                      }
+                      title="Hiển thị/Ẩn mật khẩu"
                     >
-                      {showConfirmPassword ? <EyeOutlined className="text-lg" /> : <EyeInvisibleOutlined className="text-lg" />}
-                    </button>
+                      <ion-icon
+                        name={showConfirmPassword ? "eye-off" : "eye"}
+                      ></ion-icon>
+                    </span>
                   </div>
+
+                  {}
                   {confirmPassword && confirmPassword !== password && (
-                    <p className="text-xs text-red-500 mt-1 animate-fade-in">Passwords do not match</p>
+                    <p className="auth-match-text auth-match-text--mismatch">
+                      ✗ Mật khẩu không khớp
+                    </p>
                   )}
                   {confirmPassword && confirmPassword === password && (
-                    <p className="text-xs text-emerald-500 mt-1 animate-fade-in">✓ Passwords match</p>
+                    <p className="auth-match-text auth-match-text--match">
+                      ✓ Mật khẩu trùng khớp
+                    </p>
                   )}
+
+                  {}
+                  <button
+                    id="reset-submit"
+                    type="submit"
+                    disabled={isLoading}
+                    className="auth-btn-form"
+                    style={{ marginTop: 36 }}
+                  >
+                    {isLoading ? (
+                      <>
+                        <span className="spinner"></span>
+                        Đang đặt lại...
+                      </>
+                    ) : (
+                      "Đặt lại mật khẩu"
+                    )}
+                  </button>
+                </form>
+
+                {}
+                <div className="auth-login-register">
+                  <p>
+                    Nhớ mật khẩu rồi?{" "}
+                    <Link to="/login">Đăng nhập</Link>
+                  </p>
                 </div>
-
-                {/* Submit Button */}
-                <button
-                  id="reset-submit"
-                  type="submit"
-                  disabled={isLoading}
-                  className="auth-btn-primary animate-slide-up"
-                  style={{ animationDelay: "0.35s" }}
-                >
-                  {isLoading ? (
-                    <span className="flex items-center justify-center gap-2">
-                      <LoadingOutlined className="animate-spin" />
-                      Resetting password...
-                    </span>
-                  ) : (
-                    "Reset Password"
-                  )}
-                </button>
-              </form>
-
-              {/* Back to Login */}
-              <p className="text-center text-sm text-gray-500 mt-8 animate-slide-up" style={{ animationDelay: "0.4s" }}>
-                Remember your password?{" "}
-                <Link to="/login" className="text-blue-500 hover:text-blue-600 font-semibold transition-colors">
-                  Sign In
-                </Link>
-              </p>
-            </>
-          )}
+              </>
+            )}
+          </div>
         </div>
       </div>
     </div>

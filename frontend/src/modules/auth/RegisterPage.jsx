@@ -2,6 +2,8 @@ import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "../../context/AuthContext";
 import workHubLogo from "../../assets/WorkHub_logo_blue_background.png";
+import InteractiveBackground from "./InteractiveBackground";
+import AuthFormBackground from "./AuthFormBackground";
 
 const RegisterPage = () => {
   const [username, setUsername] = useState("");
@@ -45,7 +47,7 @@ const RegisterPage = () => {
 
   return (
     <div className="auth-page">
-      {/* Left Panel - Hero */}
+      {}
       <div className="auth-hero hidden lg:flex lg:w-1/2">
         <img
           src="/register-hero.png"
@@ -70,23 +72,13 @@ const RegisterPage = () => {
           </p>
         </div>
 
-        {/* Floating particles */}
-        {[...Array(6)].map((_, i) => (
-          <div
-            key={i}
-            className="auth-particle"
-            style={{
-              left: `${15 + i * 15}%`,
-              top: `${20 + (i % 3) * 25}%`,
-              animationDelay: `${i * 0.8}s`,
-              animationDuration: `${3 + i * 0.5}s`,
-            }}
-          />
-        ))}
+        {}
+        <InteractiveBackground />
       </div>
 
-      {/* Right Panel - Register Form */}
+      {}
       <div className="auth-form-panel w-full lg:w-1/2">
+        <AuthFormBackground />
         <div className="auth-wrapper">
           <div className="auth-form-box">
             <h2>Tạo tài khoản mới</h2>
@@ -95,7 +87,7 @@ const RegisterPage = () => {
             </p>
 
             <form onSubmit={handleSubmit}>
-              {/* Username */}
+              {}
               <div className="auth-input-box">
                 <input
                   id="register-username"
@@ -112,7 +104,7 @@ const RegisterPage = () => {
                 </span>
               </div>
 
-              {/* Email */}
+              {}
               <div className="auth-input-box">
                 <input
                   id="register-email"
@@ -129,7 +121,7 @@ const RegisterPage = () => {
                 </span>
               </div>
 
-              {/* Password */}
+              {}
               <div className="auth-input-box">
                 <input
                   id="register-password"
@@ -152,7 +144,7 @@ const RegisterPage = () => {
                 </span>
               </div>
 
-              {/* Confirm Password */}
+              {}
               <div className="auth-input-box">
                 <input
                   id="register-confirm-password"
@@ -175,10 +167,10 @@ const RegisterPage = () => {
                 </span>
               </div>
 
-              {/* Error message */}
+              {}
               {error && <div className="auth-error-message">{error}</div>}
 
-              {/* Submit */}
+              {}
               <button
                 id="register-submit"
                 type="submit"
@@ -197,7 +189,7 @@ const RegisterPage = () => {
               </button>
             </form>
 
-            {/* Login link */}
+            {}
             <div className="auth-login-register">
               <p>
                 Đã có tài khoản?{" "}

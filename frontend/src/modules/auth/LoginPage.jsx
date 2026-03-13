@@ -3,6 +3,8 @@ import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "../../context/AuthContext";
 import { resendOTP } from "../../services/authService";
 import workHubLogo from "../../assets/WorkHub_logo_blue_background.png";
+import InteractiveBackground from "./InteractiveBackground";
+import AuthFormBackground from "./AuthFormBackground";
 
 const LoginPage = () => {
   const [email, setEmail] = useState("");
@@ -33,7 +35,7 @@ const LoginPage = () => {
         try {
           await resendOTP(err.response.data.email);
         } catch {
-          // ignore resend error
+          
         }
         navigate(
           `/verify-email?email=${encodeURIComponent(err.response.data.email)}`
@@ -54,7 +56,7 @@ const LoginPage = () => {
 
   return (
     <div className="auth-page">
-      {/* Left Panel - Hero */}
+      {}
       <div className="auth-hero hidden lg:flex lg:w-1/2">
         <img
           src="/login-hero.png"
@@ -79,23 +81,13 @@ const LoginPage = () => {
           </p>
         </div>
 
-        {/* Floating particles */}
-        {[...Array(6)].map((_, i) => (
-          <div
-            key={i}
-            className="auth-particle"
-            style={{
-              left: `${15 + i * 15}%`,
-              top: `${20 + (i % 3) * 25}%`,
-              animationDelay: `${i * 0.8}s`,
-              animationDuration: `${3 + i * 0.5}s`,
-            }}
-          />
-        ))}
+        {}
+        <InteractiveBackground />
       </div>
 
-      {/* Right Panel - Login Form */}
+      {}
       <div className="auth-form-panel w-full lg:w-1/2">
+        <AuthFormBackground />
         <div className="auth-wrapper">
           <div className="auth-form-box">
             <h2>Chào mừng trở lại!</h2>
@@ -104,7 +96,7 @@ const LoginPage = () => {
             </p>
 
             <form onSubmit={handleSubmit}>
-              {/* Email */}
+              {}
               <div className="auth-input-box">
                 <input
                   id="login-email"
@@ -121,7 +113,7 @@ const LoginPage = () => {
                 </span>
               </div>
 
-              {/* Password */}
+              {}
               <div className="auth-input-box">
                 <input
                   id="login-password"
@@ -144,10 +136,10 @@ const LoginPage = () => {
                 </span>
               </div>
 
-              {/* Error message */}
+              {}
               {error && <div className="auth-error-message">{error}</div>}
 
-              {/* Remember + Forgot */}
+              {}
               <div className="auth-remember">
                 <label>
                   <input
@@ -160,7 +152,7 @@ const LoginPage = () => {
                 <Link to="/forgot-password">Quên mật khẩu?</Link>
               </div>
 
-              {/* Submit */}
+              {}
               <button
                 id="login-submit"
                 type="submit"
@@ -178,10 +170,10 @@ const LoginPage = () => {
               </button>
             </form>
 
-            {/* Divider */}
+            {}
             <div className="auth-oauth-divider">HOẶC</div>
 
-            {/* Google button */}
+            {}
             <button type="button" className="auth-google-btn">
               <svg
                 className="google-icon"
@@ -209,7 +201,7 @@ const LoginPage = () => {
               Đăng nhập với Google
             </button>
 
-            {/* Register link */}
+            {}
             <div className="auth-login-register">
               <p>
                 Chưa có tài khoản?{" "}

@@ -22,7 +22,7 @@ const userSchema = new mongoose.Schema(
       type: String,
       required: [true, "Password is required"],
       minlength: [6, "Password must be at least 6 characters"],
-      select: false, // Don't return password by default in queries
+      select: false, 
     },
     avatar: {
       type: String,
@@ -34,7 +34,7 @@ const userSchema = new mongoose.Schema(
       default: "user",
     },
 
-    // ===== Email Verification =====
+    
     isVerified: {
       type: Boolean,
       default: false,
@@ -48,7 +48,7 @@ const userSchema = new mongoose.Schema(
       select: false,
     },
 
-    // ===== Password Reset =====
+    
     resetPasswordToken: {
       type: String,
       select: false,
@@ -63,14 +63,14 @@ const userSchema = new mongoose.Schema(
   },
 );
 
-// Hash password before saving
+
 userSchema.pre("save", async function () {
   if (!this.isModified("password")) return;
   const salt = await bcrypt.genSalt(12);
   this.password = await bcrypt.hash(this.password, salt);
 });
 
-// Compare entered password with hashed password in DB
+
 userSchema.methods.matchPassword = async function (enteredPassword) {
   return await bcrypt.compare(enteredPassword, this.password);
 };

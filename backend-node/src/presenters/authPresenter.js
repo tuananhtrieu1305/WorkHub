@@ -6,19 +6,19 @@ import {
   sendResetPasswordEmail,
 } from "../utils/sendEmail.js";
 
-// Generate a 6-digit OTP
+
 const generateOTP = () => {
   return Math.floor(100000 + Math.random() * 900000).toString();
 };
 
-// @desc    Register a new user
-// @route   POST /api/auth/register
-// @access  Public
+
+
+
 export const register = async (req, res) => {
   try {
     const { fullName, email, password } = req.body;
 
-    // Validate required fields
+    
     if (!fullName || !email || !password) {
       return res.status(400).json({ message: "Please fill in all fields" });
     }
@@ -29,10 +29,10 @@ export const register = async (req, res) => {
         .json({ message: "Password must be at least 6 characters" });
     }
 
-    // Check if user already exists
+    
     const existingUser = await User.findOne({ email });
     if (existingUser) {
-      // If exists but not verified, allow re-registration with new OTP
+      
       if (!existingUser.isVerified) {
         const otp = generateOTP();
         existingUser.fullName = fullName;
@@ -40,7 +40,7 @@ export const register = async (req, res) => {
         existingUser.verificationOTP = otp;
         existingUser.verificationOTPExpires = new Date(
           Date.now() + 10 * 60 * 1000,
-        ); // 10 minutes
+        ); 
         await existingUser.save();
 
         await sendVerificationEmail(email, fullName, otp);
@@ -57,22 +57,22 @@ export const register = async (req, res) => {
         .json({ message: "An account with this email already exists" });
     }
 
-    // Generate OTP
+    
     const otp = generateOTP();
 
-    // Create user (unverified)
+    
     const user = await User.create({
       fullName,
       email,
       password,
       verificationOTP: otp,
-      verificationOTPExpires: new Date(Date.now() + 10 * 60 * 1000), // 10 minutes
+      verificationOTPExpires: new Date(Date.now() + 10 * 60 * 1000), 
     });
 
-    // Send verification email
+    
     await sendVerificationEmail(email, fullName, otp);
 
-    // Return success (no token — user must verify first)
+    
     res.status(201).json({
       message:
         "Registration successful! A verification code has been sent to your email.",
@@ -84,9 +84,9 @@ export const register = async (req, res) => {
   }
 };
 
-// @desc    Verify email with OTP
-// @route   POST /api/auth/verify-email
-// @access  Public
+
+
+
 export const verifyEmail = async (req, res) => {
   try {
     const { email, otp } = req.body;
@@ -111,14 +111,14 @@ export const verifyEmail = async (req, res) => {
         .json({ message: "This account is already verified" });
     }
 
-    // Check OTP match
+    
     if (user.verificationOTP !== otp) {
       return res
         .status(400)
         .json({ message: "Invalid verification code. Please try again." });
     }
 
-    // Check OTP expiry
+    
     if (user.verificationOTPExpires < new Date()) {
       return res.status(400).json({
         message:
@@ -127,13 +127,13 @@ export const verifyEmail = async (req, res) => {
       });
     }
 
-    // Activate account
+    
     user.isVerified = true;
     user.verificationOTP = undefined;
     user.verificationOTPExpires = undefined;
     await user.save();
 
-    // Return token so user is auto-logged in after verification
+    
     res.status(200).json({
       message: "Email verified successfully!",
       _id: user._id,
@@ -149,9 +149,9 @@ export const verifyEmail = async (req, res) => {
   }
 };
 
-// @desc    Resend OTP verification code
-// @route   POST /api/auth/resend-otp
-// @access  Public
+
+
+
 export const resendOTP = async (req, res) => {
   try {
     const { email } = req.body;
@@ -172,13 +172,13 @@ export const resendOTP = async (req, res) => {
         .json({ message: "This account is already verified" });
     }
 
-    // Generate new OTP
+    
     const otp = generateOTP();
     user.verificationOTP = otp;
     user.verificationOTPExpires = new Date(Date.now() + 10 * 60 * 1000);
     await user.save();
 
-    // Send email
+    
     await sendVerificationEmail(email, user.fullName, otp);
 
     res.status(200).json({
@@ -190,31 +190,31 @@ export const resendOTP = async (req, res) => {
   }
 };
 
-// @desc    Login user & get token
-// @route   POST /api/auth/login
-// @access  Public
+
+
+
 export const login = async (req, res) => {
   try {
     const { email, password } = req.body;
 
-    // Validate required fields
+    
     if (!email || !password) {
       return res.status(400).json({ message: "Please fill in all fields" });
     }
 
-    // Find user and include password field
+    
     const user = await User.findOne({ email }).select("+password");
     if (!user) {
       return res.status(401).json({ message: "Invalid email or password" });
     }
 
-    // Check password
+    
     const isMatch = await user.matchPassword(password);
     if (!isMatch) {
       return res.status(401).json({ message: "Invalid email or password" });
     }
 
-    // Check if email is verified
+    
     if (!user.isVerified) {
       return res.status(403).json({
         message:
@@ -224,7 +224,7 @@ export const login = async (req, res) => {
       });
     }
 
-    // Return user info + token
+    
     res.status(200).json({
       _id: user._id,
       fullName: user.fullName,
@@ -239,9 +239,9 @@ export const login = async (req, res) => {
   }
 };
 
-// @desc    Forgot password - send reset email
-// @route   POST /api/auth/forgot-password
-// @access  Public
+
+
+
 export const forgotPassword = async (req, res) => {
   try {
     const { email } = req.body;
@@ -253,28 +253,28 @@ export const forgotPassword = async (req, res) => {
     const user = await User.findOne({ email });
 
     if (!user) {
-      // Don't reveal if user exists or not (security)
+      
       return res.status(200).json({
         message:
           "If an account with that email exists, a password reset link has been sent.",
       });
     }
 
-    // Generate reset token
+    
     const resetToken = crypto.randomBytes(32).toString("hex");
 
-    // Hash and save to user
+    
     user.resetPasswordToken = crypto
       .createHash("sha256")
       .update(resetToken)
       .digest("hex");
-    user.resetPasswordExpires = new Date(Date.now() + 15 * 60 * 1000); // 15 minutes
+    user.resetPasswordExpires = new Date(Date.now() + 15 * 60 * 1000); 
     await user.save();
 
-    // Build reset URL
+    
     const resetLink = `${process.env.FRONTEND_URL}/reset-password/${resetToken}`;
 
-    // Send email
+    
     await sendResetPasswordEmail(email, user.fullName, resetLink);
 
     res.status(200).json({
@@ -287,9 +287,9 @@ export const forgotPassword = async (req, res) => {
   }
 };
 
-// @desc    Reset password with token
-// @route   POST /api/auth/reset-password/:token
-// @access  Public
+
+
+
 export const resetPassword = async (req, res) => {
   try {
     const { token } = req.params;
@@ -305,7 +305,7 @@ export const resetPassword = async (req, res) => {
         .json({ message: "Password must be at least 6 characters" });
     }
 
-    // Hash the token from URL to compare with stored hash
+    
     const hashedToken = crypto
       .createHash("sha256")
       .update(token)
@@ -323,11 +323,11 @@ export const resetPassword = async (req, res) => {
       });
     }
 
-    // Update password
+    
     user.password = password;
     user.resetPasswordToken = undefined;
     user.resetPasswordExpires = undefined;
-    // Also verify email if not already (user proved ownership)
+    
     user.isVerified = true;
     await user.save();
 
@@ -341,9 +341,9 @@ export const resetPassword = async (req, res) => {
   }
 };
 
-// @desc    Get current user profile
-// @route   GET /api/auth/me
-// @access  Private
+
+
+
 export const getMe = async (req, res) => {
   try {
     const user = await User.findById(req.user._id);
