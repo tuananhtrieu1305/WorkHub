@@ -23,6 +23,11 @@ export const loginUser = async (email, password) => {
   return data;
 };
 
+export const googleLoginUser = async (userInfo) => {
+  const { data } = await api.post("/auth/google", userInfo);
+  return data;
+};
+
 export const registerUser = async (fullName, email, password) => {
   const { data } = await api.post("/auth/register", {
     fullName,

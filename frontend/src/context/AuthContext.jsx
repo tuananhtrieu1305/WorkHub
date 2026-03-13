@@ -1,6 +1,7 @@
 import { createContext, useContext, useState, useEffect } from "react";
 import {
   loginUser,
+  googleLoginUser,
   registerUser,
   getMe,
   verifyEmail as verifyEmailAPI,
@@ -48,6 +49,14 @@ export const AuthProvider = ({ children }) => {
     return data;
   };
 
+  const googleLogin = async (googleToken) => {
+    const data = await googleLoginUser(googleToken);
+    localStorage.setItem("workhub_token", data.token);
+    setToken(data.token);
+    setUser(data);
+    return data;
+  };
+
   const register = async (fullName, email, password) => {
     
     const data = await registerUser(fullName, email, password);
@@ -72,7 +81,7 @@ export const AuthProvider = ({ children }) => {
 
   return (
     <AuthContext.Provider
-      value={{ user, token, loading, login, register, verifyAndLogin, logout }}
+      value={{ user, token, loading, login, googleLogin, register, verifyAndLogin, logout }}
     >
       {children}
     </AuthContext.Provider>

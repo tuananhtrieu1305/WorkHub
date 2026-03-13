@@ -43,6 +43,8 @@ services:
     container_name: workhub_frontend
     ports:
       - "5173:5173"
+    env_file:
+      - .env
     environment:
       - VITE_NODE_API_URL=http://localhost:5000
       - VITE_PYTHON_API_URL=http://localhost:8000

@@ -209,6 +209,11 @@ export const login = async (req, res) => {
     }
 
     
+    if (!user.password) {
+      return res.status(401).json({ message: "Tài khoản này được đăng ký bằng Google. Vui lòng đăng nhập bằng Google." });
+    }
+
+    
     const isMatch = await user.matchPassword(password);
     if (!isMatch) {
       return res.status(401).json({ message: "Invalid email or password" });
@@ -236,6 +241,52 @@ export const login = async (req, res) => {
   } catch (error) {
     console.error("Login error:", error.message);
     res.status(500).json({ message: "Server error, please try again" });
+  }
+};
+
+
+
+
+export const googleLogin = async (req, res) => {
+  try {
+    const { email, name, picture, sub: googleId } = req.body;
+
+    if (!email || !googleId) {
+      return res.status(400).json({ message: "Google account info is missing" });
+    }
+
+    let user = await User.findOne({ email });
+
+    if (user) {
+      if (user.authProvider !== "google" || !user.googleId) {
+        user.googleId = googleId;
+        user.authProvider = "google";
+        user.isVerified = true; 
+        if (!user.avatar) user.avatar = picture;
+        await user.save();
+      }
+    } else {
+      user = await User.create({
+        fullName: name,
+        email,
+        googleId,
+        authProvider: "google",
+        avatar: picture,
+        isVerified: true, 
+      });
+    }
+
+    res.status(200).json({
+      _id: user._id,
+      fullName: user.fullName,
+      email: user.email,
+      role: user.role,
+      avatar: user.avatar,
+      token: generateToken(user._id),
+    });
+  } catch (error) {
+    console.error("Google verify error:", error.message);
+    res.status(500).json({ message: "Xác thực Google thất bại. Vui lòng thử lại" });
   }
 };
 

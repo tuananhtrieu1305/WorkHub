@@ -2,6 +2,7 @@ import express from "express";
 import {
   register,
   login,
+  googleLogin,
   getMe,
   verifyEmail,
   resendOTP,
@@ -15,6 +16,7 @@ const router = express.Router();
 
 router.post("/register", register);
 router.post("/login", login);
+router.post("/google", googleLogin);
 router.post("/verify-email", verifyEmail);
 router.post("/resend-otp", resendOTP);
 router.post("/forgot-password", forgotPassword);

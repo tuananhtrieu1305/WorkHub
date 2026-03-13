@@ -2,6 +2,8 @@ import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "../../context/AuthContext";
 import { resendOTP } from "../../services/authService";
+import { useGoogleLogin } from "@react-oauth/google";
+import axios from "axios";
 import workHubLogo from "../../assets/WorkHub_logo_blue_background.png";
 import InteractiveBackground from "./InteractiveBackground";
 import AuthFormBackground from "./AuthFormBackground";
@@ -14,8 +16,33 @@ const LoginPage = () => {
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(false);
 
-  const { login } = useAuth();
+  const { login, googleLogin } = useAuth();
   const navigate = useNavigate();
+
+  const handleGoogleLogin = useGoogleLogin({
+    onSuccess: async (tokenResponse) => {
+      setIsLoading(true);
+      setError("");
+      try {
+        const userInfo = await axios.get(
+          "https://www.googleapis.com/oauth2/v3/userinfo",
+          { headers: { Authorization: `Bearer ${tokenResponse.access_token}` } }
+        );
+
+        await googleLogin(userInfo.data);
+        navigate("/");
+      } catch (err) {
+        setError(
+          err.response?.data?.message || "Đăng nhập Google thất bại. Vui lòng thử lại."
+        );
+      } finally {
+        setIsLoading(false);
+      }
+    },
+    onError: () => {
+      setError("Đăng nhập Google thất bại. Vui lòng thử lại.");
+    },
+  });
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -174,7 +201,7 @@ const LoginPage = () => {
             <div className="auth-oauth-divider">HOẶC</div>
 
             {}
-            <button type="button" className="auth-google-btn">
+            <button type="button" className="auth-google-btn" onClick={() => handleGoogleLogin()} disabled={isLoading}>
               <svg
                 className="google-icon"
                 viewBox="0 0 24 24"
