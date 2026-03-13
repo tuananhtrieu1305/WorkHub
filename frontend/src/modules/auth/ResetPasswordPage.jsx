@@ -62,18 +62,10 @@ const ResetPasswordPage = () => {
   };
 
   
-  const getStrength = (pw) => {
-    if (pw.length >= 12) return { level: 4, label: "Rất mạnh", color: "#10b981" };
-    if (pw.length >= 9) return { level: 3, label: "Tốt", color: "#eab308" };
-    if (pw.length >= 6) return { level: 2, label: "Trung bình", color: "#f97316" };
-    return { level: 1, label: "Quá ngắn", color: "#ef4444" };
-  };
-
-  const strengthClasses = ["weak", "fair", "good", "strong"];
 
   return (
     <div className="auth-page">
-      {}
+
       <div className="auth-hero hidden lg:flex lg:w-1/2">
         <img
           src="/login-hero.png"
@@ -101,7 +93,7 @@ const ResetPasswordPage = () => {
         <InteractiveBackground />
       </div>
 
-      {}
+
       <div className="auth-form-panel w-full lg:w-1/2">
         <AuthFormBackground />
         <div className="auth-wrapper">
@@ -145,7 +137,7 @@ const ResetPasswordPage = () => {
                   của bạn.
                 </p>
 
-                {}
+
                 {error && (
                   <div
                     className={`auth-info-box auth-info-box--error ${shakeError ? "auth-shake" : ""}`}
@@ -159,7 +151,7 @@ const ResetPasswordPage = () => {
                 )}
 
                 <form onSubmit={handleSubmit}>
-                  {}
+
                   <div className="auth-input-box">
                     <input
                       id="reset-password"
@@ -183,31 +175,7 @@ const ResetPasswordPage = () => {
                     </span>
                   </div>
 
-                  {}
-                  {password && (
-                    <div style={{ marginBottom: 8 }}>
-                      <div className="auth-strength-bars">
-                        {[1, 2, 3, 4].map((level) => (
-                          <div
-                            key={level}
-                            className={`auth-strength-bar ${
-                              getStrength(password).level >= level
-                                ? `auth-strength-bar--${strengthClasses[level - 1]}`
-                                : ""
-                            }`}
-                          />
-                        ))}
-                      </div>
-                      <p
-                        className="auth-strength-text"
-                        style={{ color: getStrength(password).color }}
-                      >
-                        {getStrength(password).label}
-                      </p>
-                    </div>
-                  )}
 
-                  {}
                   <div className="auth-input-box">
                     <input
                       id="reset-confirm-password"
@@ -234,7 +202,7 @@ const ResetPasswordPage = () => {
                     </span>
                   </div>
 
-                  {}
+
                   {confirmPassword && confirmPassword !== password && (
                     <p className="auth-match-text auth-match-text--mismatch">
                       ✗ Mật khẩu không khớp
@@ -246,7 +214,7 @@ const ResetPasswordPage = () => {
                     </p>
                   )}
 
-                  {}
+
                   <button
                     id="reset-submit"
                     type="submit"
@@ -265,7 +233,7 @@ const ResetPasswordPage = () => {
                   </button>
                 </form>
 
-                {}
+
                 <div className="auth-login-register">
                   <p>
                     Nhớ mật khẩu rồi?{" "}

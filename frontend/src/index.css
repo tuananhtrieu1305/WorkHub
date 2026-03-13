@@ -700,31 +700,7 @@
 }
 
 
-.auth-strength-bars {
-  display: flex;
-  gap: 4px;
-  margin-top: 8px;
-  margin-bottom: 4px;
-}
 
-.auth-strength-bar {
-  height: 4px;
-  flex: 1;
-  border-radius: 4px;
-  background: rgba(255, 255, 255, 0.1);
-  transition: background-color 0.5s ease;
-}
-
-.auth-strength-bar--weak { background: #ef4444; }
-.auth-strength-bar--fair { background: #f97316; }
-.auth-strength-bar--good { background: #eab308; }
-.auth-strength-bar--strong { background: #10b981; }
-
-.auth-strength-text {
-  font-size: 0.75rem;
-  font-weight: 500;
-  transition: color 0.3s ease;
-}
 
 .auth-match-text {
   font-size: 0.75rem;

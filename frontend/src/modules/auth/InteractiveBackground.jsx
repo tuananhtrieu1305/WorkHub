@@ -33,6 +33,19 @@ const InteractiveBackground = () => {
     };
 
     const handleMouseLeave = () => {
+      // Nhả bung particles
+      particles.forEach((p) => {
+        const dx = p.x - mouse.x;
+        const dy = p.y - mouse.y;
+        const distance = Math.sqrt(dx * dx + dy * dy);
+        
+        if (distance > 0.1 && distance < 300) {
+          const force = (300 - distance) / 300;
+          p.vx += (dx / distance) * force * 15;
+          p.vy += (dy / distance) * force * 15;
+        }
+      });
+
       isMouseOnScreen = false;
       mouse.x = -1000;
       mouse.y = -1000;
@@ -45,19 +58,64 @@ const InteractiveBackground = () => {
       constructor() {
         this.x = Math.random() * canvas.width;
         this.y = Math.random() * canvas.height;
-        this.vx = (Math.random() - 0.5) * 0.5;
-        this.vy = (Math.random() - 0.5) * 0.5;
+        this.baseVx = (Math.random() - 0.5) * 1.2;
+        this.baseVy = (Math.random() - 0.5) * 1.2;
+        this.vx = this.baseVx;
+        this.vy = this.baseVy;
         this.radius = Math.random() * 2 + 0.5;
         const colors = ["#a855f7", "#d946ef", "#ffffff", "#c084fc"];
         this.color = colors[Math.floor(Math.random() * colors.length)];
       }
 
       update() {
+        if (isMouseOnScreen) {
+          const dx = mouse.x - this.x;
+          const dy = mouse.y - this.y;
+          const distance = Math.sqrt(dx * dx + dy * dy);
+          const interactionRadius = 200;
+          const minDistance = 70;
+
+          if (distance < interactionRadius) {
+            const forceDirectionX = dx / distance;
+            const forceDirectionY = dy / distance;
+
+            if (distance > minDistance) {
+              const pullForce = (interactionRadius - distance) / interactionRadius;
+              this.vx += forceDirectionX * pullForce * 0.4;
+              this.vy += forceDirectionY * pullForce * 0.4;
+            } else {
+              const pushForce = (minDistance - distance) / minDistance;
+              this.vx -= forceDirectionX * pushForce * 0.6;
+              this.vy -= forceDirectionY * pushForce * 0.6;
+            }
+          }
+        }
+
+        this.vx += (this.baseVx - this.vx) * 0.03;
+        this.vy += (this.baseVy - this.vy) * 0.03;
+
         this.x += this.vx;
         this.y += this.vy;
 
-        if (this.x < 0 || this.x > canvas.width) this.vx *= -1;
-        if (this.y < 0 || this.y > canvas.height) this.vy *= -1;
+        if (this.x < 0) {
+          this.x = 0;
+          this.vx *= -1;
+          this.baseVx *= -1;
+        } else if (this.x > canvas.width) {
+          this.x = canvas.width;
+          this.vx *= -1;
+          this.baseVx *= -1;
+        }
+
+        if (this.y < 0) {
+          this.y = 0;
+          this.vy *= -1;
+          this.baseVy *= -1;
+        } else if (this.y > canvas.height) {
+          this.y = canvas.height;
+          this.vy *= -1;
+          this.baseVy *= -1;
+        }
       }
 
       draw() {
@@ -84,7 +142,6 @@ const InteractiveBackground = () => {
             ctx.beginPath();
             ctx.moveTo(particles[i].x, particles[i].y);
             ctx.lineTo(particles[j].x, particles[j].y);
-            
             
             const mouseDx = particles[i].x - mouse.x;
             const mouseDy = particles[i].y - mouse.y;
