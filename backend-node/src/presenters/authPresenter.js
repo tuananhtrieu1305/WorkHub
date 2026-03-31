@@ -1,24 +1,21 @@
 import crypto from "crypto";
+import jwt from "jsonwebtoken";
 import User from "../models/User.js";
 import generateToken from "../utils/generateToken.js";
+import generateRefreshToken from "../utils/generateRefreshToken.js";
 import {
   sendVerificationEmail,
   sendResetPasswordEmail,
 } from "../utils/sendEmail.js";
 
-
 const generateOTP = () => {
   return Math.floor(100000 + Math.random() * 900000).toString();
 };
-
-
-
 
 export const register = async (req, res) => {
   try {
     const { fullName, email, password } = req.body;
 
-    
     if (!fullName || !email || !password) {
       return res.status(400).json({ message: "Please fill in all fields" });
     }
@@ -29,10 +26,8 @@ export const register = async (req, res) => {
         .json({ message: "Password must be at least 6 characters" });
     }
 
-    
     const existingUser = await User.findOne({ email });
     if (existingUser) {
-      
       if (!existingUser.isVerified) {
         const otp = generateOTP();
         existingUser.fullName = fullName;
@@ -40,7 +35,7 @@ export const register = async (req, res) => {
         existingUser.verificationOTP = otp;
         existingUser.verificationOTPExpires = new Date(
           Date.now() + 10 * 60 * 1000,
-        ); 
+        );
         await existingUser.save();
 
         await sendVerificationEmail(email, fullName, otp);
@@ -57,22 +52,18 @@ export const register = async (req, res) => {
         .json({ message: "An account with this email already exists" });
     }
 
-    
     const otp = generateOTP();
 
-    
     const user = await User.create({
       fullName,
       email,
       password,
       verificationOTP: otp,
-      verificationOTPExpires: new Date(Date.now() + 10 * 60 * 1000), 
+      verificationOTPExpires: new Date(Date.now() + 10 * 60 * 1000),
     });
 
-    
     await sendVerificationEmail(email, fullName, otp);
 
-    
     res.status(201).json({
       message:
         "Registration successful! A verification code has been sent to your email.",
@@ -83,9 +74,6 @@ export const register = async (req, res) => {
     res.status(500).json({ message: "Server error, please try again" });
   }
 };
-
-
-
 
 export const verifyEmail = async (req, res) => {
   try {
@@ -111,29 +99,26 @@ export const verifyEmail = async (req, res) => {
         .json({ message: "This account is already verified" });
     }
 
-    
     if (user.verificationOTP !== otp) {
       return res
         .status(400)
         .json({ message: "Invalid verification code. Please try again." });
     }
 
-    
     if (user.verificationOTPExpires < new Date()) {
       return res.status(400).json({
-        message:
-          "Verification code has expired. Please request a new one.",
+        message: "Verification code has expired. Please request a new one.",
         expired: true,
       });
     }
 
-    
     user.isVerified = true;
     user.verificationOTP = undefined;
     user.verificationOTPExpires = undefined;
+    const refreshToken = generateRefreshToken(user._id);
+    user.refreshToken = refreshToken;
     await user.save();
 
-    
     res.status(200).json({
       message: "Email verified successfully!",
       _id: user._id,
@@ -142,15 +127,13 @@ export const verifyEmail = async (req, res) => {
       role: user.role,
       avatar: user.avatar,
       token: generateToken(user._id),
+      refreshToken: refreshToken,
     });
   } catch (error) {
     console.error("VerifyEmail error:", error.message);
     res.status(500).json({ message: "Server error, please try again" });
   }
 };
-
-
-
 
 export const resendOTP = async (req, res) => {
   try {
@@ -172,13 +155,11 @@ export const resendOTP = async (req, res) => {
         .json({ message: "This account is already verified" });
     }
 
-    
     const otp = generateOTP();
     user.verificationOTP = otp;
     user.verificationOTPExpires = new Date(Date.now() + 10 * 60 * 1000);
     await user.save();
 
-    
     await sendVerificationEmail(email, user.fullName, otp);
 
     res.status(200).json({
@@ -190,36 +171,33 @@ export const resendOTP = async (req, res) => {
   }
 };
 
-
-
-
 export const login = async (req, res) => {
   try {
     const { email, password } = req.body;
 
-    
     if (!email || !password) {
       return res.status(400).json({ message: "Please fill in all fields" });
     }
 
-    
     const user = await User.findOne({ email }).select("+password");
     if (!user) {
       return res.status(401).json({ message: "Invalid email or password" });
     }
 
-    
     if (!user.password) {
-      return res.status(401).json({ message: "Tài khoản này được đăng ký bằng Google. Vui lòng đăng nhập bằng Google." });
+      return res
+        .status(401)
+        .json({
+          message:
+            "Tài khoản này được đăng ký bằng Google. Vui lòng đăng nhập bằng Google.",
+        });
     }
 
-    
     const isMatch = await user.matchPassword(password);
     if (!isMatch) {
       return res.status(401).json({ message: "Invalid email or password" });
     }
 
-    
     if (!user.isVerified) {
       return res.status(403).json({
         message:
@@ -229,7 +207,10 @@ export const login = async (req, res) => {
       });
     }
 
-    
+    const refreshToken = generateRefreshToken(user._id);
+    user.refreshToken = refreshToken;
+    await user.save();
+
     res.status(200).json({
       _id: user._id,
       fullName: user.fullName,
@@ -237,6 +218,7 @@ export const login = async (req, res) => {
       role: user.role,
       avatar: user.avatar,
       token: generateToken(user._id),
+      refreshToken: refreshToken,
     });
   } catch (error) {
     console.error("Login error:", error.message);
@@ -244,15 +226,14 @@ export const login = async (req, res) => {
   }
 };
 
-
-
-
 export const googleLogin = async (req, res) => {
   try {
     const { email, name, picture, sub: googleId } = req.body;
 
     if (!email || !googleId) {
-      return res.status(400).json({ message: "Google account info is missing" });
+      return res
+        .status(400)
+        .json({ message: "Google account info is missing" });
     }
 
     let user = await User.findOne({ email });
@@ -261,9 +242,8 @@ export const googleLogin = async (req, res) => {
       if (user.authProvider !== "google" || !user.googleId) {
         user.googleId = googleId;
         user.authProvider = "google";
-        user.isVerified = true; 
+        user.isVerified = true;
         if (!user.avatar) user.avatar = picture;
-        await user.save();
       }
     } else {
       user = await User.create({
@@ -272,9 +252,13 @@ export const googleLogin = async (req, res) => {
         googleId,
         authProvider: "google",
         avatar: picture,
-        isVerified: true, 
+        isVerified: true,
       });
     }
+
+    const refreshToken = generateRefreshToken(user._id);
+    user.refreshToken = refreshToken;
+    await user.save();
 
     res.status(200).json({
       _id: user._id,
@@ -283,15 +267,15 @@ export const googleLogin = async (req, res) => {
       role: user.role,
       avatar: user.avatar,
       token: generateToken(user._id),
+      refreshToken: refreshToken,
     });
   } catch (error) {
     console.error("Google verify error:", error.message);
-    res.status(500).json({ message: "Xác thực Google thất bại. Vui lòng thử lại" });
+    res
+      .status(500)
+      .json({ message: "Xác thực Google thất bại. Vui lòng thử lại" });
   }
 };
-
-
-
 
 export const forgotPassword = async (req, res) => {
   try {
@@ -304,28 +288,23 @@ export const forgotPassword = async (req, res) => {
     const user = await User.findOne({ email });
 
     if (!user) {
-      
       return res.status(200).json({
         message:
           "If an account with that email exists, a password reset link has been sent.",
       });
     }
 
-    
     const resetToken = crypto.randomBytes(32).toString("hex");
 
-    
     user.resetPasswordToken = crypto
       .createHash("sha256")
       .update(resetToken)
       .digest("hex");
-    user.resetPasswordExpires = new Date(Date.now() + 15 * 60 * 1000); 
+    user.resetPasswordExpires = new Date(Date.now() + 15 * 60 * 1000);
     await user.save();
 
-    
     const resetLink = `${process.env.FRONTEND_URL}/reset-password/${resetToken}`;
 
-    
     await sendResetPasswordEmail(email, user.fullName, resetLink);
 
     res.status(200).json({
@@ -337,9 +316,6 @@ export const forgotPassword = async (req, res) => {
     res.status(500).json({ message: "Server error, please try again" });
   }
 };
-
-
-
 
 export const resetPassword = async (req, res) => {
   try {
@@ -356,11 +332,7 @@ export const resetPassword = async (req, res) => {
         .json({ message: "Password must be at least 6 characters" });
     }
 
-    
-    const hashedToken = crypto
-      .createHash("sha256")
-      .update(token)
-      .digest("hex");
+    const hashedToken = crypto.createHash("sha256").update(token).digest("hex");
 
     const user = await User.findOne({
       resetPasswordToken: hashedToken,
@@ -374,11 +346,10 @@ export const resetPassword = async (req, res) => {
       });
     }
 
-    
     user.password = password;
     user.resetPasswordToken = undefined;
     user.resetPasswordExpires = undefined;
-    
+
     user.isVerified = true;
     await user.save();
 
@@ -391,9 +362,6 @@ export const resetPassword = async (req, res) => {
     res.status(500).json({ message: "Server error, please try again" });
   }
 };
-
-
-
 
 export const getMe = async (req, res) => {
   try {
@@ -410,6 +378,68 @@ export const getMe = async (req, res) => {
     });
   } catch (error) {
     console.error("GetMe error:", error.message);
+    res.status(500).json({ message: "Server error, please try again" });
+  }
+};
+
+export const logout = async (req, res) => {
+  try {
+    const { refreshToken } = req.body;
+
+    if (!refreshToken) {
+      return res.status(400).json({ message: "Refresh token is required" });
+    }
+
+    const user = await User.findOne({ refreshToken }).select("+refreshToken");
+
+    if (!user) {
+      return res.status(404).json({ message: "Invalid refresh token" });
+    }
+
+    user.refreshToken = undefined;
+    await user.save();
+
+    res.status(200).json({
+      message: "Logout successful",
+    });
+  } catch (error) {
+    console.error("Logout error:", error.message);
+    res.status(500).json({ message: "Server error, please try again" });
+  }
+};
+
+export const refreshAccessToken = async (req, res) => {
+  try {
+    const { refreshToken } = req.body;
+
+    if (!refreshToken) {
+      return res.status(400).json({ message: "Refresh token is required" });
+    }
+
+    let decoded;
+    try {
+      decoded = jwt.verify(refreshToken, process.env.JWT_REFRESH_SECRET);
+    } catch (error) {
+      return res
+        .status(401)
+        .json({ message: "Invalid or expired refresh token" });
+    }
+
+    const user = await User.findById(decoded.id).select("+refreshToken");
+
+    if (!user || user.refreshToken !== refreshToken) {
+      return res
+        .status(401)
+        .json({ message: "Invalid or expired refresh token" });
+    }
+
+    const newAccessToken = generateToken(user._id);
+
+    res.status(200).json({
+      token: newAccessToken,
+    });
+  } catch (error) {
+    console.error("RefreshToken error:", error.message);
     res.status(500).json({ message: "Server error, please try again" });
   }
 };
