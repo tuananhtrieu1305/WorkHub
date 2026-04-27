@@ -25,18 +25,6 @@ services:
       - /app/node_modules
     command: sh -c "npm install && npm run dev"
 
-  # Python Service
-  backend-python:
-    build: ./backend-python
-    container_name: workhub_python
-    ports:
-      - "8000:8000"
-    volumes:
-      - ./backend-python:/app
-    env_file:
-      - .env
-    command: sh -c "pip install -r requirements.txt && uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
-
   # Frontend React
   frontend:
     build: ./frontend
