@@ -1,0 +1,2965 @@
+{
+  "info": {
+    "_postman_id": "c1e34bef-6945-4cc4-b8ad-4f16063480ca",
+    "name": "WorkHub Copy",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "_exporter_id": "29818632"
+  },
+  "item": [
+    {
+      "name": "Auth",
+      "item": [
+        {
+          "name": "Login",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "{\r\n    \"email\": \"tuananhtrieu2k5@gmail.com\",\r\n    \"password\": \"123456\"\r\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "http://localhost:5000/api/auth/login",
+              "protocol": "http",
+              "host": [
+                "localhost"
+              ],
+              "port": "5000",
+              "path": [
+                "api",
+                "auth",
+                "login"
+              ],
+              "query": [
+                {
+                  "key": "email",
+                  "value": "tuananhtrieu2k5@gmail.com",
+                  "type": "text",
+                  "disabled": true
+                },
+                {
+                  "key": "password",
+                  "value": "123456",
+                  "type": "text",
+                  "disabled": true
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Refresh_Access_Token",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "{\r\n    \"refreshToken\": \"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjY5Yjg5ODViZDBiOTVmZTUyMDBiZTVlMCIsImlhdCI6MTc3MzcwNTk0OSwiZXhwIjoxNzc2Mjk3OTQ5fQ.IXnXY0zoY12rNJQ9MwTBs_ie7u851BcVVivmI2TyR2A\"\r\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "http://localhost:5000/api/auth/refresh-token",
+              "protocol": "http",
+              "host": [
+                "localhost"
+              ],
+              "port": "5000",
+              "path": [
+                "api",
+                "auth",
+                "refresh-token"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Logout",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "{\r\n    \"refreshToken\": \"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjY5Yjg5ODViZDBiOTVmZTUyMDBiZTVlMCIsImlhdCI6MTc3MzcwNTk0OSwiZXhwIjoxNzc2Mjk3OTQ5fQ.IXnXY0zoY12rNJQ9MwTBs_ie7u851BcVVivmI2TyR2A\"\r\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "http://localhost:5000/api/auth/logout",
+              "protocol": "http",
+              "host": [
+                "localhost"
+              ],
+              "port": "5000",
+              "path": [
+                "api",
+                "auth",
+                "logout"
+              ]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Users",
+      "item": [
+        {
+          "name": "Get_Me",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjY5Yjg5ODViZDBiOTVmZTUyMDBiZTVlMCIsImlhdCI6MTc3NzI1MTIzNywiZXhwIjoxNzc5ODQzMjM3fQ.YwloNqRnhtZ066v8OCLS7XNrOUjKYdF364wxVlQeVP0",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjY5Yjg5ODViZDBiOTVmZTUyMDBiZTVlMCIsImlhdCI6MTc3MzcwNzY0MywiZXhwIjoxNzc2Mjk5NjQzfQ.Tm-4DlxB3o9UgC_wa7nDyvOXxu7FlvmTMTH1fFHs0xY",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "http://localhost:5000/api/users/me",
+              "protocol": "http",
+              "host": [
+                "localhost"
+              ],
+              "port": "5000",
+              "path": [
+                "api",
+                "users",
+                "me"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Update_Profile",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjY5Yjg5ODViZDBiOTVmZTUyMDBiZTVlMCIsImlhdCI6MTc3NzI1MTIzNywiZXhwIjoxNzc5ODQzMjM3fQ.YwloNqRnhtZ066v8OCLS7XNrOUjKYdF364wxVlQeVP0",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjY5Yjg5ODViZDBiOTVmZTUyMDBiZTVlMCIsImlhdCI6MTc3MzcwNzY0MywiZXhwIjoxNzc2Mjk5NjQzfQ.Tm-4DlxB3o9UgC_wa7nDyvOXxu7FlvmTMTH1fFHs0xY",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\r\n    \"fullName\": \"test update\",\r\n    \"phone\": \"121324254\",\r\n    \"position\": \"Head Chief\"\r\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "http://localhost:5000/api/users/me",
+              "protocol": "http",
+              "host": [
+                "localhost"
+              ],
+              "port": "5000",
+              "path": [
+                "api",
+                "users",
+                "me"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Update_Avatar",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjY5Yjg5ODViZDBiOTVmZTUyMDBiZTVlMCIsImlhdCI6MTc3NzI1MTIzNywiZXhwIjoxNzc5ODQzMjM3fQ.YwloNqRnhtZ066v8OCLS7XNrOUjKYdF364wxVlQeVP0",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjY5Yjg5ODViZDBiOTVmZTUyMDBiZTVlMCIsImlhdCI6MTc3MzcwNzY0MywiZXhwIjoxNzc2Mjk5NjQzfQ.Tm-4DlxB3o9UgC_wa7nDyvOXxu7FlvmTMTH1fFHs0xY",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "avatar",
+                  "type": "file",
+                  "uuid": "3c84f83c-a87d-4213-ad43-17f214b84699",
+                  "src": "/C:/Users/anhca/Pictures/Screenshots/1191481.jpg"
+                }
+              ]
+            },
+            "url": {
+              "raw": "http://localhost:5000/api/users/me/avatar",
+              "protocol": "http",
+              "host": [
+                "localhost"
+              ],
+              "port": "5000",
+              "path": [
+                "api",
+                "users",
+                "me",
+                "avatar"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Admin_Get_User",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjY5Yjg5ODViZDBiOTVmZTUyMDBiZTVlMCIsImlhdCI6MTc3NzI1MTIzNywiZXhwIjoxNzc5ODQzMjM3fQ.YwloNqRnhtZ066v8OCLS7XNrOUjKYdF364wxVlQeVP0",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjY5Yjg5ODViZDBiOTVmZTUyMDBiZTVlMCIsImlhdCI6MTc3MzcwNzY0MywiZXhwIjoxNzc2Mjk5NjQzfQ.Tm-4DlxB3o9UgC_wa7nDyvOXxu7FlvmTMTH1fFHs0xY",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "http://localhost:5000/api/users/",
+              "protocol": "http",
+              "host": [
+                "localhost"
+              ],
+              "port": "5000",
+              "path": [
+                "api",
+                "users",
+                ""
+              ],
+              "query": [
+                {
+                  "key": "phone",
+                  "value": "121",
+                  "type": "text",
+                  "disabled": true
+                },
+                {
+                  "key": "fullName",
+                  "value": "Nguyen",
+                  "disabled": true
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Admin_Create_User",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjY5Yjg5ODViZDBiOTVmZTUyMDBiZTVlMCIsImlhdCI6MTc3NzI1MTIzNywiZXhwIjoxNzc5ODQzMjM3fQ.YwloNqRnhtZ066v8OCLS7XNrOUjKYdF364wxVlQeVP0",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjY5Yjg5ODViZDBiOTVmZTUyMDBiZTVlMCIsImlhdCI6MTc3MzcwNzY0MywiZXhwIjoxNzc2Mjk5NjQzfQ.Tm-4DlxB3o9UgC_wa7nDyvOXxu7FlvmTMTH1fFHs0xY",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\r\n    \"email\": \"usertest@gmail.com\",\r\n    \"password\": \"123456\",\r\n    \"fullName\": \"user test\",\r\n    \"phone\": \"58588585\",\r\n    \"position\": \"CEO\",\r\n    \"role\": \"user\",\r\n    \"departmentId\": null\r\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "http://localhost:5000/api/users/",
+              "protocol": "http",
+              "host": [
+                "localhost"
+              ],
+              "port": "5000",
+              "path": [
+                "api",
+                "users",
+                ""
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Admin_Delete_User",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjY5Yjg5ODViZDBiOTVmZTUyMDBiZTVlMCIsImlhdCI6MTc3NDkxNTE4OCwiZXhwIjoxNzc3NTA3MTg4fQ.8xUzBjoz4o_A89MCi-ng3uYgDJ1iWrPfglViniof3D4",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjY5Yjg5ODViZDBiOTVmZTUyMDBiZTVlMCIsImlhdCI6MTc3MzcwNzY0MywiZXhwIjoxNzc2Mjk5NjQzfQ.Tm-4DlxB3o9UgC_wa7nDyvOXxu7FlvmTMTH1fFHs0xY",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "http://localhost:5000/api/users/:id",
+              "protocol": "http",
+              "host": [
+                "localhost"
+              ],
+              "port": "5000",
+              "path": [
+                "api",
+                "users",
+                ":id"
+              ],
+              "query": [
+                {
+                  "key": "phone",
+                  "value": "121",
+                  "type": "text",
+                  "disabled": true
+                },
+                {
+                  "key": "fullName",
+                  "value": "Nguyen",
+                  "disabled": true
+                }
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "69eeb4507a15dcbf094edaae"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Admin_Update_User",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjY5Yjg5ODViZDBiOTVmZTUyMDBiZTVlMCIsImlhdCI6MTc3NDkxNTE4OCwiZXhwIjoxNzc3NTA3MTg4fQ.8xUzBjoz4o_A89MCi-ng3uYgDJ1iWrPfglViniof3D4",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "PUT",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "{\r\n    \"fullName\": \"super update test\"\r\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "http://localhost:5000/api/users/:id",
+              "protocol": "http",
+              "host": [
+                "localhost"
+              ],
+              "port": "5000",
+              "path": [
+                "api",
+                "users",
+                ":id"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "69b8985bd0b95fe5200be5e0"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get_User_By_Id",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjY5Yjg5ODViZDBiOTVmZTUyMDBiZTVlMCIsImlhdCI6MTc3NDkxNTE4OCwiZXhwIjoxNzc3NTA3MTg4fQ.8xUzBjoz4o_A89MCi-ng3uYgDJ1iWrPfglViniof3D4",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "http://localhost:5000/api/users/:id",
+              "protocol": "http",
+              "host": [
+                "localhost"
+              ],
+              "port": "5000",
+              "path": [
+                "api",
+                "users",
+                ":id"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "69aff8d6159e4a6585ab1671"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get_Preferences",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjY5Yjg5ODViZDBiOTVmZTUyMDBiZTVlMCIsImlhdCI6MTc3NDkxNTE4OCwiZXhwIjoxNzc3NTA3MTg4fQ.8xUzBjoz4o_A89MCi-ng3uYgDJ1iWrPfglViniof3D4",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjY5Yjg5ODViZDBiOTVmZTUyMDBiZTVlMCIsImlhdCI6MTc3MzcwNzY0MywiZXhwIjoxNzc2Mjk5NjQzfQ.Tm-4DlxB3o9UgC_wa7nDyvOXxu7FlvmTMTH1fFHs0xY",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "http://localhost:5000/api/users/me/preferences",
+              "protocol": "http",
+              "host": [
+                "localhost"
+              ],
+              "port": "5000",
+              "path": [
+                "api",
+                "users",
+                "me",
+                "preferences"
+              ],
+              "query": [
+                {
+                  "key": "phone",
+                  "value": "121",
+                  "type": "text",
+                  "disabled": true
+                },
+                {
+                  "key": "fullName",
+                  "value": "Nguyen",
+                  "disabled": true
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Update_Preferences",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjY5Yjg5ODViZDBiOTVmZTUyMDBiZTVlMCIsImlhdCI6MTc3NDkxNTE4OCwiZXhwIjoxNzc3NTA3MTg4fQ.8xUzBjoz4o_A89MCi-ng3uYgDJ1iWrPfglViniof3D4",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "PUT",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "{\r\n    \"notification\": {\r\n        \"email\": {\r\n            \"callMissed\": true\r\n        }\r\n    },\r\n    \"theme\": \"dark\",\r\n    \"language\": \"en\"\r\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "http://localhost:5000/api/users/me/preferences",
+              "protocol": "http",
+              "host": [
+                "localhost"
+              ],
+              "port": "5000",
+              "path": [
+                "api",
+                "users",
+                "me",
+                "preferences"
+              ]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Departments",
+      "item": [
+        {
+          "name": "Get_Departments",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjY5Yjg5ODViZDBiOTVmZTUyMDBiZTVlMCIsImlhdCI6MTc3NzI1MTIzNywiZXhwIjoxNzc5ODQzMjM3fQ.YwloNqRnhtZ066v8OCLS7XNrOUjKYdF364wxVlQeVP0",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjY5Yjg5ODViZDBiOTVmZTUyMDBiZTVlMCIsImlhdCI6MTc3MzcwNzY0MywiZXhwIjoxNzc2Mjk5NjQzfQ.Tm-4DlxB3o9UgC_wa7nDyvOXxu7FlvmTMTH1fFHs0xY",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "http://localhost:5000/api/departments",
+              "protocol": "http",
+              "host": [
+                "localhost"
+              ],
+              "port": "5000",
+              "path": [
+                "api",
+                "departments"
+              ],
+              "query": [
+                {
+                  "key": "keyword",
+                  "value": "engineering",
+                  "type": "text",
+                  "disabled": true
+                },
+                {
+                  "key": "page",
+                  "value": "1",
+                  "type": "text",
+                  "disabled": true
+                },
+                {
+                  "key": "size",
+                  "value": "10",
+                  "type": "text",
+                  "disabled": true
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Admin_Create_Department",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjY5Yjg5ODViZDBiOTVmZTUyMDBiZTVlMCIsImlhdCI6MTc3NzI1MTIzNywiZXhwIjoxNzc5ODQzMjM3fQ.YwloNqRnhtZ066v8OCLS7XNrOUjKYdF364wxVlQeVP0",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjY5Yjg5ODViZDBiOTVmZTUyMDBiZTVlMCIsImlhdCI6MTc3MzcwNzY0MywiZXhwIjoxNzc2Mjk5NjQzfQ.Tm-4DlxB3o9UgC_wa7nDyvOXxu7FlvmTMTH1fFHs0xY",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\r\n    \"name\": \"Engineering\",\r\n    \"description\": \"Core product engineering team\",\r\n    \"parentId\": null,\r\n    \"managerId\": \"69b8985bd0b95fe5200be5e0\"\r\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "http://localhost:5000/api/departments",
+              "protocol": "http",
+              "host": [
+                "localhost"
+              ],
+              "port": "5000",
+              "path": [
+                "api",
+                "departments"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get_Department_By_Id",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjY5Yjg5ODViZDBiOTVmZTUyMDBiZTVlMCIsImlhdCI6MTc3NzI1MTIzNywiZXhwIjoxNzc5ODQzMjM3fQ.YwloNqRnhtZ066v8OCLS7XNrOUjKYdF364wxVlQeVP0",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjY5Yjg5ODViZDBiOTVmZTUyMDBiZTVlMCIsImlhdCI6MTc3MzcwNzY0MywiZXhwIjoxNzc2Mjk5NjQzfQ.Tm-4DlxB3o9UgC_wa7nDyvOXxu7FlvmTMTH1fFHs0xY",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "http://localhost:5000/api/departments/:id",
+              "protocol": "http",
+              "host": [
+                "localhost"
+              ],
+              "port": "5000",
+              "path": [
+                "api",
+                "departments",
+                ":id"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "69eeb63df46f4dfc3ff0c030"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Admin_Update_Department",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjY5Yjg5ODViZDBiOTVmZTUyMDBiZTVlMCIsImlhdCI6MTc3MzcwNzY0MywiZXhwIjoxNzc2Mjk5NjQzfQ.Tm-4DlxB3o9UgC_wa7nDyvOXxu7FlvmTMTH1fFHs0xY",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\r\n    \"name\": \"Engineering Operations\",\r\n    \"description\": \"Updated department description\",\r\n    \"parentId\": \"69cb100930e2889041b5146e\",\r\n    \"managerId\": \"69aff8d6159e4a6585ab1671\"\r\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "http://localhost:5000/api/departments/:id",
+              "protocol": "http",
+              "host": [
+                "localhost"
+              ],
+              "port": "5000",
+              "path": [
+                "api",
+                "departments",
+                ":id"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "69cb0ffd30e2889041b5146d"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Admin_Delete_Department",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjY5Yjg5ODViZDBiOTVmZTUyMDBiZTVlMCIsImlhdCI6MTc3NzI1MTIzNywiZXhwIjoxNzc5ODQzMjM3fQ.YwloNqRnhtZ066v8OCLS7XNrOUjKYdF364wxVlQeVP0",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjY5Yjg5ODViZDBiOTVmZTUyMDBiZTVlMCIsImlhdCI6MTc3MzcwNzY0MywiZXhwIjoxNzc2Mjk5NjQzfQ.Tm-4DlxB3o9UgC_wa7nDyvOXxu7FlvmTMTH1fFHs0xY",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "http://localhost:5000/api/departments/:id",
+              "protocol": "http",
+              "host": [
+                "localhost"
+              ],
+              "port": "5000",
+              "path": [
+                "api",
+                "departments",
+                ":id"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "69eeb7376a4c31c56b8d01df"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get_Department_Members",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjY5Yjg5ODViZDBiOTVmZTUyMDBiZTVlMCIsImlhdCI6MTc3NzI1MTIzNywiZXhwIjoxNzc5ODQzMjM3fQ.YwloNqRnhtZ066v8OCLS7XNrOUjKYdF364wxVlQeVP0",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjY5Yjg5ODViZDBiOTVmZTUyMDBiZTVlMCIsImlhdCI6MTc3MzcwNzY0MywiZXhwIjoxNzc2Mjk5NjQzfQ.Tm-4DlxB3o9UgC_wa7nDyvOXxu7FlvmTMTH1fFHs0xY",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "http://localhost:5000/api/departments/:id/members",
+              "protocol": "http",
+              "host": [
+                "localhost"
+              ],
+              "port": "5000",
+              "path": [
+                "api",
+                "departments",
+                ":id",
+                "members"
+              ],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1",
+                  "type": "text",
+                  "disabled": true
+                },
+                {
+                  "key": "size",
+                  "value": "10",
+                  "type": "text",
+                  "disabled": true
+                }
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "69eeb63df46f4dfc3ff0c032"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Admin_Add_Department_Member",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjY5Yjg5ODViZDBiOTVmZTUyMDBiZTVlMCIsImlhdCI6MTc3NzI1MTIzNywiZXhwIjoxNzc5ODQzMjM3fQ.YwloNqRnhtZ066v8OCLS7XNrOUjKYdF364wxVlQeVP0",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjY5Yjg5ODViZDBiOTVmZTUyMDBiZTVlMCIsImlhdCI6MTc3MzcwNzY0MywiZXhwIjoxNzc2Mjk5NjQzfQ.Tm-4DlxB3o9UgC_wa7nDyvOXxu7FlvmTMTH1fFHs0xY",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\r\n    \"userId\": \"69aff8d6159e4a6585ab1671\"\r\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "http://localhost:5000/api/departments/:id/members",
+              "protocol": "http",
+              "host": [
+                "localhost"
+              ],
+              "port": "5000",
+              "path": [
+                "api",
+                "departments",
+                ":id",
+                "members"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "69eeb63df46f4dfc3ff0c032"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Admin_Remove_Department_Member",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjY5Yjg5ODViZDBiOTVmZTUyMDBiZTVlMCIsImlhdCI6MTc3NzI1MTIzNywiZXhwIjoxNzc5ODQzMjM3fQ.YwloNqRnhtZ066v8OCLS7XNrOUjKYdF364wxVlQeVP0",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjY5Yjg5ODViZDBiOTVmZTUyMDBiZTVlMCIsImlhdCI6MTc3MzcwNzY0MywiZXhwIjoxNzc2Mjk5NjQzfQ.Tm-4DlxB3o9UgC_wa7nDyvOXxu7FlvmTMTH1fFHs0xY",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "http://localhost:5000/api/departments/:id/members/:userId",
+              "protocol": "http",
+              "host": [
+                "localhost"
+              ],
+              "port": "5000",
+              "path": [
+                "api",
+                "departments",
+                ":id",
+                "members",
+                ":userId"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "69eeb63df46f4dfc3ff0c032"
+                },
+                {
+                  "key": "userId",
+                  "value": "69aff8d6159e4a6585ab1671"
+                }
+              ]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Projects",
+      "item": [
+        {
+          "name": "Get_Projects",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjY5Yjg5ODViZDBiOTVmZTUyMDBiZTVlMCIsImlhdCI6MTc3NzI1MTIzNywiZXhwIjoxNzc5ODQzMjM3fQ.YwloNqRnhtZ066v8OCLS7XNrOUjKYdF364wxVlQeVP0",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjY5Yjg5ODViZDBiOTVmZTUyMDBiZTVlMCIsImlhdCI6MTc3MzcwNzY0MywiZXhwIjoxNzc2Mjk5NjQzfQ.Tm-4DlxB3o9UgC_wa7nDyvOXxu7FlvmTMTH1fFHs0xY",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "http://localhost:5000/api/projects",
+              "protocol": "http",
+              "host": [
+                "localhost"
+              ],
+              "port": "5000",
+              "path": [
+                "api",
+                "projects"
+              ],
+              "query": [
+                {
+                  "key": "keyword",
+                  "value": "workhub",
+                  "type": "text",
+                  "disabled": true
+                },
+                {
+                  "key": "status",
+                  "value": "active",
+                  "type": "text",
+                  "disabled": true
+                },
+                {
+                  "key": "departmentId",
+                  "value": "69cb0ffd30e2889041b5146d",
+                  "type": "text",
+                  "disabled": true
+                },
+                {
+                  "key": "page",
+                  "value": "1",
+                  "type": "text",
+                  "disabled": true
+                },
+                {
+                  "key": "size",
+                  "value": "10",
+                  "type": "text",
+                  "disabled": true
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Create_Project",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjY5Yjg5ODViZDBiOTVmZTUyMDBiZTVlMCIsImlhdCI6MTc3NzI1MTIzNywiZXhwIjoxNzc5ODQzMjM3fQ.YwloNqRnhtZ066v8OCLS7XNrOUjKYdF364wxVlQeVP0",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjY5Yjg5ODViZDBiOTVmZTUyMDBiZTVlMCIsImlhdCI6MTc3MzcwNzY0MywiZXhwIjoxNzc2Mjk5NjQzfQ.Tm-4DlxB3o9UgC_wa7nDyvOXxu7FlvmTMTH1fFHs0xY",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\r\n    \"name\": \"WorkHub Mobile\",\r\n    \"description\": \"Cross-functional mobile app rollout\",\r\n    \"departmentIds\": [\r\n        \"69cb0ffd30e2889041b5146d\"\r\n    ],\r\n    \"startDate\": \"2026-04-27T00:00:00.000Z\",\r\n    \"endDate\": \"2026-06-30T00:00:00.000Z\",\r\n    \"status\": \"active\"\r\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "http://localhost:5000/api/projects",
+              "protocol": "http",
+              "host": [
+                "localhost"
+              ],
+              "port": "5000",
+              "path": [
+                "api",
+                "projects"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get_Project_By_Id",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjY5Yjg5ODViZDBiOTVmZTUyMDBiZTVlMCIsImlhdCI6MTc3NzI1MTIzNywiZXhwIjoxNzc5ODQzMjM3fQ.YwloNqRnhtZ066v8OCLS7XNrOUjKYdF364wxVlQeVP0",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjY5Yjg5ODViZDBiOTVmZTUyMDBiZTVlMCIsImlhdCI6MTc3MzcwNzY0MywiZXhwIjoxNzc2Mjk5NjQzfQ.Tm-4DlxB3o9UgC_wa7nDyvOXxu7FlvmTMTH1fFHs0xY",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "http://localhost:5000/api/projects/:id",
+              "protocol": "http",
+              "host": [
+                "localhost"
+              ],
+              "port": "5000",
+              "path": [
+                "api",
+                "projects",
+                ":id"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "69eeb8c86a4c31c56b8d0247"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Update_Project",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjY5Yjg5ODViZDBiOTVmZTUyMDBiZTVlMCIsImlhdCI6MTc3NzI1MTIzNywiZXhwIjoxNzc5ODQzMjM3fQ.YwloNqRnhtZ066v8OCLS7XNrOUjKYdF364wxVlQeVP0",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjY5Yjg5ODViZDBiOTVmZTUyMDBiZTVlMCIsImlhdCI6MTc3MzcwNzY0MywiZXhwIjoxNzc2Mjk5NjQzfQ.Tm-4DlxB3o9UgC_wa7nDyvOXxu7FlvmTMTH1fFHs0xY",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\r\n    \"name\": \"WorkHub Mobile Phase 2\",\r\n    \"description\": \"Expanded scope for phase 2\",\r\n    \"departmentIds\": [\r\n        \"69cb0ffd30e2889041b5146d\"\r\n    ],\r\n    \"startDate\": \"2026-04-27T00:00:00.000Z\",\r\n    \"endDate\": \"2026-07-15T00:00:00.000Z\",\r\n    \"status\": \"completed\"\r\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "http://localhost:5000/api/projects/:id",
+              "protocol": "http",
+              "host": [
+                "localhost"
+              ],
+              "port": "5000",
+              "path": [
+                "api",
+                "projects",
+                ":id"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "69eeb8c86a4c31c56b8d0247"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Admin_Delete_Project",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjY5Yjg5ODViZDBiOTVmZTUyMDBiZTVlMCIsImlhdCI6MTc3NzI1MTIzNywiZXhwIjoxNzc5ODQzMjM3fQ.YwloNqRnhtZ066v8OCLS7XNrOUjKYdF364wxVlQeVP0",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjY5Yjg5ODViZDBiOTVmZTUyMDBiZTVlMCIsImlhdCI6MTc3MzcwNzY0MywiZXhwIjoxNzc2Mjk5NjQzfQ.Tm-4DlxB3o9UgC_wa7nDyvOXxu7FlvmTMTH1fFHs0xY",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "http://localhost:5000/api/projects/:id",
+              "protocol": "http",
+              "host": [
+                "localhost"
+              ],
+              "port": "5000",
+              "path": [
+                "api",
+                "projects",
+                ":id"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "69eeb8c86a4c31c56b8d0247"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get_Project_Members",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjY5Yjg5ODViZDBiOTVmZTUyMDBiZTVlMCIsImlhdCI6MTc3NzI1MTIzNywiZXhwIjoxNzc5ODQzMjM3fQ.YwloNqRnhtZ066v8OCLS7XNrOUjKYdF364wxVlQeVP0",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjY5Yjg5ODViZDBiOTVmZTUyMDBiZTVlMCIsImlhdCI6MTc3MzcwNzY0MywiZXhwIjoxNzc2Mjk5NjQzfQ.Tm-4DlxB3o9UgC_wa7nDyvOXxu7FlvmTMTH1fFHs0xY",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "http://localhost:5000/api/projects/:id/members",
+              "protocol": "http",
+              "host": [
+                "localhost"
+              ],
+              "port": "5000",
+              "path": [
+                "api",
+                "projects",
+                ":id",
+                "members"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "69eeb63df46f4dfc3ff0c047"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Add_Project_Member",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjY5Yjg5ODViZDBiOTVmZTUyMDBiZTVlMCIsImlhdCI6MTc3NzI1MTIzNywiZXhwIjoxNzc5ODQzMjM3fQ.YwloNqRnhtZ066v8OCLS7XNrOUjKYdF364wxVlQeVP0",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjY5Yjg5ODViZDBiOTVmZTUyMDBiZTVlMCIsImlhdCI6MTc3MzcwNzY0MywiZXhwIjoxNzc2Mjk5NjQzfQ.Tm-4DlxB3o9UgC_wa7nDyvOXxu7FlvmTMTH1fFHs0xY",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\r\n    \"userId\": \"69aff8d6159e4a6585ab1671\",\r\n    \"role\": \"member\"\r\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "http://localhost:5000/api/projects/:id/members",
+              "protocol": "http",
+              "host": [
+                "localhost"
+              ],
+              "port": "5000",
+              "path": [
+                "api",
+                "projects",
+                ":id",
+                "members"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "69cb102130e2889041b51472"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Update_Project_Member_Role",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjY5Yjg5ODViZDBiOTVmZTUyMDBiZTVlMCIsImlhdCI6MTc3NzI1MTIzNywiZXhwIjoxNzc5ODQzMjM3fQ.YwloNqRnhtZ066v8OCLS7XNrOUjKYdF364wxVlQeVP0",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjY5Yjg5ODViZDBiOTVmZTUyMDBiZTVlMCIsImlhdCI6MTc3MzcwNzY0MywiZXhwIjoxNzc2Mjk5NjQzfQ.Tm-4DlxB3o9UgC_wa7nDyvOXxu7FlvmTMTH1fFHs0xY",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\r\n    \"role\": \"contributor\"\r\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "http://localhost:5000/api/projects/:id/members/:userId",
+              "protocol": "http",
+              "host": [
+                "localhost"
+              ],
+              "port": "5000",
+              "path": [
+                "api",
+                "projects",
+                ":id",
+                "members",
+                ":userId"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "69cb102130e2889041b51472"
+                },
+                {
+                  "key": "userId",
+                  "value": "69aff8d6159e4a6585ab1671"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Remove_Project_Member",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjY5Yjg5ODViZDBiOTVmZTUyMDBiZTVlMCIsImlhdCI6MTc3NzI1MTIzNywiZXhwIjoxNzc5ODQzMjM3fQ.YwloNqRnhtZ066v8OCLS7XNrOUjKYdF364wxVlQeVP0",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjY5Yjg5ODViZDBiOTVmZTUyMDBiZTVlMCIsImlhdCI6MTc3MzcwNzY0MywiZXhwIjoxNzc2Mjk5NjQzfQ.Tm-4DlxB3o9UgC_wa7nDyvOXxu7FlvmTMTH1fFHs0xY",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "http://localhost:5000/api/projects/:id/members/:userId",
+              "protocol": "http",
+              "host": [
+                "localhost"
+              ],
+              "port": "5000",
+              "path": [
+                "api",
+                "projects",
+                ":id",
+                "members",
+                ":userId"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "69cb102130e2889041b51472"
+                },
+                {
+                  "key": "userId",
+                  "value": "69aff8d6159e4a6585ab1671"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get_Project_Tasks",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjY5Yjg5ODViZDBiOTVmZTUyMDBiZTVlMCIsImlhdCI6MTc3NzI1MTIzNywiZXhwIjoxNzc5ODQzMjM3fQ.YwloNqRnhtZ066v8OCLS7XNrOUjKYdF364wxVlQeVP0",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjY5Yjg5ODViZDBiOTVmZTUyMDBiZTVlMCIsImlhdCI6MTc3MzcwNzY0MywiZXhwIjoxNzc2Mjk5NjQzfQ.Tm-4DlxB3o9UgC_wa7nDyvOXxu7FlvmTMTH1fFHs0xY",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "http://localhost:5000/api/projects/:id/tasks",
+              "protocol": "http",
+              "host": [
+                "localhost"
+              ],
+              "port": "5000",
+              "path": [
+                "api",
+                "projects",
+                ":id",
+                "tasks"
+              ],
+              "query": [
+                {
+                  "key": "status",
+                  "value": "todo",
+                  "type": "text",
+                  "disabled": true
+                },
+                {
+                  "key": "assigneeId",
+                  "value": "69aff8d6159e4a6585ab1671",
+                  "type": "text",
+                  "disabled": true
+                },
+                {
+                  "key": "page",
+                  "value": "1",
+                  "type": "text",
+                  "disabled": true
+                },
+                {
+                  "key": "size",
+                  "value": "10",
+                  "type": "text",
+                  "disabled": true
+                }
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "69cb102130e2889041b51472"
+                }
+              ]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Posts",
+      "item": [
+        {
+          "name": "Get_Posts",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjY5Yjg5ODViZDBiOTVmZTUyMDBiZTVlMCIsImlhdCI6MTc3NzI1MTIzNywiZXhwIjoxNzc5ODQzMjM3fQ.YwloNqRnhtZ066v8OCLS7XNrOUjKYdF364wxVlQeVP0",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjY5Yjg5ODViZDBiOTVmZTUyMDBiZTVlMCIsImlhdCI6MTc3MzcwNzY0MywiZXhwIjoxNzc2Mjk5NjQzfQ.Tm-4DlxB3o9UgC_wa7nDyvOXxu7FlvmTMTH1fFHs0xY",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "http://localhost:5000/api/posts",
+              "protocol": "http",
+              "host": [
+                "localhost"
+              ],
+              "port": "5000",
+              "path": [
+                "api",
+                "posts"
+              ],
+              "query": [
+                {
+                  "key": "type",
+                  "value": "announcement",
+                  "type": "text",
+                  "disabled": true
+                },
+                {
+                  "key": "page",
+                  "value": "1",
+                  "type": "text",
+                  "disabled": true
+                },
+                {
+                  "key": "size",
+                  "value": "10",
+                  "type": "text",
+                  "disabled": true
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Create_Post",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjY5Yjg5ODViZDBiOTVmZTUyMDBiZTVlMCIsImlhdCI6MTc3NzI1MTIzNywiZXhwIjoxNzc5ODQzMjM3fQ.YwloNqRnhtZ066v8OCLS7XNrOUjKYdF364wxVlQeVP0",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjY5Yjg5ODViZDBiOTVmZTUyMDBiZTVlMCIsImlhdCI6MTc3MzcwNzY0MywiZXhwIjoxNzc2Mjk5NjQzfQ.Tm-4DlxB3o9UgC_wa7nDyvOXxu7FlvmTMTH1fFHs0xY",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "type",
+                  "value": "post",
+                  "type": "text"
+                },
+                {
+                  "key": "content",
+                  "value": "Sprint update for this week",
+                  "type": "text"
+                },
+                {
+                  "key": "mentions",
+                  "value": "[\"69aff8d6159e4a6585ab1671\"]",
+                  "type": "text"
+                },
+                {
+                  "key": "tags",
+                  "value": "[\"weekly\",\"team\"]",
+                  "type": "text"
+                },
+                {
+                  "key": "targetAudience",
+                  "value": "{\"type\":\"all\",\"departmentIds\":[],\"projectIds\":[],\"userIds\":[]}",
+                  "type": "text"
+                }
+              ]
+            },
+            "url": {
+              "raw": "http://localhost:5000/api/posts",
+              "protocol": "http",
+              "host": [
+                "localhost"
+              ],
+              "port": "5000",
+              "path": [
+                "api",
+                "posts"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get_Post_By_Id",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjY5Yjg5ODViZDBiOTVmZTUyMDBiZTVlMCIsImlhdCI6MTc3NzI1MTIzNywiZXhwIjoxNzc5ODQzMjM3fQ.YwloNqRnhtZ066v8OCLS7XNrOUjKYdF364wxVlQeVP0",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjY5Yjg5ODViZDBiOTVmZTUyMDBiZTVlMCIsImlhdCI6MTc3MzcwNzY0MywiZXhwIjoxNzc2Mjk5NjQzfQ.Tm-4DlxB3o9UgC_wa7nDyvOXxu7FlvmTMTH1fFHs0xY",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "http://localhost:5000/api/posts/:id",
+              "protocol": "http",
+              "host": [
+                "localhost"
+              ],
+              "port": "5000",
+              "path": [
+                "api",
+                "posts",
+                ":id"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "69cb10a530e2889041b51478"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Update_Post",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjY5Yjg5ODViZDBiOTVmZTUyMDBiZTVlMCIsImlhdCI6MTc3NzI1MTIzNywiZXhwIjoxNzc5ODQzMjM3fQ.YwloNqRnhtZ066v8OCLS7XNrOUjKYdF364wxVlQeVP0",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjY5Yjg5ODViZDBiOTVmZTUyMDBiZTVlMCIsImlhdCI6MTc3MzcwNzY0MywiZXhwIjoxNzc2Mjk5NjQzfQ.Tm-4DlxB3o9UgC_wa7nDyvOXxu7FlvmTMTH1fFHs0xY",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\r\n    \"content\": \"Updated sprint update content\",\r\n    \"mentions\": [\r\n        \"69aff8d6159e4a6585ab1671\"\r\n    ],\r\n    \"tags\": [\r\n        \"weekly\",\r\n        \"engineering\"\r\n    ],\r\n    \"targetAudience\": {\r\n        \"type\": \"department\",\r\n        \"departmentIds\": [\r\n            \"69cb0ffd30e2889041b5146d\"\r\n        ],\r\n        \"projectIds\": [],\r\n        \"userIds\": []\r\n    }\r\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "http://localhost:5000/api/posts/:id",
+              "protocol": "http",
+              "host": [
+                "localhost"
+              ],
+              "port": "5000",
+              "path": [
+                "api",
+                "posts",
+                ":id"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "69cb10a530e2889041b51478"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Delete_Post",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjY5Yjg5ODViZDBiOTVmZTUyMDBiZTVlMCIsImlhdCI6MTc3NzI1MTIzNywiZXhwIjoxNzc5ODQzMjM3fQ.YwloNqRnhtZ066v8OCLS7XNrOUjKYdF364wxVlQeVP0",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjY5Yjg5ODViZDBiOTVmZTUyMDBiZTVlMCIsImlhdCI6MTc3MzcwNzY0MywiZXhwIjoxNzc2Mjk5NjQzfQ.Tm-4DlxB3o9UgC_wa7nDyvOXxu7FlvmTMTH1fFHs0xY",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "http://localhost:5000/api/posts/:id",
+              "protocol": "http",
+              "host": [
+                "localhost"
+              ],
+              "port": "5000",
+              "path": [
+                "api",
+                "posts",
+                ":id"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "69cb10a530e2889041b51478"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get_Post_Comments",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjY5Yjg5ODViZDBiOTVmZTUyMDBiZTVlMCIsImlhdCI6MTc3NzI1MTIzNywiZXhwIjoxNzc5ODQzMjM3fQ.YwloNqRnhtZ066v8OCLS7XNrOUjKYdF364wxVlQeVP0",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjY5Yjg5ODViZDBiOTVmZTUyMDBiZTVlMCIsImlhdCI6MTc3MzcwNzY0MywiZXhwIjoxNzc2Mjk5NjQzfQ.Tm-4DlxB3o9UgC_wa7nDyvOXxu7FlvmTMTH1fFHs0xY",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "http://localhost:5000/api/posts/:id/comments",
+              "protocol": "http",
+              "host": [
+                "localhost"
+              ],
+              "port": "5000",
+              "path": [
+                "api",
+                "posts",
+                ":id",
+                "comments"
+              ],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1",
+                  "type": "text",
+                  "disabled": true
+                },
+                {
+                  "key": "size",
+                  "value": "10",
+                  "type": "text",
+                  "disabled": true
+                }
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "69cb10a530e2889041b51478"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Add_Post_Comment",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjY5Yjg5ODViZDBiOTVmZTUyMDBiZTVlMCIsImlhdCI6MTc3NzI1MTIzNywiZXhwIjoxNzc5ODQzMjM3fQ.YwloNqRnhtZ066v8OCLS7XNrOUjKYdF364wxVlQeVP0",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjY5Yjg5ODViZDBiOTVmZTUyMDBiZTVlMCIsImlhdCI6MTc3MzcwNzY0MywiZXhwIjoxNzc2Mjk5NjQzfQ.Tm-4DlxB3o9UgC_wa7nDyvOXxu7FlvmTMTH1fFHs0xY",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\r\n    \"content\": \"This is a comment on the post\",\r\n    \"parentId\": null\r\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "http://localhost:5000/api/posts/:id/comments",
+              "protocol": "http",
+              "host": [
+                "localhost"
+              ],
+              "port": "5000",
+              "path": [
+                "api",
+                "posts",
+                ":id",
+                "comments"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "69cb10a530e2889041b51478"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get_Post_Likes",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjY5Yjg5ODViZDBiOTVmZTUyMDBiZTVlMCIsImlhdCI6MTc3NzI1MTIzNywiZXhwIjoxNzc5ODQzMjM3fQ.YwloNqRnhtZ066v8OCLS7XNrOUjKYdF364wxVlQeVP0",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjY5Yjg5ODViZDBiOTVmZTUyMDBiZTVlMCIsImlhdCI6MTc3MzcwNzY0MywiZXhwIjoxNzc2Mjk5NjQzfQ.Tm-4DlxB3o9UgC_wa7nDyvOXxu7FlvmTMTH1fFHs0xY",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "http://localhost:5000/api/posts/:id/likes",
+              "protocol": "http",
+              "host": [
+                "localhost"
+              ],
+              "port": "5000",
+              "path": [
+                "api",
+                "posts",
+                ":id",
+                "likes"
+              ],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1",
+                  "type": "text",
+                  "disabled": true
+                },
+                {
+                  "key": "size",
+                  "value": "10",
+                  "type": "text",
+                  "disabled": true
+                }
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "69eeb63df46f4dfc3ff0c06d"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Toggle_Post_Like",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjY5Yjg5ODViZDBiOTVmZTUyMDBiZTVlMCIsImlhdCI6MTc3NzI1MTIzNywiZXhwIjoxNzc5ODQzMjM3fQ.YwloNqRnhtZ066v8OCLS7XNrOUjKYdF364wxVlQeVP0",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjY5Yjg5ODViZDBiOTVmZTUyMDBiZTVlMCIsImlhdCI6MTc3MzcwNzY0MywiZXhwIjoxNzc2Mjk5NjQzfQ.Tm-4DlxB3o9UgC_wa7nDyvOXxu7FlvmTMTH1fFHs0xY",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "http://localhost:5000/api/posts/:id/likes",
+              "protocol": "http",
+              "host": [
+                "localhost"
+              ],
+              "port": "5000",
+              "path": [
+                "api",
+                "posts",
+                ":id",
+                "likes"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "69cb10a530e2889041b51478"
+                }
+              ]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Comments",
+      "item": [
+        {
+          "name": "Get_Comment_By_Id",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjY5Yjg5ODViZDBiOTVmZTUyMDBiZTVlMCIsImlhdCI6MTc3NzI1MTIzNywiZXhwIjoxNzc5ODQzMjM3fQ.YwloNqRnhtZ066v8OCLS7XNrOUjKYdF364wxVlQeVP0",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjY5Yjg5ODViZDBiOTVmZTUyMDBiZTVlMCIsImlhdCI6MTc3MzcwNzY0MywiZXhwIjoxNzc2Mjk5NjQzfQ.Tm-4DlxB3o9UgC_wa7nDyvOXxu7FlvmTMTH1fFHs0xY",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "http://localhost:5000/api/comments/:id",
+              "protocol": "http",
+              "host": [
+                "localhost"
+              ],
+              "port": "5000",
+              "path": [
+                "api",
+                "comments",
+                ":id"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "69cb111930e2889041b51480"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Update_Comment",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjY5Yjg5ODViZDBiOTVmZTUyMDBiZTVlMCIsImlhdCI6MTc3NzI1MTIzNywiZXhwIjoxNzc5ODQzMjM3fQ.YwloNqRnhtZ066v8OCLS7XNrOUjKYdF364wxVlQeVP0",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjY5Yjg5ODViZDBiOTVmZTUyMDBiZTVlMCIsImlhdCI6MTc3MzcwNzY0MywiZXhwIjoxNzc2Mjk5NjQzfQ.Tm-4DlxB3o9UgC_wa7nDyvOXxu7FlvmTMTH1fFHs0xY",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\r\n    \"content\": \"Updated comment content\"\r\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "http://localhost:5000/api/comments/:id",
+              "protocol": "http",
+              "host": [
+                "localhost"
+              ],
+              "port": "5000",
+              "path": [
+                "api",
+                "comments",
+                ":id"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "69cb111930e2889041b51480"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Delete_Comment",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjY5Yjg5ODViZDBiOTVmZTUyMDBiZTVlMCIsImlhdCI6MTc3NzI1MTIzNywiZXhwIjoxNzc5ODQzMjM3fQ.YwloNqRnhtZ066v8OCLS7XNrOUjKYdF364wxVlQeVP0",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjY5Yjg5ODViZDBiOTVmZTUyMDBiZTVlMCIsImlhdCI6MTc3MzcwNzY0MywiZXhwIjoxNzc2Mjk5NjQzfQ.Tm-4DlxB3o9UgC_wa7nDyvOXxu7FlvmTMTH1fFHs0xY",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "http://localhost:5000/api/comments/:id",
+              "protocol": "http",
+              "host": [
+                "localhost"
+              ],
+              "port": "5000",
+              "path": [
+                "api",
+                "comments",
+                ":id"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "69cb111930e2889041b51480"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get_Comment_Replies",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjY5Yjg5ODViZDBiOTVmZTUyMDBiZTVlMCIsImlhdCI6MTc3NzI1MTIzNywiZXhwIjoxNzc5ODQzMjM3fQ.YwloNqRnhtZ066v8OCLS7XNrOUjKYdF364wxVlQeVP0",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjY5Yjg5ODViZDBiOTVmZTUyMDBiZTVlMCIsImlhdCI6MTc3MzcwNzY0MywiZXhwIjoxNzc2Mjk5NjQzfQ.Tm-4DlxB3o9UgC_wa7nDyvOXxu7FlvmTMTH1fFHs0xY",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "http://localhost:5000/api/comments/:id/replies",
+              "protocol": "http",
+              "host": [
+                "localhost"
+              ],
+              "port": "5000",
+              "path": [
+                "api",
+                "comments",
+                ":id",
+                "replies"
+              ],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1",
+                  "type": "text",
+                  "disabled": true
+                },
+                {
+                  "key": "size",
+                  "value": "10",
+                  "type": "text",
+                  "disabled": true
+                }
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "69cb111930e2889041b51480"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Add_Comment_Reply",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjY5Yjg5ODViZDBiOTVmZTUyMDBiZTVlMCIsImlhdCI6MTc3NzI1MTIzNywiZXhwIjoxNzc5ODQzMjM3fQ.YwloNqRnhtZ066v8OCLS7XNrOUjKYdF364wxVlQeVP0",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjY5Yjg5ODViZDBiOTVmZTUyMDBiZTVlMCIsImlhdCI6MTc3MzcwNzY0MywiZXhwIjoxNzc2Mjk5NjQzfQ.Tm-4DlxB3o9UgC_wa7nDyvOXxu7FlvmTMTH1fFHs0xY",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\r\n    \"content\": \"This is a reply to the comment\"\r\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "http://localhost:5000/api/comments/:id/replies",
+              "protocol": "http",
+              "host": [
+                "localhost"
+              ],
+              "port": "5000",
+              "path": [
+                "api",
+                "comments",
+                ":id",
+                "replies"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "69cb10f330e2889041b5147d"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Toggle_Comment_Like",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjY5Yjg5ODViZDBiOTVmZTUyMDBiZTVlMCIsImlhdCI6MTc3NzI1MTIzNywiZXhwIjoxNzc5ODQzMjM3fQ.YwloNqRnhtZ066v8OCLS7XNrOUjKYdF364wxVlQeVP0",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjY5Yjg5ODViZDBiOTVmZTUyMDBiZTVlMCIsImlhdCI6MTc3MzcwNzY0MywiZXhwIjoxNzc2Mjk5NjQzfQ.Tm-4DlxB3o9UgC_wa7nDyvOXxu7FlvmTMTH1fFHs0xY",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "http://localhost:5000/api/comments/:id/likes",
+              "protocol": "http",
+              "host": [
+                "localhost"
+              ],
+              "port": "5000",
+              "path": [
+                "api",
+                "comments",
+                ":id",
+                "likes"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "69cb111930e2889041b51480"
+                }
+              ]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Conversations",
+      "item": [
+        {
+          "name": "Get_Conversations",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjY5Yjg5ODViZDBiOTVmZTUyMDBiZTVlMCIsImlhdCI6MTc3NzI1MTIzNywiZXhwIjoxNzc5ODQzMjM3fQ.YwloNqRnhtZ066v8OCLS7XNrOUjKYdF364wxVlQeVP0",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjY5Yjg5ODViZDBiOTVmZTUyMDBiZTVlMCIsImlhdCI6MTc3MzcwNzY0MywiZXhwIjoxNzc2Mjk5NjQzfQ.Tm-4DlxB3o9UgC_wa7nDyvOXxu7FlvmTMTH1fFHs0xY",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "http://localhost:5000/api/conversations",
+              "protocol": "http",
+              "host": [
+                "localhost"
+              ],
+              "port": "5000",
+              "path": [
+                "api",
+                "conversations"
+              ],
+              "query": [
+                {
+                  "key": "type",
+                  "value": "group",
+                  "type": "text",
+                  "disabled": true
+                },
+                {
+                  "key": "page",
+                  "value": "1",
+                  "type": "text",
+                  "disabled": true
+                },
+                {
+                  "key": "size",
+                  "value": "20",
+                  "type": "text",
+                  "disabled": true
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Create_Conversation",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjY5Yjg5ODViZDBiOTVmZTUyMDBiZTVlMCIsImlhdCI6MTc3NzI1MTIzNywiZXhwIjoxNzc5ODQzMjM3fQ.YwloNqRnhtZ066v8OCLS7XNrOUjKYdF364wxVlQeVP0",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjY5Yjg5ODViZDBiOTVmZTUyMDBiZTVlMCIsImlhdCI6MTc3MzcwNzY0MywiZXhwIjoxNzc2Mjk5NjQzfQ.Tm-4DlxB3o9UgC_wa7nDyvOXxu7FlvmTMTH1fFHs0xY",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\r\n    \"type\": \"group\",\r\n    \"name\": \"Engineering Chat\",\r\n    \"participantIds\": [\r\n        \"69aff8d6159e4a6585ab1671\"\r\n    ]\r\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "http://localhost:5000/api/conversations",
+              "protocol": "http",
+              "host": [
+                "localhost"
+              ],
+              "port": "5000",
+              "path": [
+                "api",
+                "conversations"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get_Conversation_By_Id",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjY5Yjg5ODViZDBiOTVmZTUyMDBiZTVlMCIsImlhdCI6MTc3NzI1MTIzNywiZXhwIjoxNzc5ODQzMjM3fQ.YwloNqRnhtZ066v8OCLS7XNrOUjKYdF364wxVlQeVP0",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjY5Yjg5ODViZDBiOTVmZTUyMDBiZTVlMCIsImlhdCI6MTc3MzcwNzY0MywiZXhwIjoxNzc2Mjk5NjQzfQ.Tm-4DlxB3o9UgC_wa7nDyvOXxu7FlvmTMTH1fFHs0xY",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "http://localhost:5000/api/conversations/:id",
+              "protocol": "http",
+              "host": [
+                "localhost"
+              ],
+              "port": "5000",
+              "path": [
+                "api",
+                "conversations",
+                ":id"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "69cb114830e2889041b51482"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Update_Conversation",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjY5Yjg5ODViZDBiOTVmZTUyMDBiZTVlMCIsImlhdCI6MTc3NzI1MTIzNywiZXhwIjoxNzc5ODQzMjM3fQ.YwloNqRnhtZ066v8OCLS7XNrOUjKYdF364wxVlQeVP0",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjY5Yjg5ODViZDBiOTVmZTUyMDBiZTVlMCIsImlhdCI6MTc3MzcwNzY0MywiZXhwIjoxNzc2Mjk5NjQzfQ.Tm-4DlxB3o9UgC_wa7nDyvOXxu7FlvmTMTH1fFHs0xY",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\r\n    \"name\": \"Engineering Core Chat\",\r\n    \"avatar\": \"https://example.com/conversations/engineering-core.png\"\r\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "http://localhost:5000/api/conversations/:id",
+              "protocol": "http",
+              "host": [
+                "localhost"
+              ],
+              "port": "5000",
+              "path": [
+                "api",
+                "conversations",
+                ":id"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "69cb114830e2889041b51482"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Delete_Conversation",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjY5Yjg5ODViZDBiOTVmZTUyMDBiZTVlMCIsImlhdCI6MTc3NzI1MTIzNywiZXhwIjoxNzc5ODQzMjM3fQ.YwloNqRnhtZ066v8OCLS7XNrOUjKYdF364wxVlQeVP0",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjY5Yjg5ODViZDBiOTVmZTUyMDBiZTVlMCIsImlhdCI6MTc3MzcwNzY0MywiZXhwIjoxNzc2Mjk5NjQzfQ.Tm-4DlxB3o9UgC_wa7nDyvOXxu7FlvmTMTH1fFHs0xY",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "http://localhost:5000/api/conversations/:id",
+              "protocol": "http",
+              "host": [
+                "localhost"
+              ],
+              "port": "5000",
+              "path": [
+                "api",
+                "conversations",
+                ":id"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "69cb114830e2889041b51482"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Add_Conversation_Member",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjY5Yjg5ODViZDBiOTVmZTUyMDBiZTVlMCIsImlhdCI6MTc3NzI1MTIzNywiZXhwIjoxNzc5ODQzMjM3fQ.YwloNqRnhtZ066v8OCLS7XNrOUjKYdF364wxVlQeVP0",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjY5Yjg5ODViZDBiOTVmZTUyMDBiZTVlMCIsImlhdCI6MTc3MzcwNzY0MywiZXhwIjoxNzc2Mjk5NjQzfQ.Tm-4DlxB3o9UgC_wa7nDyvOXxu7FlvmTMTH1fFHs0xY",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\r\n    \"userId\": \"69b8985bd0b95fe5200be5e0\"\r\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "http://localhost:5000/api/conversations/:id/members",
+              "protocol": "http",
+              "host": [
+                "localhost"
+              ],
+              "port": "5000",
+              "path": [
+                "api",
+                "conversations",
+                ":id",
+                "members"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "69cb114830e2889041b51482"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Remove_Conversation_Member",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjY5Yjg5ODViZDBiOTVmZTUyMDBiZTVlMCIsImlhdCI6MTc3NzI1MTIzNywiZXhwIjoxNzc5ODQzMjM3fQ.YwloNqRnhtZ066v8OCLS7XNrOUjKYdF364wxVlQeVP0",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjY5Yjg5ODViZDBiOTVmZTUyMDBiZTVlMCIsImlhdCI6MTc3MzcwNzY0MywiZXhwIjoxNzc2Mjk5NjQzfQ.Tm-4DlxB3o9UgC_wa7nDyvOXxu7FlvmTMTH1fFHs0xY",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "http://localhost:5000/api/conversations/:id/members/:userId",
+              "protocol": "http",
+              "host": [
+                "localhost"
+              ],
+              "port": "5000",
+              "path": [
+                "api",
+                "conversations",
+                ":id",
+                "members",
+                ":userId"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "69cb114830e2889041b51482"
+                },
+                {
+                  "key": "userId",
+                  "value": "69b8985bd0b95fe5200be5e0"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get_Messages",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjY5Yjg5ODViZDBiOTVmZTUyMDBiZTVlMCIsImlhdCI6MTc3NzI1MTIzNywiZXhwIjoxNzc5ODQzMjM3fQ.YwloNqRnhtZ066v8OCLS7XNrOUjKYdF364wxVlQeVP0",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjY5Yjg5ODViZDBiOTVmZTUyMDBiZTVlMCIsImlhdCI6MTc3MzcwNzY0MywiZXhwIjoxNzc2Mjk5NjQzfQ.Tm-4DlxB3o9UgC_wa7nDyvOXxu7FlvmTMTH1fFHs0xY",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "http://localhost:5000/api/conversations/:id/messages",
+              "protocol": "http",
+              "host": [
+                "localhost"
+              ],
+              "port": "5000",
+              "path": [
+                "api",
+                "conversations",
+                ":id",
+                "messages"
+              ],
+              "query": [
+                {
+                  "key": "before",
+                  "value": "2026-04-27T10:00:00.000Z",
+                  "type": "text",
+                  "disabled": true
+                },
+                {
+                  "key": "limit",
+                  "value": "30",
+                  "type": "text",
+                  "disabled": true
+                }
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "69cb114830e2889041b51482"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Send_Message",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjY5Yjg5ODViZDBiOTVmZTUyMDBiZTVlMCIsImlhdCI6MTc3NzI1MTIzNywiZXhwIjoxNzc5ODQzMjM3fQ.YwloNqRnhtZ066v8OCLS7XNrOUjKYdF364wxVlQeVP0",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjY5Yjg5ODViZDBiOTVmZTUyMDBiZTVlMCIsImlhdCI6MTc3MzcwNzY0MywiZXhwIjoxNzc2Mjk5NjQzfQ.Tm-4DlxB3o9UgC_wa7nDyvOXxu7FlvmTMTH1fFHs0xY",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\r\n    \"type\": \"text\",\r\n    \"content\": \"Hello team, here is the latest update\",\r\n    \"attachments\": [],\r\n    \"mentions\": [\r\n        \"69aff8d6159e4a6585ab1671\"\r\n    ],\r\n    \"replyTo\": null\r\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "http://localhost:5000/api/conversations/:id/messages",
+              "protocol": "http",
+              "host": [
+                "localhost"
+              ],
+              "port": "5000",
+              "path": [
+                "api",
+                "conversations",
+                ":id",
+                "messages"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "69cb114830e2889041b51482"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Update_Message",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjY5Yjg5ODViZDBiOTVmZTUyMDBiZTVlMCIsImlhdCI6MTc3NzI1MTIzNywiZXhwIjoxNzc5ODQzMjM3fQ.YwloNqRnhtZ066v8OCLS7XNrOUjKYdF364wxVlQeVP0",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjY5Yjg5ODViZDBiOTVmZTUyMDBiZTVlMCIsImlhdCI6MTc3MzcwNzY0MywiZXhwIjoxNzc2Mjk5NjQzfQ.Tm-4DlxB3o9UgC_wa7nDyvOXxu7FlvmTMTH1fFHs0xY",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\r\n    \"content\": \"Edited message content\"\r\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "http://localhost:5000/api/conversations/:id/messages/:messageId",
+              "protocol": "http",
+              "host": [
+                "localhost"
+              ],
+              "port": "5000",
+              "path": [
+                "api",
+                "conversations",
+                ":id",
+                "messages",
+                ":messageId"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "69cb114830e2889041b51482"
+                },
+                {
+                  "key": "messageId",
+                  "value": "69cb118d30e2889041b51487"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Delete_Message",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjY5Yjg5ODViZDBiOTVmZTUyMDBiZTVlMCIsImlhdCI6MTc3NzI1MTIzNywiZXhwIjoxNzc5ODQzMjM3fQ.YwloNqRnhtZ066v8OCLS7XNrOUjKYdF364wxVlQeVP0",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjY5Yjg5ODViZDBiOTVmZTUyMDBiZTVlMCIsImlhdCI6MTc3MzcwNzY0MywiZXhwIjoxNzc2Mjk5NjQzfQ.Tm-4DlxB3o9UgC_wa7nDyvOXxu7FlvmTMTH1fFHs0xY",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "http://localhost:5000/api/conversations/:id/messages/:messageId",
+              "protocol": "http",
+              "host": [
+                "localhost"
+              ],
+              "port": "5000",
+              "path": [
+                "api",
+                "conversations",
+                ":id",
+                "messages",
+                ":messageId"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "69cb114830e2889041b51482"
+                },
+                {
+                  "key": "messageId",
+                  "value": "69cb118d30e2889041b51487"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Add_Message_Reaction",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjY5Yjg5ODViZDBiOTVmZTUyMDBiZTVlMCIsImlhdCI6MTc3NzI1MTIzNywiZXhwIjoxNzc5ODQzMjM3fQ.YwloNqRnhtZ066v8OCLS7XNrOUjKYdF364wxVlQeVP0",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjY5Yjg5ODViZDBiOTVmZTUyMDBiZTVlMCIsImlhdCI6MTc3MzcwNzY0MywiZXhwIjoxNzc2Mjk5NjQzfQ.Tm-4DlxB3o9UgC_wa7nDyvOXxu7FlvmTMTH1fFHs0xY",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\r\n    \"reaction\": \"👍\"\r\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "http://localhost:5000/api/conversations/:id/messages/:messageId/reactions",
+              "protocol": "http",
+              "host": [
+                "localhost"
+              ],
+              "port": "5000",
+              "path": [
+                "api",
+                "conversations",
+                ":id",
+                "messages",
+                ":messageId",
+                "reactions"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "69cb114830e2889041b51482"
+                },
+                {
+                  "key": "messageId",
+                  "value": "69cb118d30e2889041b51487"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Remove_Message_Reaction",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjY5Yjg5ODViZDBiOTVmZTUyMDBiZTVlMCIsImlhdCI6MTc3NzI1MTIzNywiZXhwIjoxNzc5ODQzMjM3fQ.YwloNqRnhtZ066v8OCLS7XNrOUjKYdF364wxVlQeVP0",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjY5Yjg5ODViZDBiOTVmZTUyMDBiZTVlMCIsImlhdCI6MTc3MzcwNzY0MywiZXhwIjoxNzc2Mjk5NjQzfQ.Tm-4DlxB3o9UgC_wa7nDyvOXxu7FlvmTMTH1fFHs0xY",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\r\n    \"reaction\": \"👍\"\r\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "http://localhost:5000/api/conversations/:id/messages/:messageId/reactions",
+              "protocol": "http",
+              "host": [
+                "localhost"
+              ],
+              "port": "5000",
+              "path": [
+                "api",
+                "conversations",
+                ":id",
+                "messages",
+                ":messageId",
+                "reactions"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "69cb114830e2889041b51482"
+                },
+                {
+                  "key": "messageId",
+                  "value": "69cb118d30e2889041b51487"
+                }
+              ]
+            }
+          },
+          "response": []
+        }
+      ]
+    }
+  ]
+}
