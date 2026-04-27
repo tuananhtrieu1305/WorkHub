@@ -46,6 +46,26 @@ const userSchema = new mongoose.Schema(
       enum: ["user", "admin"],
       default: "user",
     },
+    status: {
+      type: String,
+      enum: ["active", "locked", "disabled"],
+      default: "active",
+    },
+    lockedAt: {
+      type: Date,
+      default: null,
+    },
+    lockedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      default: null,
+    },
+    lockReason: {
+      type: String,
+      trim: true,
+      maxlength: 500,
+      default: "",
+    },
 
     
     isVerified: {

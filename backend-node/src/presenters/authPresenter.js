@@ -1,6 +1,7 @@
 import crypto from "crypto";
 import User from "../models/User.js";
 import generateToken from "../utils/generateToken.js";
+import { isInactiveUser } from "../middlewares/authMiddleware.js";
 import {
   sendVerificationEmail,
   sendResetPasswordEmail,
@@ -10,6 +11,9 @@ import {
 const generateOTP = () => {
   return Math.floor(100000 + Math.random() * 900000).toString();
 };
+
+const inactiveAccountMessage =
+  "Your account is not active. Please contact an administrator.";
 
 
 
@@ -208,6 +212,10 @@ export const login = async (req, res) => {
       return res.status(401).json({ message: "Invalid email or password" });
     }
 
+    if (isInactiveUser(user)) {
+      return res.status(403).json({ message: inactiveAccountMessage });
+    }
+
     
     if (!user.password) {
       return res.status(401).json({ message: "Tài khoản này được đăng ký bằng Google. Vui lòng đăng nhập bằng Google." });
@@ -258,6 +266,10 @@ export const googleLogin = async (req, res) => {
     let user = await User.findOne({ email });
 
     if (user) {
+      if (isInactiveUser(user)) {
+        return res.status(403).json({ message: inactiveAccountMessage });
+      }
+
       if (user.authProvider !== "google" || !user.googleId) {
         user.googleId = googleId;
         user.authProvider = "google";

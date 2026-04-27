@@ -1,6 +1,12 @@
 import jwt from "jsonwebtoken";
 import User from "../models/User.js";
 
+const inactiveAccountMessage =
+  "Your account is not active. Please contact an administrator.";
+
+export const isInactiveUser = (user) =>
+  ["locked", "disabled"].includes(user?.status);
+
 const protect = async (req, res, next) => {
   let token;
 
@@ -15,6 +21,10 @@ const protect = async (req, res, next) => {
 
       if (!req.user) {
         return res.status(401).json({ message: "User not found" });
+      }
+
+      if (isInactiveUser(req.user)) {
+        return res.status(403).json({ message: inactiveAccountMessage });
       }
 
       next();
