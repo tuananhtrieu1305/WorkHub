@@ -21,11 +21,13 @@ const userSchema = new mongoose.Schema(
     password: {
       type: String,
       required: [
-        function() { return !this.googleId; },
-        "Password is required"
+        function () {
+          return !this.googleId;
+        },
+        "Password is required",
       ],
       minlength: [6, "Password must be at least 6 characters"],
-      select: false, 
+      select: false,
     },
     googleId: {
       type: String,
@@ -61,11 +63,24 @@ const userSchema = new mongoose.Schema(
     },
     status: {
       type: String,
-      enum: ["active", "inactive", "suspended"],
+      enum: ["active", "inactive", "suspended", "locked", "disabled"],
       default: "active",
     },
-
-    
+    lockedAt: {
+      type: Date,
+      default: null,
+    },
+    lockedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      default: null,
+    },
+    lockReason: {
+      type: String,
+      trim: true,
+      maxlength: 500,
+      default: "",
+    },
     isVerified: {
       type: Boolean,
       default: false,
@@ -78,8 +93,6 @@ const userSchema = new mongoose.Schema(
       type: Date,
       select: false,
     },
-
-    
     resetPasswordToken: {
       type: String,
       select: false,
@@ -88,7 +101,6 @@ const userSchema = new mongoose.Schema(
       type: Date,
       select: false,
     },
-
     refreshToken: {
       type: String,
       select: false,
@@ -99,16 +111,14 @@ const userSchema = new mongoose.Schema(
   },
 );
 
-
 userSchema.pre("save", async function () {
   if (!this.isModified("password")) return;
   const salt = await bcrypt.genSalt(12);
   this.password = await bcrypt.hash(this.password, salt);
 });
 
-
 userSchema.methods.matchPassword = async function (enteredPassword) {
-  return await bcrypt.compare(enteredPassword, this.password);
+  return bcrypt.compare(enteredPassword, this.password);
 };
 
 const User = mongoose.model("User", userSchema);

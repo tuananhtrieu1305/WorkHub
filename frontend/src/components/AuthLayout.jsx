@@ -1,10 +1,13 @@
 import { Outlet } from "react-router-dom";
 import { AuthProvider } from "../context/AuthContext";
+import { MeetingProvider } from "../modules/meeting/MeetingContext";
 
 const AuthLayout = () => {
   return (
     <AuthProvider>
-      <Outlet />
+      <MeetingProvider>
+        <Outlet />
+      </MeetingProvider>
     </AuthProvider>
   );
 };

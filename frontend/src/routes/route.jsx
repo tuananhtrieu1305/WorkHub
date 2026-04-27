@@ -6,6 +6,8 @@ import RegisterPage from "../modules/auth/RegisterPage";
 import VerifyEmailPage from "../modules/auth/VerifyEmailPage";
 import ForgotPasswordPage from "../modules/auth/ForgotPasswordPage";
 import ResetPasswordPage from "../modules/auth/ResetPasswordPage";
+import MeetingPage from "../modules/meeting/MeetingPage";
+import MeetingRoomPage from "../modules/meeting/MeetingRoomPage";
 
 export const router = createBrowserRouter([
   {
@@ -22,6 +24,14 @@ export const router = createBrowserRouter([
                 Welcome to WorkHub! 🎉
               </div>
             ),
+          },
+          {
+            path: "meetings",
+            element: <MeetingPage />,
+          },
+          {
+            path: "meetings/:id",
+            element: <MeetingRoomPage />,
           },
         ],
       },

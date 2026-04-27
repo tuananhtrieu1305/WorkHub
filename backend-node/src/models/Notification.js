@@ -1,45 +1,81 @@
 import mongoose from "mongoose";
 
-const notificationSchema = new mongoose.Schema(
+const { Schema } = mongoose;
+
+const notificationSchema = new Schema(
   {
     userId: {
-      type: mongoose.Schema.Types.ObjectId,
+      type: Schema.Types.ObjectId,
       ref: "User",
       required: true,
     },
     type: {
       type: String,
-      enum: ["post_mention", "comment", "task_assigned", "message", "document_shared", "call_missed"],
       required: true,
+      trim: true,
+      maxlength: 80,
     },
     title: {
       type: String,
       required: true,
+      trim: true,
+      maxlength: 200,
+    },
+    message: {
+      type: String,
+      required: true,
+      trim: true,
+      maxlength: 1000,
     },
     content: {
       type: String,
-      required: true,
+      trim: true,
+      default: "",
+    },
+    entityType: {
+      type: String,
+      trim: true,
+      default: null,
+    },
+    entityId: {
+      type: Schema.Types.ObjectId,
+      default: null,
+    },
+    actorId: {
+      type: Schema.Types.ObjectId,
+      ref: "User",
+      default: null,
     },
     data: {
-      type: mongoose.Schema.Types.Mixed,
+      type: Schema.Types.Mixed,
+      default: {},
+    },
+    readAt: {
+      type: Date,
       default: null,
     },
     isRead: {
       type: Boolean,
       default: false,
     },
-    createdAt: {
+    deletedAt: {
       type: Date,
-      default: Date.now,
+      default: null,
     },
   },
   {
-    timestamps: false,
-  }
+    timestamps: {
+      createdAt: true,
+      updatedAt: false,
+    },
+  },
 );
 
-// Index for better query performance
+notificationSchema.index({ userId: 1, readAt: 1, createdAt: -1 });
+notificationSchema.index({ userId: 1, deletedAt: 1, createdAt: -1 });
+notificationSchema.index({ entityType: 1, entityId: 1 });
 notificationSchema.index({ userId: 1, isRead: 1, createdAt: -1 });
 
 const Notification = mongoose.model("Notification", notificationSchema);
+
 export default Notification;
