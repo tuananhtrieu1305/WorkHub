@@ -6,7 +6,7 @@ import {
   ReloadOutlined,
   VideoCameraAddOutlined,
 } from "@ant-design/icons";
-import { listMeetings } from "../../services/meetingService";
+import { getMeetings as listMeetings } from "../../api/meetingApi";
 import { useMeetingContext } from "./meetingContextValue";
 
 const { Title, Text } = Typography;

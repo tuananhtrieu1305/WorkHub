@@ -5,6 +5,7 @@ import {
   getPostById,
   updatePost,
   deletePost,
+  downloadPostAttachment,
   getPostComments,
   addPostComment,
   getPostLikes,
@@ -15,6 +16,7 @@ import { uploadAttachment } from "../config/multer.js";
 
 const router = express.Router();
 
+router.get("/attachments/:filename/download", downloadPostAttachment);
 router.get("/", protect, getPosts);
 router.post("/", protect, uploadAttachment.array("attachments", 10), createPost);
 router.get("/:id", protect, getPostById);

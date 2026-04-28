@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useParams, Link, useNavigate } from "react-router-dom";
-import { resetPassword } from "../../services/authService";
+import { resetPassword } from "../../api/authApi";
 import workHubLogo from "../../assets/WorkHub_logo_blue_background.png";
 import InteractiveBackground from "./InteractiveBackground";
 import AuthFormBackground from "./AuthFormBackground";

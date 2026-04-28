@@ -1,5 +1,6 @@
 @import url("https://fonts.googleapis.com/css2?family=Momo+Trust+Sans:wght@200..800&display=swap");
 @import "tailwindcss";
+@import "./styles/layout/layout.css";
 
 
 @layer base {
@@ -8,6 +9,10 @@
   *::after {
     font-family: "Momo Trust Sans", sans-serif !important;
     font-optical-sizing: auto;
+  }
+
+  .material-symbols-outlined {
+    font-family: "Material Symbols Outlined" !important;
   }
 }
 

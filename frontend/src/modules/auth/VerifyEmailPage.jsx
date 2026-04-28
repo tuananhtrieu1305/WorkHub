@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from "react";
 import { useSearchParams, useNavigate, Link } from "react-router-dom";
 import { useAuth } from "../../context/AuthContext";
-import { resendOTP } from "../../services/authService";
+import { resendOTP } from "../../api/authApi";
 import workHubLogo from "../../assets/WorkHub_logo_blue_background.png";
 import InteractiveBackground from "./InteractiveBackground";
 import AuthFormBackground from "./AuthFormBackground";

@@ -14,7 +14,7 @@ const postSchema = new mongoose.Schema(
     },
     content: {
       type: String,
-      required: [true, "Post content is required"],
+      default: "",
     },
     mentions: [
       {
@@ -51,9 +51,16 @@ const postSchema = new mongoose.Schema(
     attachments: [
       {
         fileName: String,
+        storedFileName: String,
         fileUrl: String,
+        downloadUrl: String,
         fileSize: Number,
         mimeType: String,
+        fileType: {
+          type: String,
+          enum: ["image", "video", "file"],
+          default: "file",
+        },
       },
     ],
     likesCount: {

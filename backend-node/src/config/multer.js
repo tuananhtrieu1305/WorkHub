@@ -1,9 +1,18 @@
 import multer from "multer";
+import fs from "fs";
 import path from "path";
-import { fileURLToPath } from "url";
+import {
+  attachmentUploadsDir,
+  documentUploadsDir,
+  uploadsDir,
+} from "./uploadPaths.js";
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+export const POST_ATTACHMENT_FILE_SIZE_LIMIT = 100 * 1024 * 1024;
+
+const ensureUploadDir = (dir) => {
+  fs.mkdirSync(dir, { recursive: true });
+  return dir;
+};
 
 const generateSlug = (filename) => {
   const ext = path.extname(filename);
@@ -19,7 +28,7 @@ const generateSlug = (filename) => {
 // --- Avatar upload (5MB, images only) ---
 const avatarStorage = multer.diskStorage({
   destination: (req, file, cb) => {
-    cb(null, path.join(__dirname, "../uploads"));
+    cb(null, ensureUploadDir(uploadsDir));
   },
   filename: (req, file, cb) => {
     const ext = path.extname(file.originalname);
@@ -44,7 +53,7 @@ const upload = multer({
 // --- Document upload (20MB, all files except video) ---
 const documentStorage = multer.diskStorage({
   destination: (req, file, cb) => {
-    cb(null, path.join(__dirname, "../uploads/documents"));
+    cb(null, ensureUploadDir(documentUploadsDir));
   },
   filename: (req, file, cb) => {
     const ext = path.extname(file.originalname);
@@ -71,10 +80,10 @@ export const uploadDocument = multer({
   },
 });
 
-// --- Attachment upload for posts (20MB, images + documents, no video) ---
+// --- Attachment upload for posts (20MB, images + videos + documents) ---
 const attachmentStorage = multer.diskStorage({
   destination: (req, file, cb) => {
-    cb(null, path.join(__dirname, "../uploads/attachments"));
+    cb(null, ensureUploadDir(attachmentUploadsDir));
   },
   filename: (req, file, cb) => {
     const ext = path.extname(file.originalname);
@@ -83,16 +92,14 @@ const attachmentStorage = multer.diskStorage({
   },
 });
 
+export const postAttachmentFileFilter = (req, file, cb) => {
+  cb(null, true);
+};
+
 export const uploadAttachment = multer({
   storage: attachmentStorage,
-  limits: { fileSize: 20 * 1024 * 1024 },
-  fileFilter: (req, file, cb) => {
-    if (videoMimes.includes(file.mimetype)) {
-      cb(new Error("Video files are not allowed for post attachments"), false);
-    } else {
-      cb(null, true);
-    }
-  },
+  limits: { fileSize: POST_ATTACHMENT_FILE_SIZE_LIMIT },
+  fileFilter: postAttachmentFileFilter,
 });
 
 export default upload;

@@ -1,0 +1,450 @@
+<!DOCTYPE html>
+<html lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>WorkHub - Real-time Chat</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    colors: {
+                        "primary": "#137fec",
+                        "background-light": "#f6f7f8",
+                        "background-dark": "#101922",
+                    },
+                    fontFamily: {
+                        "display": ["Manrope"]
+                    },
+                    borderRadius: {"DEFAULT": "0.25rem", "lg": "0.5rem", "xl": "0.75rem", "full": "9999px"},
+                },
+            },
+        }
+    </script>
+</head>
+<body class="font-display bg-background-light dark:bg-background-dark text-slate-900 dark:text-slate-100 min-h-screen flex flex-col">
+<header class="flex items-center justify-between whitespace-nowrap border-b border-solid border-slate-200 dark:border-slate-800 px-6 py-3 bg-white dark:bg-slate-900 shrink-0 h-16">
+<div class="flex items-center gap-4 w-[240px]">
+<div class="w-8 h-8 bg-primary rounded-lg flex items-center justify-center text-white">
+<span class="material-symbols-outlined text-[20px]">hub</span>
+</div>
+<h2 class="text-xl font-bold tracking-tight">WorkHub</h2>
+</div>
+<div class="flex-1 flex justify-center max-w-2xl px-6">
+<label class="flex w-full items-center bg-slate-100 dark:bg-slate-800 rounded-full h-10 px-4 focus-within:ring-2 focus-within:ring-primary/50 transition-all">
+<span class="material-symbols-outlined text-[20px] text-slate-500">search</span>
+<input class="w-full bg-transparent border-none focus:ring-0 text-sm text-slate-900 dark:text-slate-100 placeholder:text-slate-500 ml-2" placeholder="Search WorkHub..." type="text"/>
+<div class="flex items-center gap-2">
+<button class="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300"><span class="material-symbols-outlined text-[18px]">mic</span></button>
+<button class="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300"><span class="material-symbols-outlined text-[18px]">tune</span></button>
+</div>
+</label>
+</div>
+<div class="flex items-center gap-4 w-[240px] justify-end">
+<button class="relative p-2 text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors">
+<span class="material-symbols-outlined text-[22px]">notifications</span>
+<span class="absolute top-1.5 right-1.5 w-2 h-2 bg-red-500 rounded-full border-2 border-white dark:border-slate-900"></span>
+</button>
+<div class="w-px h-6 bg-slate-200 dark:bg-slate-700 mx-2"></div>
+<button class="flex items-center gap-2 hover:opacity-80 transition-opacity">
+<div class="w-8 h-8 rounded-full bg-cover bg-center ring-2 ring-primary/20" data-alt="User avatar" style="background-image: url('https://lh3.googleusercontent.com/aida-public/AB6AXuClx_MeOilqZ229GyUTKbou6vswvvqALcUGHOv862h7k98YAlkOAQXOEEaYHOB-rNk7KE0LPHXQvyN0eby0ISKC6aLGuSD1DKwxrsssj_PUgd2hv2PaJsXQIuRXDaBmlesfkqKsenpch1oaerGdzSqhscdPeHRvj8guXmBL5Gznl-F-Zz3hGEGixpPO3ya5mbmqGhnIwgQQMHCN8SKSxb_JglXFxBbxYQyEUm5JRJBv8PDHIk-Sr4SLCfcH7-4UD7SG1C-_LCM8g5c')"></div>
+<span class="material-symbols-outlined text-[18px] text-slate-400">expand_more</span>
+</button>
+</div>
+</header>
+<div class="flex flex-1 overflow-hidden">
+<aside class="w-20 bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 flex flex-col items-center py-6 shrink-0 z-20 hidden md:flex">
+<nav class="flex-1 w-full flex flex-col items-center gap-2">
+<a class="flex flex-col items-center justify-center w-14 h-14 rounded-xl text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-800/50 hover:text-slate-900 dark:hover:text-slate-100 transition-all group relative" href="#">
+<span class="material-symbols-outlined text-[24px] mb-1 group-hover:-translate-y-0.5 transition-transform">dynamic_feed</span>
+<span class="text-[10px] font-medium">Feed</span>
+</a>
+<a class="flex flex-col items-center justify-center w-14 h-14 rounded-xl bg-primary/10 text-primary transition-all group relative" href="#">
+<div class="absolute -top-1 -right-1 bg-red-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full border-2 border-white dark:border-slate-900">3</div>
+<span class="material-symbols-outlined text-[24px] mb-1">chat</span>
+<span class="text-[10px] font-medium">Chat</span>
+</a>
+<a class="flex flex-col items-center justify-center w-14 h-14 rounded-xl text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-800/50 hover:text-slate-900 dark:hover:text-slate-100 transition-all group" href="#">
+<span class="material-symbols-outlined text-[24px] mb-1 group-hover:-translate-y-0.5 transition-transform">call</span>
+<span class="text-[10px] font-medium">Calls</span>
+</a>
+<a class="flex flex-col items-center justify-center w-14 h-14 rounded-xl text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-800/50 hover:text-slate-900 dark:hover:text-slate-100 transition-all group relative" href="#">
+<span class="material-symbols-outlined text-[24px] mb-1 group-hover:-translate-y-0.5 transition-transform">task_alt</span>
+<span class="text-[10px] font-medium">Tasks</span>
+</a>
+<a class="flex flex-col items-center justify-center w-14 h-14 rounded-xl text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-800/50 hover:text-slate-900 dark:hover:text-slate-100 transition-all group" href="#">
+<span class="material-symbols-outlined text-[24px] mb-1 group-hover:-translate-y-0.5 transition-transform">calendar_month</span>
+<span class="text-[10px] font-medium">Calendar</span>
+</a>
+<a class="flex flex-col items-center justify-center w-14 h-14 rounded-xl text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-800/50 hover:text-slate-900 dark:hover:text-slate-100 transition-all group" href="#">
+<span class="material-symbols-outlined text-[24px] mb-1 group-hover:-translate-y-0.5 transition-transform">description</span>
+<span class="text-[10px] font-medium">Docs</span>
+</a>
+<a class="flex flex-col items-center justify-center w-14 h-14 rounded-xl text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-800/50 hover:text-slate-900 dark:hover:text-slate-100 transition-all group" href="#">
+<span class="material-symbols-outlined text-[24px] mb-1 group-hover:-translate-y-0.5 transition-transform">groups</span>
+<span class="text-[10px] font-medium">Teams</span>
+</a>
+</nav>
+<div class="mt-auto w-full px-3">
+<div class="w-full aspect-square rounded-xl border-2 border-dashed border-slate-200 dark:border-slate-700 flex flex-col items-center justify-center text-slate-400 hover:text-primary hover:border-primary/50 hover:bg-primary/5 cursor-pointer transition-all group">
+<span class="material-symbols-outlined text-[24px] mb-1 group-hover:scale-110 transition-transform">timer</span>
+<span class="text-[10px] font-medium">Focus</span>
+</div>
+</div>
+</aside>
+<aside class="w-80 flex flex-col bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 shrink-0 h-full overflow-y-auto hidden md:flex">
+<div class="p-4 border-b border-slate-200 dark:border-slate-800 flex justify-between items-center sticky top-0 bg-white dark:bg-slate-900 z-10 h-16">
+<h1 class="text-lg font-bold">Conversations</h1>
+<button class="bg-primary hover:bg-blue-600 text-white p-2 rounded-lg transition-colors shadow-sm flex items-center justify-center">
+<span class="material-symbols-outlined text-[20px]">add</span>
+</button>
+</div>
+<div class="p-3 border-b border-slate-200 dark:border-slate-800">
+<div class="relative mb-3">
+<span class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-[18px]">search</span>
+<input class="w-full bg-slate-100 dark:bg-slate-800 border-none rounded-lg h-9 pl-9 pr-3 text-sm focus:ring-2 focus:ring-primary/50" placeholder="Filter conversations..." type="text"/>
+<button class="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200">
+<span class="material-symbols-outlined text-[18px]">filter_list</span>
+</button>
+</div>
+<div class="flex gap-2 overflow-x-auto pb-1 scrollbar-hide">
+<button class="px-3 py-1 bg-slate-800 text-white rounded-full text-xs font-medium whitespace-nowrap">All</button>
+<button class="px-3 py-1 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 rounded-full text-xs font-medium whitespace-nowrap hover:bg-slate-200 dark:hover:bg-slate-700">Unread</button>
+<button class="px-3 py-1 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 rounded-full text-xs font-medium whitespace-nowrap hover:bg-slate-200 dark:hover:bg-slate-700">Mentions</button>
+</div>
+</div>
+<div class="flex-1 overflow-y-auto">
+<div class="flex flex-col mb-2 mt-2">
+<button class="flex items-center justify-between px-4 py-2 text-xs font-bold text-slate-500 uppercase tracking-wider hover:bg-slate-50 dark:hover:bg-slate-800/50 w-full transition-colors group">
+<span>Channels</span>
+<span class="material-symbols-outlined text-[16px] transition-transform group-hover:text-slate-700 dark:group-hover:text-slate-300">expand_more</span>
+</button>
+<div class="flex flex-col">
+<a class="flex items-start gap-3 p-3 hover:bg-slate-50 dark:hover:bg-slate-800/50 border-l-4 border-transparent transition-colors group" href="#">
+<div class="relative shrink-0 mt-1">
+<div class="w-10 h-10 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-xl flex items-center justify-center text-white font-bold shadow-sm">
+                                #E
+                            </div>
+</div>
+<div class="flex-1 min-w-0">
+<div class="flex justify-between items-baseline mb-0.5">
+<h3 class="text-sm font-bold text-slate-900 dark:text-slate-100 truncate"># engineering</h3>
+<span class="text-[11px] text-slate-400 whitespace-nowrap ml-2">10:50 AM</span>
+</div>
+<p class="text-[13px] text-slate-500 dark:text-slate-400 truncate">
+<span class="font-medium text-slate-700 dark:text-slate-300">You:</span> Looks good. I will start integrating it...
+                            </p>
+</div>
+</a>
+<a class="flex items-start gap-3 p-3 hover:bg-slate-50 dark:hover:bg-slate-800/50 border-l-4 border-transparent transition-colors group" href="#">
+<div class="relative shrink-0 mt-1">
+<div class="w-10 h-10 bg-gradient-to-br from-emerald-400 to-teal-500 rounded-xl flex items-center justify-center text-white font-bold shadow-sm">
+                                #M
+                            </div>
+</div>
+<div class="flex-1 min-w-0">
+<div class="flex justify-between items-baseline mb-0.5">
+<h3 class="text-sm font-bold text-slate-900 dark:text-slate-100 truncate"># marketing</h3>
+<span class="text-[11px] text-slate-400 whitespace-nowrap ml-2">Monday</span>
+</div>
+<p class="text-[13px] text-slate-500 dark:text-slate-400 truncate">
+                                New assets available in drive.
+                            </p>
+</div>
+</a>
+</div>
+</div>
+<div class="flex flex-col mb-2">
+<button class="flex items-center justify-between px-4 py-2 text-xs font-bold text-slate-500 uppercase tracking-wider hover:bg-slate-50 dark:hover:bg-slate-800/50 w-full transition-colors group">
+<span>Direct Messages</span>
+<span class="material-symbols-outlined text-[16px] transition-transform group-hover:text-slate-700 dark:group-hover:text-slate-300">expand_more</span>
+</button>
+<div class="flex flex-col">
+<a class="flex items-start gap-3 p-3 bg-primary/5 hover:bg-primary/10 border-l-4 border-primary transition-colors group" href="#">
+<div class="relative shrink-0 mt-1">
+<div class="w-10 h-10 rounded-full bg-cover bg-center ring-2 ring-white dark:ring-slate-900 shadow-sm" style="background-image: url('https://lh3.googleusercontent.com/aida-public/AB6AXuDeF5OK6eRUb0eU1zlszQ6Qbc2xiMZjaHpim-N4ksbQszJAmm3a4Cvy1uBrJufD-dfo7LBSG88KArA001hAx-ooy76buXg_vLttVMIJGx1EwytWWNKTsnB92ZIHh4PuSBwHQD7frjdvLan-CILGFUets0JDqAT3tlNKDrs1oDsfXbleebedIlicnqGEQDZjrTBue1J71MQ4_8yVVj5tp76FycDMlGwj1TMHB-6FT5SbtzIpeeG2uhNbPjsHqkvt4Bp23wB2je3eaSo')"></div>
+<div class="absolute -bottom-1 -right-1 w-3.5 h-3.5 bg-green-500 border-2 border-white dark:border-slate-900 rounded-full flex items-center justify-center"></div>
+</div>
+<div class="flex-1 min-w-0">
+<div class="flex justify-between items-baseline mb-0.5">
+<h3 class="text-sm font-bold text-slate-900 dark:text-slate-100 truncate">Alex Carter</h3>
+<span class="text-[11px] text-primary font-medium whitespace-nowrap ml-2">10:42 AM</span>
+</div>
+<p class="text-[13px] text-slate-900 dark:text-slate-100 font-medium truncate">
+                                Can we review the API endpoints?
+                            </p>
+</div>
+<div class="shrink-0 mt-1 flex flex-col items-end gap-1">
+<span class="bg-primary text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full min-w-[20px] text-center">1</span>
+</div>
+</a>
+<a class="flex items-start gap-3 p-3 hover:bg-slate-50 dark:hover:bg-slate-800/50 border-l-4 border-transparent transition-colors group" href="#">
+<div class="relative shrink-0 mt-1">
+<div class="w-10 h-10 rounded-full bg-cover bg-center ring-2 ring-white dark:ring-slate-900 shadow-sm" style="background-image: url('https://lh3.googleusercontent.com/aida-public/AB6AXuBHL9Z_6i5UzXmh_LJI1IzWA61_LLbSkWMELo6e2tbPHsfqvYoAmXiLrWWanYFS3ja85mmFo2sxXDFQlz2hfdS74Efi6cpGEO30Ltvjv7TMAR3FgBs-vz-a1_YVO0q4uPbnfC-rkitcJ5gBJJr_tpcW6e57UqCCt7B2RNvghoRbWhnSDOZ54ny7XUoK3c0HjZ0sAJrJXsufHYGeNJ9YteDyIGtKysW63gbKD0OZ3VkFcg3qQFHTZLxh8DlQqvT6Egr4K3c1Prf1BGs')"></div>
+<div class="absolute -bottom-1 -right-1 bg-amber-500 border-2 border-white dark:border-slate-900 rounded-full p-0.5 flex items-center justify-center" title="In a meeting">
+<span class="material-symbols-outlined text-[8px] text-white">videocam</span>
+</div>
+</div>
+<div class="flex-1 min-w-0">
+<div class="flex justify-between items-baseline mb-0.5">
+<h3 class="text-sm font-bold text-slate-900 dark:text-slate-100 truncate">Sarah Lee</h3>
+<span class="text-[11px] text-slate-400 whitespace-nowrap ml-2">Yesterday</span>
+</div>
+<p class="text-[13px] text-slate-500 dark:text-slate-400 truncate flex items-center gap-1">
+<span class="material-symbols-outlined text-[14px]">attach_file</span>
+                                Architecture_v2.pdf
+                            </p>
+</div>
+</a>
+<a class="flex items-start gap-3 p-3 hover:bg-slate-50 dark:hover:bg-slate-800/50 border-l-4 border-transparent transition-colors group" href="#">
+<div class="relative shrink-0 mt-1">
+<div class="flex -space-x-3">
+<img class="w-8 h-8 rounded-full border-2 border-white dark:border-slate-900" src="https://lh3.googleusercontent.com/aida-public/AB6AXuDF8U1i9Jr4YmfLWWomO7_SZ9dftZzQ-Ofy8vVM6NQP9uypt3vuK3SmBfftO3ziP1-r3qOeyMjexvjAaV2auqsyX9bJ-Yb3PfiQl2xGk2EJZlAJK01hNXrLTbtH7Kd89hTRMWzxBPwq8IFfb-kL2EoXhnAkrEIfNgH3xX4SiCRxKAwpEbVZNuqQX_24QV1aDW1wF0cinvf6ksk0Y77Mdp0I4MxRcgBT2acpM3TGZGE-ir5rtEewYBhJJ737xB_XO7tfsKmd-e-WhpM"/>
+<img class="w-8 h-8 rounded-full border-2 border-white dark:border-slate-900" src="https://lh3.googleusercontent.com/aida-public/AB6AXuCjtti9q90S2V6m53vSgkFl5IoN-OO5W-SEJMDwNJkXpjWpLEEHrOAQJoMWDkN72opt-1SZOkPlskuBagLXm7BqA-hG1ihpgUttjLJy2vajUNonbCZN8X8DzdWJvKoPlJ4HqqEAzo0I1IfkcT7gzrg9TNYrJ6v50-iEQVytpQ-08uckXXbl5BfIPi8nwbG7oi3BDte1RtBQUsTlx0kJtDdKetJqwrAQ6CSEC1Tz271ftMALwfO3zv1zumXHxkDj8AwNJh2WRl6-0kQ"/>
+</div>
+</div>
+<div class="flex-1 min-w-0">
+<div class="flex justify-between items-baseline mb-0.5">
+<h3 class="text-sm font-bold text-slate-900 dark:text-slate-100 truncate">Q4 Planning Sync</h3>
+<span class="text-[11px] text-slate-400 whitespace-nowrap ml-2">Tuesday</span>
+</div>
+<p class="text-[13px] text-slate-500 dark:text-slate-400 truncate">
+<span class="font-medium text-slate-700 dark:text-slate-300">Emily:</span> Let's finalize the timeline...
+                            </p>
+</div>
+</a>
+</div>
+</div>
+</div>
+</aside>
+<main class="flex-1 flex flex-col h-full bg-white dark:bg-slate-950">
+<div class="flex items-center justify-between px-6 py-3 border-b border-slate-200 dark:border-slate-800 bg-white/80 dark:bg-slate-950/80 backdrop-blur-md sticky top-0 z-10 h-16 shadow-sm">
+<div class="flex items-center gap-4">
+<div class="relative">
+<div class="w-10 h-10 rounded-full bg-cover bg-center ring-2 ring-white dark:ring-slate-950 shadow-sm" style="background-image: url('https://lh3.googleusercontent.com/aida-public/AB6AXuDeF5OK6eRUb0eU1zlszQ6Qbc2xiMZjaHpim-N4ksbQszJAmm3a4Cvy1uBrJufD-dfo7LBSG88KArA001hAx-ooy76buXg_vLttVMIJGx1EwytWWNKTsnB92ZIHh4PuSBwHQD7frjdvLan-CILGFUets0JDqAT3tlNKDrs1oDsfXbleebedIlicnqGEQDZjrTBue1J71MQ4_8yVVj5tp76FycDMlGwj1TMHB-6FT5SbtzIpeeG2uhNbPjsHqkvt4Bp23wB2je3eaSo')"></div>
+<div class="absolute bottom-0 right-0 w-3 h-3 bg-green-500 border-2 border-white dark:border-slate-950 rounded-full"></div>
+</div>
+<div class="flex flex-col">
+<h2 class="text-base font-bold flex items-center gap-2 leading-tight">
+                            Alex Carter
+                        </h2>
+<p class="text-xs text-slate-500 dark:text-slate-400 flex items-center gap-1">
+<span class="w-1.5 h-1.5 rounded-full bg-green-500"></span> Active now
+                        </p>
+</div>
+</div>
+<div class="flex items-center gap-2">
+<button class="flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors border border-slate-200 dark:border-slate-700" title="Voice Call">
+<span class="material-symbols-outlined text-[18px]">call</span>
+<span class="hidden sm:inline">Call</span>
+</button>
+<button class="flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-white bg-primary hover:bg-blue-600 rounded-lg transition-colors shadow-sm" title="Video Call">
+<span class="material-symbols-outlined text-[18px]">videocam</span>
+<span class="hidden sm:inline">Meet</span>
+</button>
+<div class="w-px h-6 bg-slate-200 dark:bg-slate-700 mx-1 hidden sm:block"></div>
+<button class="p-2 text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors" title="Search in conversation">
+<span class="material-symbols-outlined text-[20px]">search</span>
+</button>
+<button class="p-2 text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors lg:hidden" title="Conversation info">
+<span class="material-symbols-outlined text-[20px]">info</span>
+</button>
+</div>
+</div>
+<div class="flex-1 overflow-y-auto p-6 space-y-6 flex flex-col">
+<div class="flex items-center justify-center my-4">
+<div class="bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 text-xs font-semibold px-4 py-1.5 rounded-full shadow-sm">
+                        Today, October 24th
+                    </div>
+</div>
+<div class="flex items-start gap-4 justify-end group mt-2">
+<div class="flex flex-col gap-1 items-end max-w-3xl w-full">
+<div class="flex items-baseline gap-2">
+<span class="text-xs text-slate-400 font-medium">10:30 AM</span>
+<span class="text-sm font-bold text-slate-900 dark:text-slate-100">You</span>
+</div>
+<div class="bg-primary text-white px-4 py-3 rounded-2xl rounded-tr-sm text-[15px] leading-relaxed shadow-sm w-fit group-hover:shadow-md transition-shadow relative">
+                            Hey Alex, did you get a chance to look at the new staging environment?
+                            <div class="absolute top-1/2 -left-12 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity flex gap-1">
+<button class="w-8 h-8 rounded-full bg-white dark:bg-slate-800 shadow-sm border border-slate-200 dark:border-slate-700 flex items-center justify-center text-slate-500 hover:text-primary">
+<span class="material-symbols-outlined text-[16px]">reply</span>
+</button>
+</div>
+</div>
+<div class="flex items-center gap-1 text-[11px] font-medium text-slate-400 mt-0.5 pr-1">
+<span>Read</span>
+<span class="material-symbols-outlined text-[14px] text-primary">done_all</span>
+</div>
+</div>
+<div class="w-10 h-10 rounded-full bg-cover bg-center shrink-0 shadow-sm" data-alt="Your profile picture" style="background-image: url('https://lh3.googleusercontent.com/aida-public/AB6AXuDEYeCvybo1B9pVlOqVQ9KWbjmlwzQnqD_pCPNOTsFoT2PwNJ2x-rJ11QTcePsH_Kmg5fToCEJVSlSWERxY2uKTwRVffQaYo6HijZTeDauAPGtrUDGmPRnJvqStCi1cpwJqIYHoasNde61o9H7zLqRCcaeEzkYmW73sBQqVAXLf_520TrR-iJ9BpRYV7w_R8vsIhf_YmdcvvxKpioApyT4kaMWmmGE0b6sz82x6F1AcaQw3cMiUrSmhGQJqailcQbhoeydXndgPgW0')"></div>
+</div>
+<div class="flex items-start gap-4 group">
+<div class="w-10 h-10 rounded-full bg-cover bg-center shrink-0 cursor-pointer shadow-sm mt-1" data-alt="Alex Carter profile" style="background-image: url('https://lh3.googleusercontent.com/aida-public/AB6AXuDeF5OK6eRUb0eU1zlszQ6Qbc2xiMZjaHpim-N4ksbQszJAmm3a4Cvy1uBrJufD-dfo7LBSG88KArA001hAx-ooy76buXg_vLttVMIJGx1EwytWWNKTsnB92ZIHh4PuSBwHQD7frjdvLan-CILGFUets0JDqAT3tlNKDrs1oDsfXbleebedIlicnqGEQDZjrTBue1J71MQ4_8yVVj5tp76FycDMlGwj1TMHB-6FT5SbtzIpeeG2uhNbPjsHqkvt4Bp23wB2je3eaSo')"></div>
+<div class="flex flex-col gap-1 items-start max-w-3xl w-full">
+<div class="flex items-baseline gap-2">
+<span class="text-sm font-bold text-slate-900 dark:text-slate-100 cursor-pointer hover:underline">Alex Carter</span>
+<span class="text-xs text-slate-400 font-medium">10:42 AM</span>
+</div>
+<div class="bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-800 dark:text-slate-200 px-4 py-3 rounded-2xl rounded-tl-sm text-[15px] leading-relaxed shadow-sm w-fit relative group-hover:shadow-md transition-shadow">
+                            Yes! It looks much more stable now. However, I think we still need to verify the new endpoints before the staging deployment. Can we review the API endpoints?
+                            <div class="absolute top-1/2 -right-24 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity flex gap-1">
+<button class="w-8 h-8 rounded-full bg-white dark:bg-slate-800 shadow-sm border border-slate-200 dark:border-slate-700 flex items-center justify-center text-slate-500 hover:text-primary">
+<span class="material-symbols-outlined text-[16px]">add_reaction</span>
+</button>
+<button class="w-8 h-8 rounded-full bg-white dark:bg-slate-800 shadow-sm border border-slate-200 dark:border-slate-700 flex items-center justify-center text-slate-500 hover:text-primary">
+<span class="material-symbols-outlined text-[16px]">reply</span>
+</button>
+</div>
+</div>
+</div>
+</div>
+<div class="flex items-start gap-4 justify-end group mt-4">
+<div class="flex flex-col gap-1 items-end max-w-3xl w-full">
+<div class="flex items-baseline gap-2">
+<span class="text-xs text-slate-400 font-medium">10:50 AM</span>
+<span class="text-sm font-bold text-slate-900 dark:text-slate-100">You</span>
+</div>
+<div class="bg-primary text-white px-4 py-3 rounded-2xl rounded-tr-sm text-[15px] leading-relaxed shadow-sm w-fit group-hover:shadow-md transition-shadow relative">
+<div class="bg-blue-600/50 border-l-4 border-white/50 p-2 rounded mb-2 text-sm text-blue-50">
+<span class="font-bold text-white text-xs block mb-0.5">Alex Carter</span>
+                                Can we review the API endpoints?
+                            </div>
+                            Sure thing. I'm pulling up the docs right now. I'll send over the specific section we need to look at.
+                            <div class="absolute top-1/2 -left-12 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity flex gap-1">
+<button class="w-8 h-8 rounded-full bg-white dark:bg-slate-800 shadow-sm border border-slate-200 dark:border-slate-700 flex items-center justify-center text-slate-500 hover:text-primary">
+<span class="material-symbols-outlined text-[16px]">reply</span>
+</button>
+</div>
+</div>
+<div class="flex items-center gap-1 text-[11px] font-medium text-slate-400 mt-0.5 pr-1">
+<span>Delivered</span>
+<span class="material-symbols-outlined text-[14px]">done</span>
+</div>
+</div>
+<div class="w-10 h-10 rounded-full bg-cover bg-center shrink-0 shadow-sm" data-alt="Your profile picture" style="background-image: url('https://lh3.googleusercontent.com/aida-public/AB6AXuDEYeCvybo1B9pVlOqVQ9KWbjmlwzQnqD_pCPNOTsFoT2PwNJ2x-rJ11QTcePsH_Kmg5fToCEJVSlSWERxY2uKTwRVffQaYo6HijZTeDauAPGtrUDGmPRnJvqStCi1cpwJqIYHoasNde61o9H7zLqRCcaeEzkYmW73sBQqVAXLf_520TrR-iJ9BpRYV7w_R8vsIhf_YmdcvvxKpioApyT4kaMWmmGE0b6sz82x6F1AcaQw3cMiUrSmhGQJqailcQbhoeydXndgPgW0')"></div>
+</div>
+</div>
+<div class="p-6 pt-2 bg-white dark:bg-slate-950">
+<div class="flex items-center gap-2 text-slate-500 text-xs font-medium italic mb-2 px-2 h-4">
+<span class="flex gap-1 items-center">
+<span class="w-1.5 h-1.5 bg-primary/70 rounded-full animate-bounce" style="animation-delay: 0ms"></span>
+<span class="w-1.5 h-1.5 bg-primary/70 rounded-full animate-bounce" style="animation-delay: 150ms"></span>
+<span class="w-1.5 h-1.5 bg-primary/70 rounded-full animate-bounce" style="animation-delay: 300ms"></span>
+</span>
+                    Alex Carter is typing...
+                </div>
+<div class="flex flex-col border border-slate-300 dark:border-slate-700 rounded-xl bg-white dark:bg-slate-900 focus-within:ring-2 focus-within:ring-primary/50 focus-within:border-primary transition-all shadow-sm">
+<div class="bg-slate-50 dark:bg-slate-800/50 border-b border-slate-200 dark:border-slate-700 px-3 py-2 flex items-center gap-1 rounded-t-xl">
+<button class="p-1.5 text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-700 rounded transition-colors" title="Bold">
+<span class="material-symbols-outlined text-[18px]">format_bold</span>
+</button>
+<button class="p-1.5 text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-700 rounded transition-colors" title="Italic">
+<span class="material-symbols-outlined text-[18px]">format_italic</span>
+</button>
+<button class="p-1.5 text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-700 rounded transition-colors" title="Strikethrough">
+<span class="material-symbols-outlined text-[18px]">strikethrough_s</span>
+</button>
+<div class="w-px h-4 bg-slate-300 dark:bg-slate-600 mx-1"></div>
+<button class="p-1.5 text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-700 rounded transition-colors" title="Link">
+<span class="material-symbols-outlined text-[18px]">link</span>
+</button>
+<button class="p-1.5 text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-700 rounded transition-colors" title="List">
+<span class="material-symbols-outlined text-[18px]">format_list_bulleted</span>
+</button>
+<button class="p-1.5 text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-700 rounded transition-colors" title="Code">
+<span class="material-symbols-outlined text-[18px]">code</span>
+</button>
+</div>
+<textarea class="w-full bg-transparent border-none focus:ring-0 px-4 py-3 min-h-[60px] max-h-40 resize-y text-[15px] placeholder:text-slate-400" placeholder="Reply to Alex..."></textarea>
+<div class="flex items-center justify-between p-2 pt-0 border-t border-slate-100 dark:border-slate-800/50 mt-1">
+<div class="flex items-center gap-1">
+<button class="p-2 text-slate-400 hover:text-primary hover:bg-blue-50 dark:hover:bg-slate-800 rounded-full transition-colors flex items-center gap-1" title="Attach file">
+<span class="material-symbols-outlined text-[20px]">add_circle</span>
+</button>
+<button class="p-2 text-slate-400 hover:text-primary hover:bg-blue-50 dark:hover:bg-slate-800 rounded-full transition-colors" title="Insert emoji">
+<span class="material-symbols-outlined text-[20px]">mood</span>
+</button>
+<button class="p-2 text-slate-400 hover:text-primary hover:bg-blue-50 dark:hover:bg-slate-800 rounded-full transition-colors" title="Mention someone">
+<span class="material-symbols-outlined text-[20px]">alternate_email</span>
+</button>
+</div>
+<div class="flex items-center gap-3 pr-2">
+<button class="flex items-center gap-2 px-4 py-1.5 rounded-full bg-primary text-white hover:bg-blue-600 transition-colors shadow-sm font-medium text-sm">
+<span>Send</span>
+<span class="material-symbols-outlined text-[16px]">send</span>
+</button>
+</div>
+</div>
+</div>
+</div>
+</main>
+<aside class="w-80 bg-slate-50 dark:bg-slate-900 border-l border-slate-200 dark:border-slate-800 flex flex-col h-full overflow-y-auto shrink-0 hidden lg:flex">
+<div class="p-5 border-b border-slate-200 dark:border-slate-800 flex flex-col items-center">
+<div class="relative mb-3">
+<div class="w-20 h-20 rounded-full bg-cover bg-center ring-4 ring-white dark:ring-slate-800 shadow-md" style="background-image: url('https://lh3.googleusercontent.com/aida-public/AB6AXuDeF5OK6eRUb0eU1zlszQ6Qbc2xiMZjaHpim-N4ksbQszJAmm3a4Cvy1uBrJufD-dfo7LBSG88KArA001hAx-ooy76buXg_vLttVMIJGx1EwytWWNKTsnB92ZIHh4PuSBwHQD7frjdvLan-CILGFUets0JDqAT3tlNKDrs1oDsfXbleebedIlicnqGEQDZjrTBue1J71MQ4_8yVVj5tp76FycDMlGwj1TMHB-6FT5SbtzIpeeG2uhNbPjsHqkvt4Bp23wB2je3eaSo')"></div>
+<div class="absolute bottom-1 right-1 w-4 h-4 bg-green-500 border-2 border-white dark:border-slate-800 rounded-full"></div>
+</div>
+<h3 class="text-lg font-bold text-slate-900 dark:text-slate-100">Alex Carter</h3>
+<p class="text-sm text-slate-500 mb-4">Senior Frontend Developer</p>
+<div class="flex gap-2 w-full">
+<button class="flex-1 flex flex-col items-center justify-center py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl hover:border-primary/50 hover:text-primary transition-colors text-slate-600 dark:text-slate-300">
+<span class="material-symbols-outlined text-[20px] mb-1">person</span>
+<span class="text-[10px] font-bold uppercase tracking-wider">Profile</span>
+</button>
+<button class="flex-1 flex flex-col items-center justify-center py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl hover:border-primary/50 hover:text-primary transition-colors text-slate-600 dark:text-slate-300">
+<span class="material-symbols-outlined text-[20px] mb-1">search</span>
+<span class="text-[10px] font-bold uppercase tracking-wider">Search</span>
+</button>
+<button class="flex-1 flex flex-col items-center justify-center py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl hover:border-primary/50 hover:text-primary transition-colors text-slate-600 dark:text-slate-300">
+<span class="material-symbols-outlined text-[20px] mb-1">more_horiz</span>
+<span class="text-[10px] font-bold uppercase tracking-wider">More</span>
+</button>
+</div>
+</div>
+<div class="p-5 border-b border-slate-200 dark:border-slate-800">
+<div class="flex items-center justify-between mb-4">
+<h3 class="font-bold text-slate-800 dark:text-slate-100 text-sm uppercase tracking-wider">Shared Media</h3>
+<button class="text-primary text-xs font-semibold hover:underline">View All</button>
+</div>
+<div class="grid grid-cols-3 gap-2">
+<div class="aspect-square bg-slate-200 dark:bg-slate-700 rounded-lg bg-cover bg-center cursor-pointer hover:opacity-80 transition-opacity" style="background-image: url('https://lh3.googleusercontent.com/aida-public/AB6AXuBreXk_LQ2y-sGudN1pbA5uuPtTzuztRvF0VFj4OVs7ovTZyZUGVyfXGQYDSZAt2A6Lit5W4KvzamEBLXq4zJReyv1BccU7PjWpm9bPaWWEMqpOPmWj5dBavT1gwz6BN8MTwwpJ231MYCppl6EPLKS_nR6gbZLS_Mp-pocxiVIIJITyVdDf3wfTiRe4aU7FNf-QwzCxZ_m3bPVPsHiZJe39Y3aCmA-1y3LWQkS4lfjXbTHVi3Rc78g1C9eJnmleZ0eh2tlMgCdgfNs')"></div>
+<div class="aspect-square bg-slate-200 dark:bg-slate-700 rounded-lg bg-cover bg-center cursor-pointer hover:opacity-80 transition-opacity" style="background-image: url('https://lh3.googleusercontent.com/aida-public/AB6AXuAwok_vZEOXUy3J78WxHSKrUYH8G9gZLQ0OGqBWeKbmaHPbDc2JcnpftQD8wQGJjqKT699MuZ-j7mJXa6CNthOzqNA45RcURTFmnfCvkNty2pXfu382GCFkTGRzHdbU91t1jlxMajwPoZCHufmT4pZ_b_5ayH8fX3MQOptnDoQhqRK7IOxCSeqDyHksZiSgG-Xp4xZYZTP7MWbfjSJGGrF6XGykNPxOjH1n7gy5QM_T2WBnlfW0I8bQ0XZJ1PWBKFdEZ76yAT3bFMY')"></div>
+<div class="aspect-square bg-slate-100 dark:bg-slate-800 rounded-lg flex flex-col items-center justify-center text-slate-400 cursor-pointer hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors border border-slate-200 dark:border-slate-700">
+<span class="material-symbols-outlined text-[24px]">description</span>
+<span class="text-[10px] mt-1 font-medium">PDF</span>
+</div>
+</div>
+</div>
+<div class="p-5 flex-1">
+<div class="flex items-center justify-between mb-4">
+<h3 class="font-bold text-slate-800 dark:text-slate-100 text-sm uppercase tracking-wider flex items-center gap-2">
+<span class="material-symbols-outlined text-[18px] text-primary">task_alt</span>
+                        Derived Tasks
+                    </h3>
+<button class="text-slate-400 hover:text-primary"><span class="material-symbols-outlined text-[18px]">add</span></button>
+</div>
+<div class="space-y-3">
+<div class="bg-white dark:bg-slate-800 p-3 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm flex items-start gap-3">
+<input class="mt-0.5 rounded border-slate-300 text-primary focus:ring-primary" type="checkbox"/>
+<div class="flex-1">
+<p class="text-sm text-slate-800 dark:text-slate-200 font-medium leading-tight">Review API endpoints for staging</p>
+<div class="flex items-center gap-2 mt-2">
+<span class="text-[10px] font-bold text-red-600 bg-red-100 px-1.5 py-0.5 rounded">High Priority</span>
+<span class="text-[10px] text-slate-500 flex items-center gap-0.5"><span class="material-symbols-outlined text-[12px]">calendar_today</span> Today</span>
+</div>
+</div>
+</div>
+<div class="bg-white dark:bg-slate-800 p-3 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm flex items-start gap-3 opacity-60">
+<input checked="" class="mt-0.5 rounded border-slate-300 text-primary focus:ring-primary" type="checkbox"/>
+<div class="flex-1">
+<p class="text-sm text-slate-500 dark:text-slate-400 font-medium leading-tight line-through">Check staging environment stability</p>
+</div>
+</div>
+</div>
+</div>
+</aside>
+</div>
+</body></html>

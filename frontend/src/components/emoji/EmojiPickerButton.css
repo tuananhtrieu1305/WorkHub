@@ -1,0 +1,115 @@
+.workhub-emoji-picker-root {
+  position: relative;
+  display: inline-flex;
+}
+
+.workhub-emoji-picker-root.absolute {
+  position: absolute;
+}
+
+.workhub-emoji-picker-root.fixed {
+  position: fixed;
+}
+
+.workhub-emoji-trigger {
+  position: relative;
+  display: inline-flex;
+  width: 2.25rem;
+  height: 2.25rem;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: #db2777;
+  cursor: pointer;
+  transition:
+    background-color 160ms ease,
+    color 160ms ease,
+    box-shadow 160ms ease,
+    transform 160ms ease;
+}
+
+.workhub-emoji-trigger:hover,
+.workhub-emoji-trigger[data-open="true"] {
+  background: #fce7f3;
+  color: #be185d;
+  box-shadow: 0 8px 22px rgba(219, 39, 119, 0.16);
+  transform: translateY(-1px);
+}
+
+.workhub-emoji-trigger:focus-visible {
+  outline: 2px solid rgba(219, 39, 119, 0.35);
+  outline-offset: 2px;
+}
+
+.workhub-emoji-trigger .material-symbols-outlined {
+  font-size: 1.25rem;
+  line-height: 1;
+}
+
+.workhub-emoji-popover {
+  position: absolute;
+  top: calc(100% + 0.625rem);
+  right: 0;
+  z-index: 60;
+  width: min(21rem, calc(100vw - 2rem));
+  padding: 0.5rem;
+  border: 1px solid rgba(244, 114, 182, 0.38);
+  border-radius: 1.125rem;
+  background:
+    linear-gradient(180deg, rgba(255, 241, 247, 0.98), rgba(255, 228, 239, 0.98));
+  box-shadow:
+    0 24px 60px rgba(190, 24, 93, 0.18),
+    0 10px 24px rgba(15, 23, 42, 0.08);
+}
+
+.workhub-emoji-popover[data-align="left"] {
+  right: auto;
+  left: 0;
+}
+
+.workhub-emoji-popover[data-placement="top"] {
+  top: auto;
+  bottom: calc(100% + 0.625rem);
+}
+
+.workhub-emoji-picker-slot {
+  width: 100%;
+}
+
+.workhub-emoji-loading {
+  display: flex;
+  min-height: 12rem;
+  align-items: center;
+  justify-content: center;
+  color: #be185d;
+  font-size: 0.875rem;
+  font-weight: 700;
+}
+
+.workhub-emoji-picker {
+  width: 100%;
+  height: 21.75rem;
+  --border-radius: 0.875rem;
+  --font-family: "Momo Trust Sans", sans-serif;
+  --rgb-background: 255, 241, 247;
+  --rgb-input: 255, 255, 255;
+  --rgb-color: 99, 20, 61;
+  --rgb-accent: 219, 39, 119;
+  --color-border: rgba(244, 114, 182, 0.25);
+  --color-border-over: rgba(219, 39, 119, 0.36);
+  --shadow: none;
+}
+
+@media (max-width: 640px) {
+  .workhub-emoji-popover {
+    position: fixed;
+    right: 0.75rem;
+    left: 0.75rem;
+    top: auto;
+    bottom: 1rem;
+    width: auto;
+  }
+}

@@ -2,7 +2,7 @@ import { useState } from "react";
 import {
   createMeeting as createMeetingApi,
   joinMeeting as joinMeetingApi,
-} from "../../services/meetingService";
+} from "../../api/meetingApi";
 import { MeetingContext } from "./meetingContextValue";
 
 export const MeetingProvider = ({ children }) => {

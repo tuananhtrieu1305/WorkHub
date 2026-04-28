@@ -25,6 +25,7 @@ import notificationRoutes from "./views/notificationView.js";
 import adminRoutes from "./views/adminView.js";
 import meetingRoutes from "./views/meetingView.js";
 import errorMiddleware from "./utils/errorMiddleware.js";
+import { legacyUploadsDir, uploadsDir } from "./config/uploadPaths.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -40,7 +41,8 @@ export const createApp = () => {
 
   app.use(cors());
   app.use(express.json());
-  app.use("/uploads", express.static(path.join(__dirname, "../uploads")));
+  app.use("/uploads", express.static(uploadsDir));
+  app.use("/uploads", express.static(legacyUploadsDir));
 
   app.use("/api/auth", authRoutes);
   app.use("/api/users", userRoutes);

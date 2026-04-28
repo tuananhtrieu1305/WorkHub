@@ -2,6 +2,67 @@ import Post from "../models/Post.js";
 import Comment from "../models/Comment.js";
 import Like from "../models/Like.js";
 import User from "../models/User.js";
+import fs from "fs";
+import path from "path";
+import {
+  attachmentUploadsDir,
+  legacyAttachmentUploadsDir,
+} from "../config/uploadPaths.js";
+
+const getAttachmentType = (mimeType = "") => {
+  if (mimeType.startsWith("image/")) return "image";
+  if (mimeType.startsWith("video/")) return "video";
+  return "file";
+};
+
+const buildAttachmentDownloadUrl = (storedFileName, fileName = storedFileName) => {
+  if (!storedFileName) return "";
+  const encodedStoredName = encodeURIComponent(storedFileName);
+  const encodedFileName = encodeURIComponent(fileName || storedFileName);
+  return `/api/posts/attachments/${encodedStoredName}/download?name=${encodedFileName}`;
+};
+
+export const buildPostAttachments = (files = []) =>
+  files.map((file) => ({
+    fileName: file.originalname,
+    storedFileName: file.filename,
+    fileUrl: `/uploads/attachments/${file.filename}`,
+    downloadUrl: buildAttachmentDownloadUrl(file.filename, file.originalname),
+    fileSize: file.size,
+    mimeType: file.mimetype,
+    fileType: getAttachmentType(file.mimetype),
+  }));
+
+export const hasPostBody = (content, attachments = []) => {
+  const hasContent = typeof content === "string" && content.trim().length > 0;
+  return hasContent || attachments.length > 0;
+};
+
+const serializePostAttachments = (attachments = []) =>
+  attachments.map((attachment) => {
+    const plain =
+      typeof attachment?.toObject === "function" ? attachment.toObject() : attachment;
+    const storedFileName =
+      plain.storedFileName || path.basename(plain.fileUrl || "");
+
+    return {
+      ...plain,
+      storedFileName,
+      fileType: plain.fileType || getAttachmentType(plain.mimeType || ""),
+      downloadUrl:
+        plain.downloadUrl ||
+        buildAttachmentDownloadUrl(storedFileName, plain.fileName || storedFileName),
+    };
+  });
+
+const findPostAttachmentPath = (storedFileName) => {
+  const candidates = [
+    path.join(attachmentUploadsDir, storedFileName),
+    path.join(legacyAttachmentUploadsDir, storedFileName),
+  ];
+
+  return candidates.find((candidate) => fs.existsSync(candidate));
+};
 
 // GET /posts
 export const getPosts = async (req, res) => {
@@ -37,9 +98,10 @@ export const getPosts = async (req, res) => {
     // Populate author info
     const content = await Promise.all(
       posts.map(async (post) => {
-        const author = await User.findById(post.authorId).select(
-          "_id fullName email avatar"
-        );
+        const [author, existingLike] = await Promise.all([
+          User.findById(post.authorId).select("_id fullName email avatar position"),
+          Like.findOne({ targetType: "post", targetId: post._id, userId }),
+        ]);
         return {
           id: post._id,
           author,
@@ -48,9 +110,10 @@ export const getPosts = async (req, res) => {
           mentions: post.mentions,
           tags: post.tags,
           targetAudience: post.targetAudience,
-          attachments: post.attachments,
+          attachments: serializePostAttachments(post.attachments),
           likesCount: post.likesCount,
           commentsCount: post.commentsCount,
+          isLiked: !!existingLike,
           createdAt: post.createdAt,
           updatedAt: post.updatedAt,
         };
@@ -69,21 +132,13 @@ export const createPost = async (req, res) => {
   try {
     const { type, content, mentions, tags, targetAudience } = req.body;
 
-    if (!content) {
-      return res.status(400).json({ message: "Post content is required" });
-    }
-
     // Process uploaded attachments
-    const attachments = [];
-    if (req.files && req.files.length > 0) {
-      req.files.forEach((file) => {
-        attachments.push({
-          fileName: file.originalname,
-          fileUrl: `/uploads/attachments/${file.filename}`,
-          fileSize: file.size,
-          mimeType: file.mimetype,
-        });
-      });
+    const attachments = buildPostAttachments(req.files || []);
+    const postContent =
+      typeof content === "string" && content.trim().length > 0 ? content : "";
+
+    if (!hasPostBody(postContent, attachments)) {
+      return res.status(400).json({ message: "Post content or attachment is required" });
     }
 
     // Parse targetAudience if it's a string (from multipart form)
@@ -110,7 +165,7 @@ export const createPost = async (req, res) => {
     const post = await Post.create({
       authorId: req.user._id,
       type: type || "post",
-      content,
+      content: postContent,
       mentions: parsedMentions || [],
       tags: parsedTags || [],
       targetAudience: parsedAudience || { type: "all" },
@@ -127,7 +182,7 @@ export const createPost = async (req, res) => {
       mentions: post.mentions,
       tags: post.tags,
       targetAudience: post.targetAudience,
-      attachments: post.attachments,
+      attachments: serializePostAttachments(post.attachments),
       likesCount: post.likesCount,
       commentsCount: post.commentsCount,
       createdAt: post.createdAt,
@@ -147,7 +202,10 @@ export const getPostById = async (req, res) => {
       return res.status(404).json({ message: "Post not found" });
     }
 
-    const author = await User.findById(post.authorId).select("_id fullName email avatar");
+    const [author, existingLike] = await Promise.all([
+      User.findById(post.authorId).select("_id fullName email avatar position"),
+      Like.findOne({ targetType: "post", targetId: post._id, userId: req.user._id }),
+    ]);
 
     res.status(200).json({
       id: post._id,
@@ -157,9 +215,10 @@ export const getPostById = async (req, res) => {
       mentions: post.mentions,
       tags: post.tags,
       targetAudience: post.targetAudience,
-      attachments: post.attachments,
+      attachments: serializePostAttachments(post.attachments),
       likesCount: post.likesCount,
       commentsCount: post.commentsCount,
+      isLiked: !!existingLike,
       createdAt: post.createdAt,
       updatedAt: post.updatedAt,
     });
@@ -207,7 +266,7 @@ export const updatePost = async (req, res) => {
       mentions: post.mentions,
       tags: post.tags,
       targetAudience: post.targetAudience,
-      attachments: post.attachments,
+      attachments: serializePostAttachments(post.attachments),
       likesCount: post.likesCount,
       commentsCount: post.commentsCount,
       createdAt: post.createdAt,
@@ -259,6 +318,31 @@ export const deletePost = async (req, res) => {
       return res.status(400).json({ message: "Invalid post ID" });
     }
     res.status(500).json({ message: "Server error, please try again" });
+  }
+};
+
+// GET /posts/attachments/:filename/download
+export const downloadPostAttachment = (req, res) => {
+  try {
+    const storedFileName = path.basename(req.params.filename || "");
+    if (!storedFileName) {
+      return res.status(400).json({ message: "Attachment filename is required" });
+    }
+
+    const requestedName =
+      typeof req.query.name === "string" && req.query.name.trim()
+        ? path.basename(req.query.name)
+        : storedFileName;
+    const filePath = findPostAttachmentPath(storedFileName);
+
+    if (!filePath) {
+      return res.status(404).json({ message: "Attachment not found" });
+    }
+
+    return res.download(filePath, requestedName);
+  } catch (error) {
+    console.error("DownloadPostAttachment error:", error.message);
+    return res.status(500).json({ message: "Server error, please try again" });
   }
 };
 

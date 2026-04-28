@@ -6,7 +6,7 @@ import RealtimeKitClient from "@cloudflare/realtimekit";
 import { useMeetingContext } from "./meetingContextValue";
 import MeetingUI from "./MeetingUI";
 import WhiteboardController from "./components/WhiteboardController";
-import { endMeeting } from "../../services/meetingService";
+import { endMeeting } from "../../api/meetingApi";
 
 const { Text } = Typography;
 

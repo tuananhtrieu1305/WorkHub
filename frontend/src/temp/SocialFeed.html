@@ -1,0 +1,349 @@
+<!DOCTYPE html>
+<html lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>WorkHub Dashboard</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&amp;family=Outfit:wght@500;700;800&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    colors: {
+                        "primary": "#137fec",
+                        "background-light": "#f8f9fc",
+                        "background-dark": "#0f172a",
+                    },
+                    fontFamily: {
+                        "display": ["Manrope", "sans-serif"],
+                        "brand": ["Outfit", "sans-serif"]
+                    },
+                    borderRadius: {"DEFAULT": "0.25rem", "lg": "0.5rem", "xl": "0.75rem", "2xl": "1rem", "full": "9999px"},
+                },
+            },
+        }
+    </script>
+<style>
+        body {
+            font-family: 'Manrope', sans-serif;
+        }
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        .icon-fill {
+             font-variation-settings: 'FILL' 1, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        .glass-panel {
+            background: rgba(255, 255, 255, 0.4);
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.6);
+        }
+        .dark .glass-panel {
+            background: rgba(30, 41, 59, 0.4);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+    </style>
+</head>
+<body class="bg-background-light dark:bg-background-dark text-slate-900 dark:text-slate-100 font-display min-h-screen flex flex-col">
+<header class="relative flex items-center justify-between whitespace-nowrap border-b border-solid border-slate-200/50 dark:border-slate-800/50 bg-white/80 dark:bg-slate-900/80 backdrop-blur-md px-10 py-3 sticky top-0 z-50">
+<div class="flex items-center gap-8">
+<div class="flex items-center gap-3 text-slate-900 dark:text-slate-100">
+<div class="material-symbols-outlined icon-fill text-3xl text-blue-600">
+                    hub
+                </div>
+<h2 class="font-brand text-2xl font-extrabold leading-tight tracking-tight text-blue-600">WorkHub</h2>
+</div>
+</div>
+<div class="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-md hidden md:block">
+<label class="flex flex-col w-full h-11 shadow-[0_8px_30px_rgb(0,0,0,0.08)] dark:shadow-[0_8px_30px_rgb(0,0,0,0.2)] rounded-full transition-shadow duration-300 hover:shadow-[0_8px_30px_rgb(0,0,0,0.12)]">
+<div class="flex w-full flex-1 items-stretch rounded-full h-full bg-white dark:bg-slate-800 border border-slate-100 dark:border-slate-700">
+<div class="text-slate-400 flex items-center justify-center pl-5 rounded-l-full">
+<span class="material-symbols-outlined text-xl">search</span>
+</div>
+<input class="form-input flex w-full min-w-0 flex-1 resize-none overflow-hidden text-slate-900 dark:text-slate-100 focus:outline-0 focus:ring-0 border-none bg-transparent h-full placeholder:text-slate-400 px-4 pl-3 rounded-r-full text-base font-medium leading-normal" placeholder="Search anything..." value=""/>
+</div>
+</label>
+</div>
+<div class="flex flex-1 justify-end gap-6">
+<div class="flex gap-3">
+<button class="flex items-center justify-center rounded-full size-10 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 hover:text-blue-600 dark:hover:text-blue-400 transition-all duration-300">
+<span class="material-symbols-outlined text-xl">notifications</span>
+</button>
+<button class="flex items-center justify-center rounded-full size-10 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 hover:text-purple-600 dark:hover:text-purple-400 transition-all duration-300">
+<span class="material-symbols-outlined text-xl">help</span>
+</button>
+</div>
+<div class="bg-center bg-no-repeat aspect-square bg-cover rounded-full size-10 ring-2 ring-white dark:ring-slate-900 shadow-md cursor-pointer" data-alt="User profile picture" style='background-image: url("https://lh3.googleusercontent.com/aida-public/AB6AXuCWRAWM-78RVDuBKcP9WMYuI9Oyg4urnMhgSPb8feC00v0FCXLjxRBWFpqkgVd8_WS1K4KGM6NZLl5JJMcL9CI8FcrQol3Iix-tFkuqbhLAUPS59xFRTmCeXyk-6CVNCeRaEKPiL_ImT5INb95Idujd2x846PlJYbcIpZUfjuXaQjRBhk6Z5hz3rohV0HJXGyoqHtcR_HGe5CN-wBwsmRGSWrtOlf5aYXoxTxQ4-eLRhnqV8kupyQbM_qp2F_0MIVtPj847H7of5_I");'></div>
+</div>
+</header>
+<div class="flex flex-1 overflow-hidden">
+<aside class="w-20 border-r border-slate-200/50 dark:border-slate-800/50 bg-slate-50/50 dark:bg-slate-900/50 hidden md:flex flex-col flex-shrink-0 overflow-y-auto">
+<div class="p-3 flex flex-col gap-6 items-center">
+<div class="flex flex-col items-center">
+<div class="bg-center bg-no-repeat aspect-square bg-cover rounded-full size-10 ring-2 ring-blue-500 shadow-lg shadow-blue-500/20" data-alt="User avatar" style='background-image: url("https://lh3.googleusercontent.com/aida-public/AB6AXuBIbqZU4t3pqJnQmYV4bk0P_r6AipmPHDe9pFHlcTRjY1RdP0DsgPWQ625RrwRvJ0-uURGETXYIt2P5HipzQ_7xMYpfHw0KcTFTtHhMaKG2j7p8k6NTPchNH-nnm9Mm329ggLcALmuNXpis9Kw2w7CPIPXfCvAnGWVM5w95BTm0KE6z_-i3AukMBeXWu5AjJNH2M6JtPKtwBFJ88fbjsf5mFz2_CLTZEGa1ll_qD1f3UIL7DJ4qZaAWOHm9f9G8hbew8deYsl_5ff8");'></div>
+</div>
+<nav class="flex flex-col gap-3 w-full mt-2">
+<a class="flex flex-col items-center gap-1 p-2 rounded-2xl bg-blue-600 text-white shadow-lg shadow-blue-500/30 transition-transform duration-300 hover:scale-105" href="#">
+<span class="material-symbols-outlined icon-fill text-2xl">home</span>
+<span class="text-[10px] font-bold leading-none tracking-wide">Feed</span>
+</a>
+<a class="glass-panel flex flex-col items-center gap-1 p-2 rounded-2xl text-emerald-600 dark:text-emerald-400 shadow-sm transition-all duration-300 hover:scale-105 hover:shadow-md hover:bg-emerald-50 dark:hover:bg-emerald-900/30" href="#">
+<span class="material-symbols-outlined text-2xl">chat</span>
+<span class="text-[10px] font-bold leading-none tracking-wide">Chat</span>
+</a>
+<a class="glass-panel flex flex-col items-center gap-1 p-2 rounded-2xl text-amber-500 dark:text-amber-400 shadow-sm transition-all duration-300 hover:scale-105 hover:shadow-md hover:bg-amber-50 dark:hover:bg-amber-900/30" href="#">
+<span class="material-symbols-outlined text-2xl">call</span>
+<span class="text-[10px] font-bold leading-none tracking-wide">Calls</span>
+</a>
+<a class="glass-panel flex flex-col items-center gap-1 p-2 rounded-2xl text-purple-600 dark:text-purple-400 shadow-sm transition-all duration-300 hover:scale-105 hover:shadow-md hover:bg-purple-50 dark:hover:bg-purple-900/30" href="#">
+<span class="material-symbols-outlined text-2xl">task_alt</span>
+<span class="text-[10px] font-bold leading-none tracking-wide">Tasks</span>
+</a>
+<a class="glass-panel flex flex-col items-center gap-1 p-2 rounded-2xl text-pink-500 dark:text-pink-400 shadow-sm transition-all duration-300 hover:scale-105 hover:shadow-md hover:bg-pink-50 dark:hover:bg-pink-900/30" href="#">
+<span class="material-symbols-outlined text-2xl">calendar_today</span>
+<span class="text-[10px] font-bold leading-none tracking-wide">Calendar</span>
+</a>
+<a class="glass-panel flex flex-col items-center gap-1 p-2 rounded-2xl text-cyan-600 dark:text-cyan-400 shadow-sm transition-all duration-300 hover:scale-105 hover:shadow-md hover:bg-cyan-50 dark:hover:bg-cyan-900/30" href="#">
+<span class="material-symbols-outlined text-2xl">description</span>
+<span class="text-[10px] font-bold leading-none tracking-wide">Docs</span>
+</a>
+<a class="glass-panel flex flex-col items-center gap-1 p-2 rounded-2xl text-indigo-500 dark:text-indigo-400 shadow-sm transition-all duration-300 hover:scale-105 hover:shadow-md hover:bg-indigo-50 dark:hover:bg-indigo-900/30" href="#">
+<span class="material-symbols-outlined text-2xl">groups</span>
+<span class="text-[10px] font-bold leading-none tracking-wide">Teams</span>
+</a>
+</nav>
+<div class="w-full pt-4 mt-2 border-t border-slate-200/50 dark:border-slate-800/50 flex flex-col items-center gap-3">
+<div class="glass-panel w-full flex flex-col items-center p-2 rounded-2xl shadow-sm">
+<span class="material-symbols-outlined text-blue-500 text-xl mb-1">track_changes</span>
+<span class="text-[10px] font-extrabold text-slate-700 dark:text-slate-300 text-center leading-tight uppercase">Focus</span>
+<div class="w-full h-1.5 bg-slate-200 dark:bg-slate-700 rounded-full mt-2 overflow-hidden">
+<div class="h-full bg-blue-500 rounded-full" style="width: 65%"></div>
+</div>
+</div>
+<div class="glass-panel w-full flex flex-col items-center p-2 rounded-2xl shadow-sm">
+<span class="material-symbols-outlined text-orange-500 text-xl mb-1">timer</span>
+<span class="text-[11px] font-extrabold text-orange-600 dark:text-orange-400 text-center leading-tight">25:00</span>
+</div>
+</div>
+</div>
+</aside>
+<main class="flex-1 overflow-y-auto bg-transparent">
+<div class="max-w-[720px] mx-auto py-6 px-4 sm:px-6 lg:px-8 flex flex-col gap-6">
+<div class="bg-white/80 dark:bg-slate-900/80 backdrop-blur-sm rounded-2xl shadow-sm border border-slate-200/60 dark:border-slate-800/60 p-5">
+<div class="flex gap-4">
+<div class="bg-center bg-no-repeat aspect-square bg-cover rounded-full size-12 shrink-0 shadow-sm" data-alt="User avatar" style='background-image: url("https://lh3.googleusercontent.com/aida-public/AB6AXuBN86ka4Rg_EHnUUjh3I80ZVRanmzMy3f6ol5k5_ma8aSnLY31XEGjfAqwQP7zf5sDpVjyY9XZeQAxPVxa-LkB5RS82DoBRFlXBgOdJ87b0OWvu28JwkhpGhJZlQuKQsrcX0WuKxh1Ys4GE_4-rzMgYqSki2A5x689rnp1ZBIDyeanTYZZIjsor3-XI7BFoh2jP4hnS3pXlmEL3OQMgLZKunCgRSm4LB6GJtQehuGmnuBntSQmQo7yzBL5nxuV2AxMfQzE6LaxglyA");'></div>
+<div class="flex-1">
+<textarea class="w-full bg-transparent border-none focus:ring-0 p-2 text-slate-900 dark:text-slate-100 placeholder-slate-400 dark:placeholder-slate-500 resize-none min-h-[60px] text-lg font-medium" placeholder="What's on your mind? Share an update..."></textarea>
+</div>
+</div>
+<div class="flex items-center justify-between mt-4 pt-4 border-t border-slate-100 dark:border-slate-800/80">
+<div class="flex items-center gap-2">
+<button class="p-2.5 text-blue-500 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/30 rounded-full transition-colors tooltip" title="Add Image">
+<span class="material-symbols-outlined text-xl">image</span>
+</button>
+<button class="p-2.5 text-purple-500 dark:text-purple-400 hover:bg-purple-50 dark:hover:bg-purple-900/30 rounded-full transition-colors" title="Attach File">
+<span class="material-symbols-outlined text-xl">attach_file</span>
+</button>
+<button class="p-2.5 text-emerald-500 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-900/30 rounded-full transition-colors" title="Mention Someone">
+<span class="material-symbols-outlined text-xl">alternate_email</span>
+</button>
+<button class="p-2.5 text-amber-500 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-900/30 rounded-full transition-colors" title="Add Poll">
+<span class="material-symbols-outlined text-xl">poll</span>
+</button>
+</div>
+<button class="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded-full text-sm font-bold shadow-lg shadow-blue-500/20 transition-all duration-300 hover:-translate-y-0.5">
+                            Post Update
+                        </button>
+</div>
+</div>
+<div class="flex flex-col gap-6">
+<article class="bg-white/90 dark:bg-slate-900/90 rounded-2xl shadow-[0_2px_15px_-3px_rgba(0,0,0,0.07),0_10px_20px_-2px_rgba(0,0,0,0.04)] border border-slate-100 dark:border-slate-800">
+<div class="p-5">
+<div class="flex items-center justify-between mb-4">
+<div class="flex items-center gap-3">
+<div class="bg-center bg-no-repeat aspect-square bg-cover rounded-full size-11 shadow-sm" data-alt="Sarah Jenkins avatar" style='background-image: url("https://lh3.googleusercontent.com/aida-public/AB6AXuDDaVO0wZOCaq1A6ZQQtYs0NPY4LIZL8odjwqxIg-prCFKTUGjUwYSAOtmaXX41_2JSJTqoBJIfZilUH1FUKSxXTdIrTTfkvSt321Wl2R5OFzwsDURxFdOeThRLrvwttqbzzegHeN-DQl6DORUXzpWD4J6QDZpBky1DFF6nJTNh9OgrlzTdzcIcGNvGy-App5XrgDsPpTHiCkhiIzM6wrKM7qpug4OsijMDTPnuuIIX54KMJWBpXI3_MhLUNb596PHsj-btjQt2Q-I");'></div>
+<div>
+<p class="text-slate-900 dark:text-slate-100 text-sm font-bold">Sarah Jenkins</p>
+<p class="text-slate-500 dark:text-slate-400 text-xs font-medium">Product Manager • 2h ago</p>
+</div>
+</div>
+<button class="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors">
+<span class="material-symbols-outlined">more_horiz</span>
+</button>
+</div>
+<p class="text-slate-800 dark:text-slate-200 text-base leading-relaxed mb-4">
+                                Excited to announce the launch of our new internal collaboration features! Please check out the documentation and let me know if you have any questions. 🚀 <span class="text-blue-600 dark:text-blue-400 font-semibold cursor-pointer hover:underline">@EngineeringTeam</span>
+</p>
+<div class="border border-slate-200/60 dark:border-slate-700/60 rounded-xl overflow-hidden mb-2 transition-all duration-300 hover:shadow-md group cursor-pointer">
+<div class="h-32 bg-blue-50 dark:bg-blue-900/20 flex items-center justify-center group-hover:scale-105 transition-transform duration-500">
+<span class="material-symbols-outlined text-5xl text-blue-400 dark:text-blue-500 drop-shadow-md">menu_book</span>
+</div>
+<div class="p-4 bg-white dark:bg-slate-800 relative z-10">
+<h4 class="text-sm font-bold text-slate-900 dark:text-slate-100">V2.0 Documentation Guide</h4>
+<p class="text-xs text-slate-500 dark:text-slate-400 mt-1 truncate font-medium">docs.workhub.internal/v2-release-notes</p>
+</div>
+</div>
+</div>
+<div class="px-5 py-3 border-t border-slate-100 dark:border-slate-800/80 flex items-center gap-6 bg-slate-50/50 dark:bg-slate-800/30 rounded-b-2xl">
+<button class="flex items-center gap-1.5 text-slate-500 dark:text-slate-400 hover:text-blue-600 dark:hover:text-blue-400 transition-colors text-sm font-bold">
+<span class="material-symbols-outlined text-[20px] icon-fill text-blue-500">thumb_up</span>
+<span>24</span>
+</button>
+<button class="flex items-center gap-1.5 text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 transition-colors text-sm font-bold">
+<span class="material-symbols-outlined text-[20px]">chat_bubble_outline</span>
+<span>5 Comments</span>
+</button>
+<button class="flex items-center gap-1.5 text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 transition-colors text-sm font-bold ml-auto">
+<span class="material-symbols-outlined text-[20px]">share</span>
+<span>Share</span>
+</button>
+</div>
+</article>
+<article class="bg-white/90 dark:bg-slate-900/90 rounded-2xl shadow-[0_2px_15px_-3px_rgba(0,0,0,0.07),0_10px_20px_-2px_rgba(0,0,0,0.04)] border border-slate-100 dark:border-slate-800">
+<div class="p-5">
+<div class="flex items-center justify-between mb-4">
+<div class="flex items-center gap-3">
+<div class="bg-center bg-no-repeat aspect-square bg-cover rounded-full size-11 shadow-sm" data-alt="David Chen avatar" style='background-image: url("https://lh3.googleusercontent.com/aida-public/AB6AXuArWntF3w1GOp_S6eRmwycsBDqDKaGkptcAbsubXDmTq7pJO5tORxDDaWLs8c4EQv_Cln7lekuuVBsMREcVXk9G9O537xhEw1sHkNNX4S9Fbc7lZURVoua8ZkKp730qjx62zZ4dQLAvXLMBWcPmzAEM91jqJCbMYoCbGS4Cn2HvFulPN1FjTf29ICt_F_6fNrAsOlYWg8SPAATUOCfHwLNUx97xjrmZ7Qkxc2_5HUm2AXr1lZrbSvsM1SxHSZP9CkbjBN5p9XAywCE");'></div>
+<div>
+<p class="text-slate-900 dark:text-slate-100 text-sm font-bold">David Chen</p>
+<p class="text-slate-500 dark:text-slate-400 text-xs font-medium">Senior Developer • 4h ago</p>
+</div>
+</div>
+</div>
+<p class="text-slate-800 dark:text-slate-200 text-base leading-relaxed mb-4">
+                                Just finished the sprint planning for next week. The focus will be on resolving the authentication bug and starting the migration to the new database architecture. Here are the meeting notes.
+                            </p>
+<div class="flex items-center gap-4 p-4 border border-slate-200/60 dark:border-slate-700/60 rounded-xl mb-2 hover:bg-slate-50 dark:hover:bg-slate-800/50 cursor-pointer transition-all duration-300 hover:shadow-sm">
+<div class="p-2.5 bg-red-100/80 dark:bg-red-900/30 text-red-600 dark:text-red-400 rounded-xl shadow-sm">
+<span class="material-symbols-outlined icon-fill text-2xl">picture_as_pdf</span>
+</div>
+<div class="flex-1">
+<p class="text-sm font-bold text-slate-900 dark:text-slate-100">Sprint_Planning_Notes.pdf</p>
+<p class="text-xs text-slate-500 dark:text-slate-400 font-medium mt-0.5">2.4 MB</p>
+</div>
+<button class="text-slate-400 hover:text-blue-600 dark:hover:text-blue-400 transition-colors p-2 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-full">
+<span class="material-symbols-outlined">download</span>
+</button>
+</div>
+</div>
+<div class="px-5 py-3 border-t border-slate-100 dark:border-slate-800/80 flex items-center gap-6 bg-slate-50/50 dark:bg-slate-800/30 rounded-b-2xl">
+<button class="flex items-center gap-1.5 text-slate-500 dark:text-slate-400 hover:text-blue-600 dark:hover:text-blue-400 transition-colors text-sm font-bold">
+<span class="material-symbols-outlined text-[20px] icon-fill text-blue-500">thumb_up</span>
+<span>12</span>
+</button>
+<button class="flex items-center gap-1.5 text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 transition-colors text-sm font-bold">
+<span class="material-symbols-outlined text-[20px]">chat_bubble_outline</span>
+<span>2 Comments</span>
+</button>
+</div>
+</article>
+</div>
+</div>
+</main>
+<aside class="w-80 border-l border-slate-200/50 dark:border-slate-800/50 bg-white/50 dark:bg-slate-900/50 backdrop-blur-sm hidden lg:flex flex-col flex-shrink-0 overflow-y-auto p-5 gap-6">
+<div>
+<h3 class="text-sm font-extrabold text-slate-900 dark:text-slate-100 mb-4 flex items-center gap-2 uppercase tracking-wide">
+<span class="material-symbols-outlined text-blue-500 text-xl bg-blue-100 dark:bg-blue-900/30 p-1 rounded-lg">inbox</span>
+                    Smart Inbox
+                </h3>
+<div class="flex flex-col gap-3">
+<div class="flex gap-4 border-b border-slate-200 dark:border-slate-700 pb-2 mb-1">
+<button class="text-xs font-bold text-blue-600 dark:text-blue-400 border-b-2 border-blue-500 pb-1.5">All</button>
+<button class="text-xs font-semibold text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 transition-colors pb-1.5">Unread (2)</button>
+<button class="text-xs font-semibold text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 transition-colors pb-1.5">@Mentions</button>
+</div>
+<div class="flex items-start gap-3 p-3 bg-white dark:bg-slate-800 shadow-sm hover:shadow-md rounded-xl cursor-pointer transition-all duration-300 border-l-4 border-blue-500">
+<div class="w-9 h-9 rounded-full bg-cover bg-center shrink-0 ring-2 ring-white dark:ring-slate-700 shadow-sm" style='background-image: url("https://lh3.googleusercontent.com/aida-public/AB6AXuDDaVO0wZOCaq1A6ZQQtYs0NPY4LIZL8odjwqxIg-prCFKTUGjUwYSAOtmaXX41_2JSJTqoBJIfZilUH1FUKSxXTdIrTTfkvSt321Wl2R5OFzwsDURxFdOeThRLrvwttqbzzegHeN-DQl6DORUXzpWD4J6QDZpBky1DFF6nJTNh9OgrlzTdzcIcGNvGy-App5XrgDsPpTHiCkhiIzM6wrKM7qpug4OsijMDTPnuuIIX54KMJWBpXI3_MhLUNb596PHsj-btjQt2Q-I");'></div>
+<div>
+<p class="text-sm font-medium text-slate-900 dark:text-slate-100"><span class="font-extrabold">Sarah Jenkins</span> mentioned you</p>
+<p class="text-xs text-slate-500 dark:text-slate-400 line-clamp-1 mt-0.5 font-medium">"Can you review the new designs..." • 1h ago</p>
+</div>
+</div>
+<div class="flex items-start gap-3 p-3 bg-white dark:bg-slate-800 shadow-sm hover:shadow-md rounded-xl cursor-pointer transition-all duration-300 border-l-4 border-blue-500">
+<div class="w-9 h-9 rounded-full bg-cover bg-center shrink-0 ring-2 ring-white dark:ring-slate-700 shadow-sm" style='background-image: url("https://lh3.googleusercontent.com/aida-public/AB6AXuArWntF3w1GOp_S6eRmwycsBDqDKaGkptcAbsubXDmTq7pJO5tORxDDaWLs8c4EQv_Cln7lekuuVBsMREcVXk9G9O537xhEw1sHkNNX4S9Fbc7lZURVoua8ZkKp730qjx62zZ4dQLAvXLMBWcPmzAEM91jqJCbMYoCbGS4Cn2HvFulPN1FjTf29ICt_F_6fNrAsOlYWg8SPAATUOCfHwLNUx97xjrmZ7Qkxc2_5HUm2AXr1lZrbSvsM1SxHSZP9CkbjBN5p9XAywCE");'></div>
+<div>
+<p class="text-sm font-medium text-slate-900 dark:text-slate-100"><span class="font-extrabold">David Chen</span> sent a message</p>
+<p class="text-xs text-slate-500 dark:text-slate-400 line-clamp-1 mt-0.5 font-medium">"Meeting notes attached here." • 2h ago</p>
+</div>
+</div>
+<div class="flex items-start gap-3 p-3 hover:bg-white dark:hover:bg-slate-800 hover:shadow-sm rounded-xl cursor-pointer transition-all duration-300 border border-transparent">
+<div class="w-9 h-9 rounded-full bg-slate-100 dark:bg-slate-700 text-slate-500 flex items-center justify-center shrink-0">
+<span class="material-symbols-outlined text-base">notifications</span>
+</div>
+<div>
+<p class="text-sm font-bold text-slate-900 dark:text-slate-100">New policy update document</p>
+<p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5 font-medium">HR Dept • 3h ago</p>
+</div>
+</div>
+</div>
+</div>
+<hr class="border-slate-200/60 dark:border-slate-700/60"/>
+<div>
+<h3 class="text-sm font-extrabold text-slate-900 dark:text-slate-100 mb-4 flex items-center gap-2 uppercase tracking-wide">
+<span class="material-symbols-outlined text-purple-500 text-xl bg-purple-100 dark:bg-purple-900/30 p-1 rounded-lg">event</span>
+                    Upcoming Meetings
+                </h3>
+<div class="flex flex-col gap-3">
+<div class="bg-white dark:bg-slate-800 p-4 rounded-xl border border-slate-100 dark:border-slate-700 shadow-sm hover:shadow-md transition-shadow">
+<p class="text-xs text-purple-600 dark:text-purple-400 font-extrabold mb-1.5 uppercase tracking-wider">10:00 AM - 11:00 AM</p>
+<p class="text-sm font-bold text-slate-900 dark:text-slate-100">Design Sync</p>
+<div class="flex items-center gap-2 mt-3">
+<div class="flex -space-x-2">
+<div class="w-7 h-7 rounded-full border-2 border-white dark:border-slate-800 bg-cover bg-center shadow-sm" data-alt="Attendee 1" style="background-image: url('https://lh3.googleusercontent.com/aida-public/AB6AXuC9tD_RLIEttun2p6Zi0fTILdvuPIQZr1ik-ZY9cMxDWtZJMxT1FJTrgBtC4pJ_z1ES2Bl4LcqOWNFrg_VicJJxVqM7jNJp8Ze-D54BbbWRkzeeQaD10j77F2w78-iaGHDSottp59K957BgIqxXzweN16_jwbiPp2Exq_KD66jfOL0RT80ZfKcsUAJaaTkQzA8OGoq8ugUcRu76tIImPce6gaWGvJsMzd-6JEbDSa2vf0_w65D0k7OEUKP_HjJ0bkHDpa3SAzFN5Qo');"></div>
+<div class="w-7 h-7 rounded-full border-2 border-white dark:border-slate-800 bg-cover bg-center shadow-sm" data-alt="Attendee 2" style="background-image: url('https://lh3.googleusercontent.com/aida-public/AB6AXuCyqZCPzILZqNvz5xpOWxDch4GWxSXt7mMqv2tjKmj_wFD1i9FjqISNwIDiqCLLqxR91mnk8TAhDSZyxsEL-0hgG_Qj-ejFcIJYyYmKWa47T5_s2UWmpVnrA0b7msyjxaMfqpRL8WFYBPA6oOFMGlcA_bkRPZvYxfYWnj2tMHs7fzLGj7Ep0sF0fhz-6jBn8t1_t4DLKl0ckJ1jBlQt_Ew-DoXfBieA05ZHWebqqN8aeX1i4Em4l4lXY1sUWXwUWR906BRV9owHW0E');"></div>
+<div class="w-7 h-7 rounded-full border-2 border-white dark:border-slate-800 bg-slate-100 dark:bg-slate-700 flex items-center justify-center text-[10px] font-bold text-slate-600 dark:text-slate-300 shadow-sm">+3</div>
+</div>
+</div>
+</div>
+<div class="bg-slate-50 dark:bg-slate-800/50 p-4 rounded-xl border border-slate-100 dark:border-slate-700/50 hover:bg-white dark:hover:bg-slate-800 transition-colors">
+<p class="text-xs text-slate-500 dark:text-slate-400 font-extrabold mb-1.5 uppercase tracking-wider">2:30 PM - 3:00 PM</p>
+<p class="text-sm font-bold text-slate-900 dark:text-slate-100">1:1 with Manager</p>
+</div>
+</div>
+</div>
+<hr class="border-slate-200/60 dark:border-slate-700/60"/>
+<div>
+<h3 class="text-sm font-extrabold text-slate-900 dark:text-slate-100 mb-4 flex items-center gap-2 uppercase tracking-wide">
+<span class="material-symbols-outlined text-green-500 text-xl bg-green-100 dark:bg-green-900/30 p-1 rounded-lg">group</span>
+        Online Colleagues
+    </h3>
+<div class="flex flex-col gap-3">
+<div class="flex items-center gap-3 p-2 hover:bg-white dark:hover:bg-slate-800 rounded-xl transition-colors cursor-pointer">
+<div class="relative">
+<div class="w-10 h-10 rounded-full bg-cover bg-center ring-2 ring-white dark:ring-slate-800" style='background-image: url("https://lh3.googleusercontent.com/aida-public/AB6AXuDDaVO0wZOCaq1A6ZQQtYs0NPY4LIZL8odjwqxIg-prCFKTUGjUwYSAOtmaXX41_2JSJTqoBJIfZilUH1FUKSxXTdIrTTfkvSt321Wl2R5OFzwsDURxFdOeThRLrvwttqbzzegHeN-DQl6DORUXzpWD4J6QDZpBky1DFF6nJTNh9OgrlzTdzcIcGNvGy-App5XrgDsPpTHiCkhiIzM6wrKM7qpug4OsijMDTPnuuIIX54KMJWBpXI3_MhLUNb596PHsj-btjQt2Q-I");'></div>
+<div class="absolute bottom-0 right-0 w-3 h-3 bg-green-500 border-2 border-white dark:border-slate-800 rounded-full"></div>
+</div>
+<div>
+<p class="text-sm font-bold text-slate-900 dark:text-slate-100">Sarah Jenkins</p>
+<p class="text-xs text-slate-500 dark:text-slate-400 font-medium">Product Manager</p>
+</div>
+</div>
+<div class="flex items-center gap-3 p-2 hover:bg-white dark:hover:bg-slate-800 rounded-xl transition-colors cursor-pointer">
+<div class="relative">
+<div class="w-10 h-10 rounded-full bg-cover bg-center ring-2 ring-white dark:ring-slate-800" style='background-image: url("https://lh3.googleusercontent.com/aida-public/AB6AXuArWntF3w1GOp_S6eRmwycsBDqDKaGkptcAbsubXDmTq7pJO5tORxDDaWLs8c4EQv_Cln7lekuuVBsMREcVXk9G9O537xhEw1sHkNNX4S9Fbc7lZURVoua8ZkKp730qjx62zZ4dQLAvXLMBWcPmzAEM91jqJCbMYoCbGS4Cn2HvFulPN1FjTf29ICt_F_6fNrAsOlYWg8SPAATUOCfHwLNUx97xjrmZ7Qkxc2_5HUm2AXr1lZrbSvsM1SxHSZP9CkbjBN5p9XAywCE");'></div>
+<div class="absolute bottom-0 right-0 w-3 h-3 bg-green-500 border-2 border-white dark:border-slate-800 rounded-full"></div>
+</div>
+<div>
+<p class="text-sm font-bold text-slate-900 dark:text-slate-100">David Chen</p>
+<p class="text-xs text-slate-500 dark:text-slate-400 font-medium">Senior Developer</p>
+</div>
+</div>
+<div class="flex items-center gap-3 p-2 hover:bg-white dark:hover:bg-slate-800 rounded-xl transition-colors cursor-pointer">
+<div class="relative">
+<div class="w-10 h-10 rounded-full bg-cover bg-center ring-2 ring-white dark:ring-slate-800" style='background-image: url("https://lh3.googleusercontent.com/aida-public/AB6AXuC9tD_RLIEttun2p6Zi0fTILdvuPIQZr1ik-ZY9cMxDWtZJMxT1FJTrgBtC4pJ_z1ES2Bl4LcqOWNFrg_VicJJxVqM7jNJp8Ze-D54BbbWRkzeeQaD10j77F2w78-iaGHDSottp59K957BgIqxXzweN16_jwbiPp2Exq_KD66jfOL0RT80ZfKcsUAJaaTkQzA8OGoq8ugUcRu76tIImPce6gaWGvJsMzd-6JEbDSa2vf0_w65D0k7OEUKP_HjJ0bkHDpa3SAzFN5Qo");'></div>
+<div class="absolute bottom-0 right-0 w-3 h-3 bg-green-500 border-2 border-white dark:border-slate-800 rounded-full"></div>
+</div>
+<div>
+<p class="text-sm font-bold text-slate-900 dark:text-slate-100">Emily Davis</p>
+<p class="text-xs text-slate-500 dark:text-slate-400 font-medium">UX Designer</p>
+</div>
+</div>
+</div>
+</div>
+</aside>
+</div>
+
+</body></html>

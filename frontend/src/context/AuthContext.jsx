@@ -1,11 +1,13 @@
-import { createContext, useContext, useState, useEffect } from "react";
+import { createContext, useContext, useState, useEffect, useCallback } from "react";
 import {
   loginUser,
   googleLoginUser,
   registerUser,
   getMe,
   verifyEmail as verifyEmailAPI,
-} from "../services/authService";
+  logoutUser,
+} from "../api/authApi";
+import { setTokens, getRefreshToken, clearTokens } from "../api/axiosClient";
 
 const AuthContext = createContext(null);
 
@@ -19,32 +21,42 @@ export const useAuth = () => {
 
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
-  const [token, setToken] = useState(localStorage.getItem("workhub_token"));
   const [loading, setLoading] = useState(true);
 
-  
-  useEffect(() => {
-    const initAuth = async () => {
-      if (token) {
-        try {
-          const userData = await getMe();
-          setUser(userData);
-        } catch {
-          
-          localStorage.removeItem("workhub_token");
-          setToken(null);
-          setUser(null);
-        }
+  const initAuth = useCallback(async () => {
+    const storedToken = localStorage.getItem("workhub_token");
+    const storedRefreshToken = getRefreshToken();
+
+    if (storedToken) {
+      setTokens(storedToken, storedRefreshToken);
+      try {
+        const userData = await getMe();
+        setUser(userData);
+      } catch {
+        clearTokens();
+        setUser(null);
       }
-      setLoading(false);
-    };
+    }
+    setLoading(false);
+  }, []);
+
+  useEffect(() => {
     initAuth();
-  }, [token]);
+  }, [initAuth]);
+
+  useEffect(() => {
+    const handleForceLogout = () => {
+      clearTokens();
+      setUser(null);
+    };
+    window.addEventListener("workhub:logout", handleForceLogout);
+    return () => window.removeEventListener("workhub:logout", handleForceLogout);
+  }, []);
 
   const login = async (email, password) => {
     const data = await loginUser(email, password);
     localStorage.setItem("workhub_token", data.token);
-    setToken(data.token);
+    setTokens(data.token, data.refreshToken);
     setUser(data);
     return data;
   };
@@ -52,36 +64,42 @@ export const AuthProvider = ({ children }) => {
   const googleLogin = async (googleToken) => {
     const data = await googleLoginUser(googleToken);
     localStorage.setItem("workhub_token", data.token);
-    setToken(data.token);
+    setTokens(data.token, data.refreshToken);
     setUser(data);
     return data;
   };
 
   const register = async (fullName, email, password) => {
-    
     const data = await registerUser(fullName, email, password);
-    return data; 
+    return data;
   };
 
   const verifyAndLogin = async (email, otp) => {
     const data = await verifyEmailAPI(email, otp);
     if (data.token) {
       localStorage.setItem("workhub_token", data.token);
-      setToken(data.token);
+      setTokens(data.token, data.refreshToken);
       setUser(data);
     }
     return data;
   };
 
-  const logout = () => {
-    localStorage.removeItem("workhub_token");
-    setToken(null);
+  const logout = async () => {
+    try {
+      const refreshToken = getRefreshToken();
+      if (refreshToken) {
+        await logoutUser(refreshToken);
+      }
+    } catch {
+      // Proceed with client-side cleanup regardless
+    }
+    clearTokens();
     setUser(null);
   };
 
   return (
     <AuthContext.Provider
-      value={{ user, token, loading, login, googleLogin, register, verifyAndLogin, logout }}
+      value={{ user, loading, login, googleLogin, register, verifyAndLogin, logout }}
     >
       {children}
     </AuthContext.Provider>

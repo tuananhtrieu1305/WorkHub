@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "../../context/AuthContext";
-import { resendOTP } from "../../services/authService";
+import { resendOTP } from "../../api/authApi";
 import { useGoogleLogin } from "@react-oauth/google";
 import axios from "axios";
 import workHubLogo from "../../assets/WorkHub_logo_blue_background.png";
