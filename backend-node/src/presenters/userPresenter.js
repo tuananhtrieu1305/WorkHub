@@ -1,10 +1,98 @@
 import User from "../models/User.js";
+import Conversation from "../models/Conversation.js";
 import Department from "../models/Department.js";
 import Project from "../models/Project.js";
 import UserPreference from "../models/UserPreference.js";
 import ActivityLog from "../models/ActivityLog.js";
 import generateToken from "../utils/generateToken.js";
 import generateRefreshToken from "../utils/generateRefreshToken.js";
+import {
+  activityStatuses,
+  buildPresencePayload,
+  getPresenceFields,
+  normalizeActivityStatus,
+} from "../services/presenceService.js";
+
+let ioInstance = null;
+const activityStatusExpiryTimers = new Map();
+
+export const setUserIo = (io) => {
+  ioInstance = io;
+};
+
+const formatCurrentUser = (user) => ({
+  _id: user._id,
+  id: user._id,
+  fullName: user.fullName,
+  email: user.email,
+  role: user.role,
+  avatar: user.avatar,
+  ...getPresenceFields(user),
+});
+
+const emitActivityStatusChanged = async (user) => {
+  if (!ioInstance) return;
+
+  const payload = buildPresencePayload(user);
+
+  ioInstance.to(`user:${user._id}`).emit("activity_status_changed", payload);
+
+  const conversations = await Conversation.find({
+    "participants.userId": user._id,
+  }).select("_id");
+
+  conversations.forEach((conversation) => {
+    ioInstance
+      .to(`conversation:${conversation._id}`)
+      .emit("activity_status_changed", payload);
+  });
+};
+
+const clearActivityStatusExpiryTimer = (userId) => {
+  const key = userId.toString();
+  const timer = activityStatusExpiryTimers.get(key);
+  if (!timer) return;
+
+  clearTimeout(timer);
+  activityStatusExpiryTimers.delete(key);
+};
+
+const scheduleActivityStatusExpiry = (user) => {
+  clearActivityStatusExpiryTimer(user._id);
+
+  if (!user.activityStatusExpiresAt) return;
+
+  const expiresAt = new Date(user.activityStatusExpiresAt).getTime();
+  const delay = expiresAt - Date.now();
+  if (!Number.isFinite(delay) || delay <= 0) return;
+
+  const key = user._id.toString();
+  const timer = setTimeout(async () => {
+    try {
+      const currentUser = await User.findById(user._id);
+      if (!currentUser?.activityStatusExpiresAt) return;
+
+      const currentExpiry = new Date(currentUser.activityStatusExpiresAt).getTime();
+      if (currentExpiry > Date.now()) {
+        scheduleActivityStatusExpiry(currentUser);
+        return;
+      }
+
+      currentUser.activityStatus = "online";
+      currentUser.activityStatusExpiresAt = null;
+      await currentUser.save();
+      await emitActivityStatusChanged(currentUser);
+    } catch (error) {
+      console.error("Activity status expiry error:", error.message);
+    } finally {
+      activityStatusExpiryTimers.delete(key);
+    }
+  }, delay);
+
+  timer.unref?.();
+
+  activityStatusExpiryTimers.set(key, timer);
+};
 
 // Hàm format user summary (cho danh sách)
 const formatUserSummary = (user, department, projects) => ({
@@ -13,6 +101,7 @@ const formatUserSummary = (user, department, projects) => ({
   email: user.email,
   role: user.role,
   status: user.status,
+  ...getPresenceFields(user),
   position: user.position,
   phone: user.phone,
   department: department
@@ -32,6 +121,30 @@ const formatUserSummary = (user, department, projects) => ({
     : [],
 });
 
+const formatChatUser = (user) => ({
+  id: user._id,
+  fullName: user.fullName,
+  email: user.email,
+  avatar: user.avatar,
+  position: user.position,
+  status: user.status,
+  ...getPresenceFields(user),
+});
+
+const getSingleQueryValue = (value, fallback = "") => {
+  if (Array.isArray(value)) return value[0] ?? fallback;
+  return value ?? fallback;
+};
+
+const escapeRegex = (value) => {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+};
+
+const parsePositiveInt = (value, fallback) => {
+  const parsed = parseInt(getSingleQueryValue(value, fallback));
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+};
+
 // Hàm format user detail (chi tiết user)
 const formatUserDetail = (user, department, projects) => ({
   id: user._id,
@@ -40,6 +153,7 @@ const formatUserDetail = (user, department, projects) => ({
   phone: user.phone,
   position: user.position,
   status: user.status,
+  ...getPresenceFields(user),
   role: user.role,
   avatar: user.avatar,
   isVerified: user.isVerified,
@@ -130,6 +244,54 @@ export const getUsers = async (req, res) => {
     });
   } catch (error) {
     console.error("GetUsers error:", error.message);
+    res.status(500).json({ message: "Server error, please try again" });
+  }
+};
+
+export const searchUsersForChat = async (req, res) => {
+  try {
+    const { keyword = "", page = 1, size = 10 } = req.query;
+
+    const pageNum = parsePositiveInt(page, 1);
+    const pageSize = Math.min(parsePositiveInt(size, 10), 20);
+    const normalizedKeyword = getSingleQueryValue(keyword)
+      .toString()
+      .trim()
+      .slice(0, 50);
+    const filter = {
+      _id: { $ne: req.user._id },
+      status: "active",
+    };
+
+    if (normalizedKeyword) {
+      const safeKeyword = escapeRegex(normalizedKeyword);
+      filter.$or = [
+        { fullName: { $regex: safeKeyword, $options: "i" } },
+        { email: { $regex: safeKeyword, $options: "i" } },
+      ];
+    }
+
+    const skip = (pageNum - 1) * pageSize;
+    const [users, totalElements] = await Promise.all([
+      User.find(filter)
+        .select(
+          "_id fullName email avatar position status activityStatus activityStatusExpiresAt",
+        )
+        .skip(skip)
+        .limit(pageSize)
+        .sort({ fullName: 1 }),
+      User.countDocuments(filter),
+    ]);
+
+    res.status(200).json({
+      content: users.map(formatChatUser),
+      totalElements,
+      totalPages: Math.ceil(totalElements / pageSize),
+      currentPage: pageNum,
+      pageSize,
+    });
+  } catch (error) {
+    console.error("SearchUsersForChat error:", error.message);
     res.status(500).json({ message: "Server error, please try again" });
   }
 };
@@ -329,6 +491,46 @@ export const updateProfile = async (req, res) => {
     res.status(200).json(formatUserDetail(user, department, projects));
   } catch (error) {
     console.error("UpdateProfile error:", error.message);
+    res.status(500).json({ message: "Server error, please try again" });
+  }
+};
+
+export const updateActivityStatus = async (req, res) => {
+  try {
+    const { activityStatus, expiresInMinutes } = req.body;
+
+    if (!activityStatuses.has(activityStatus)) {
+      return res.status(400).json({
+        message: "activityStatus must be one of online, idle, dnd, invisible",
+      });
+    }
+
+    const user = await User.findById(req.user._id);
+
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    user.activityStatus = activityStatus;
+    if (activityStatus === "online") {
+      user.activityStatusExpiresAt = null;
+    } else if (Number.isFinite(Number(expiresInMinutes)) && Number(expiresInMinutes) > 0) {
+      user.activityStatusExpiresAt = new Date(
+        Date.now() + Number(expiresInMinutes) * 60 * 1000,
+      );
+    } else {
+      user.activityStatusExpiresAt = null;
+    }
+    await user.save();
+    scheduleActivityStatusExpiry(user);
+
+    await emitActivityStatusChanged(user).catch((error) => {
+      console.error("Emit activity status error:", error.message);
+    });
+
+    res.status(200).json(formatCurrentUser(user));
+  } catch (error) {
+    console.error("UpdateActivityStatus error:", error.message);
     res.status(500).json({ message: "Server error, please try again" });
   }
 };

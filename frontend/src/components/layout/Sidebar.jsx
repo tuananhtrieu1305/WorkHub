@@ -88,7 +88,7 @@ const Sidebar = () => {
   return (
     <aside className="w-20 border-r border-slate-200/50 bg-slate-50/50 hidden md:flex flex-col flex-shrink-0 overflow-y-auto">
       <div className="p-3 flex flex-col gap-6 items-center">
-        <div className="flex flex-col items-center">
+        {/* <div className="flex flex-col items-center">
           {avatarUrl ? (
             <img
               src={avatarUrl}
@@ -100,7 +100,7 @@ const Sidebar = () => {
               {userInitial}
             </div>
           )}
-        </div>
+        </div> */}
 
         <nav className="flex flex-col gap-3 w-full mt-2">
           {navItems.map((item) => {

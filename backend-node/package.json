@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "type": "module",
   "scripts": {
-    "test": "node test/documentModels.test.js && node test/r2StorageService.test.js && node test/documentApi.test.js && node test/activityLogService.test.js && node test/taskModels.test.js && node test/taskApi.test.js && node test/notificationModels.test.js && node test/notificationApi.test.js && node test/adminApi.test.js && node test/authSecurity.test.js && node test/meetingApi.test.js",
+    "test": "node test/documentModels.test.js && node test/r2StorageService.test.js && node test/documentApi.test.js && node test/activityLogService.test.js && node test/taskModels.test.js && node test/taskApi.test.js && node test/notificationModels.test.js && node test/notificationApi.test.js && node test/adminApi.test.js && node test/authSecurity.test.js && node test/userSearchApi.test.js && node test/conversationMessageApi.test.js && node test/meetingApi.test.js",
     "dev": "nodemon src/app.js"
   },
   "keywords": [],

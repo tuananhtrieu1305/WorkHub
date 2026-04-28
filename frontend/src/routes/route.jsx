@@ -13,6 +13,7 @@ import ResetPasswordPage from "../modules/auth/ResetPasswordPage";
 const MeetingPage = lazy(() => import("../modules/meeting/MeetingPage"));
 const MeetingRoomPage = lazy(() => import("../modules/meeting/MeetingRoomPage"));
 const FeedPage = lazy(() => import("../modules/feed/FeedPage"));
+const ChatPage = lazy(() => import("../modules/chat/ChatPage"));
 
 const LazyFallback = () => (
   <div className="route-loading-screen">
@@ -38,6 +39,22 @@ export const router = createBrowserRouter([
             element: (
               <Suspense fallback={<LazyFallback />}>
                 <FeedPage />
+              </Suspense>
+            ),
+          },
+          {
+            path: "messages",
+            element: (
+              <Suspense fallback={<LazyFallback />}>
+                <ChatPage />
+              </Suspense>
+            ),
+          },
+          {
+            path: "messages/:conversationId",
+            element: (
+              <Suspense fallback={<LazyFallback />}>
+                <ChatPage />
               </Suspense>
             ),
           },

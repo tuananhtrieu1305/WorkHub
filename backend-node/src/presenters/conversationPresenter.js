@@ -1,6 +1,7 @@
 import Conversation from "../models/Conversation.js";
 import Message from "../models/Message.js";
 import User from "../models/User.js";
+import { getPresenceFields } from "../services/presenceService.js";
 
 // Helper: get io instance
 let ioInstance = null;
@@ -13,6 +14,59 @@ const isParticipant = (conversation, userId) => {
   return conversation.participants.some(
     (p) => p.userId.toString() === userId.toString()
   );
+};
+
+const formatConversationUser = (user, includeEmail = false) => {
+  if (!user) return null;
+
+  return {
+    _id: user._id,
+    id: user._id,
+    fullName: user.fullName,
+    ...(includeEmail ? { email: user.email } : {}),
+    avatar: user.avatar,
+    ...getPresenceFields(user),
+  };
+};
+
+const formatReplyMessage = async (replyTo) => {
+  if (!replyTo) return null;
+
+  const replyMessage = await Message.findById(replyTo);
+  if (!replyMessage) return null;
+
+  const sender = await User.findById(replyMessage.senderId).select(
+    "_id fullName avatar activityStatus activityStatusExpiresAt"
+  );
+
+  return {
+    id: replyMessage._id,
+    sender: formatConversationUser(sender),
+    type: replyMessage.type,
+    content: replyMessage.content,
+    attachments: replyMessage.attachments,
+    createdAt: replyMessage.createdAt,
+  };
+};
+
+const formatMessage = async (message) => {
+  const sender = await User.findById(message.senderId).select(
+    "_id fullName avatar activityStatus activityStatusExpiresAt"
+  );
+
+  return {
+    id: message._id,
+    conversationId: message.conversationId,
+    sender: formatConversationUser(sender),
+    type: message.type,
+    content: message.content,
+    attachments: message.attachments,
+    mentions: message.mentions,
+    replyTo: await formatReplyMessage(message.replyTo),
+    reactions: message.reactions,
+    createdAt: message.createdAt,
+    updatedAt: message.updatedAt,
+  };
 };
 
 // GET /conversations
@@ -39,8 +93,14 @@ export const getConversations = async (req, res) => {
         // Populate participant details (basic info only)
         const participantDetails = await Promise.all(
           conv.participants.map(async (p) => {
-            const user = await User.findById(p.userId).select("_id fullName avatar");
-            return { userId: p.userId, user, joinedAt: p.joinedAt };
+            const user = await User.findById(p.userId).select(
+              "_id fullName avatar activityStatus activityStatusExpiresAt"
+            );
+            return {
+              userId: p.userId,
+              user: formatConversationUser(user),
+              joinedAt: p.joinedAt,
+            };
           })
         );
 
@@ -159,10 +219,12 @@ export const getConversationById = async (req, res) => {
 
     const participantDetails = await Promise.all(
       conversation.participants.map(async (p) => {
-        const user = await User.findById(p.userId).select("_id fullName email avatar");
+        const user = await User.findById(p.userId).select(
+          "_id fullName email avatar activityStatus activityStatusExpiresAt"
+        );
         return {
           userId: p.userId,
-          user,
+          user: formatConversationUser(user, true),
           joinedAt: p.joinedAt,
           lastReadMessageId: p.lastReadMessageId,
         };
@@ -364,29 +426,42 @@ export const getMessages = async (req, res) => {
     const hasMore = messages.length > messageLimit;
     if (hasMore) messages.pop();
 
-    // Populate sender info
-    const content = await Promise.all(
-      messages.map(async (msg) => {
-        const sender = await User.findById(msg.senderId).select("_id fullName avatar");
-        return {
-          id: msg._id,
-          conversationId: msg.conversationId,
-          sender,
-          type: msg.type,
-          content: msg.content,
-          attachments: msg.attachments,
-          mentions: msg.mentions,
-          replyTo: msg.replyTo,
-          reactions: msg.reactions,
-          createdAt: msg.createdAt,
-          updatedAt: msg.updatedAt,
-        };
-      })
-    );
+    const content = await Promise.all(messages.map(formatMessage));
 
     res.status(200).json({ content, hasMore });
   } catch (error) {
     console.error("GetMessages error:", error.message);
+    if (error.kind === "ObjectId") {
+      return res.status(400).json({ message: "Invalid conversation ID" });
+    }
+    res.status(500).json({ message: "Server error, please try again" });
+  }
+};
+
+// POST /conversations/:id/attachments
+export const uploadConversationAttachment = async (req, res) => {
+  try {
+    const conversation = await Conversation.findById(req.params.id);
+    if (!conversation) {
+      return res.status(404).json({ message: "Conversation not found" });
+    }
+
+    if (!isParticipant(conversation, req.user._id)) {
+      return res.status(403).json({ message: "You are not a participant of this conversation" });
+    }
+
+    if (!req.file) {
+      return res.status(400).json({ message: "Attachment file is required" });
+    }
+
+    res.status(201).json({
+      fileName: req.file.originalname,
+      fileUrl: `/uploads/attachments/${req.file.filename}`,
+      fileSize: req.file.size,
+      mimeType: req.file.mimetype,
+    });
+  } catch (error) {
+    console.error("UploadConversationAttachment error:", error.message);
     if (error.kind === "ObjectId") {
       return res.status(400).json({ message: "Invalid conversation ID" });
     }
@@ -437,21 +512,7 @@ export const sendMessage = async (req, res) => {
     };
     await conversation.save();
 
-    const sender = await User.findById(req.user._id).select("_id fullName avatar");
-
-    const messageData = {
-      id: message._id,
-      conversationId: message.conversationId,
-      sender,
-      type: message.type,
-      content: message.content,
-      attachments: message.attachments,
-      mentions: message.mentions,
-      replyTo: message.replyTo,
-      reactions: message.reactions,
-      createdAt: message.createdAt,
-      updatedAt: message.updatedAt,
-    };
+    const messageData = await formatMessage(message);
 
     // Emit Socket.IO event
     if (ioInstance) {
@@ -497,21 +558,7 @@ export const updateMessage = async (req, res) => {
     message.content = content;
     await message.save();
 
-    const sender = await User.findById(message.senderId).select("_id fullName avatar");
-
-    const messageData = {
-      id: message._id,
-      conversationId: message.conversationId,
-      sender,
-      type: message.type,
-      content: message.content,
-      attachments: message.attachments,
-      mentions: message.mentions,
-      replyTo: message.replyTo,
-      reactions: message.reactions,
-      createdAt: message.createdAt,
-      updatedAt: message.updatedAt,
-    };
+    const messageData = await formatMessage(message);
 
     if (ioInstance) {
       ioInstance.to(`conversation:${conversation._id}`).emit("message_updated", messageData);

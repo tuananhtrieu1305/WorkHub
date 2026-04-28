@@ -15,6 +15,14 @@ export const updateMyProfile = async (updates) => {
   return data;
 };
 
+export const updateMyActivityStatus = async (activityStatus, options = {}) => {
+  const { data } = await axiosClient.patch("/users/me/activity-status", {
+    activityStatus,
+    ...options,
+  });
+  return data;
+};
+
 export const updateMyAvatar = async (formData) => {
   const { data } = await axiosClient.patch("/users/me/avatar", formData, {
     headers: { "Content-Type": "multipart/form-data" },
@@ -23,6 +31,6 @@ export const updateMyAvatar = async (formData) => {
 };
 
 export const searchUsers = async (params = {}) => {
-  const { data } = await axiosClient.get("/users", { params });
+  const { data } = await axiosClient.get("/users/search", { params });
   return data;
 };

@@ -8,6 +8,7 @@ import { Server } from "socket.io";
 import connectDB from "./config/db.js";
 import { setupSocket } from "./config/socketHandler.js";
 import { setIo } from "./presenters/conversationPresenter.js";
+import { setUserIo } from "./presenters/userPresenter.js";
 import authRoutes from "./views/authView.js";
 import userRoutes from "./views/userView.js";
 import departmentRoutes from "./views/departmentView.js";
@@ -85,6 +86,7 @@ if (process.env.NODE_ENV !== "test") {
 
   setupSocket(io);
   setIo(io);
+  setUserIo(io);
 
   const PORT = process.env.PORT || 5000;
   server.listen(PORT, () => {

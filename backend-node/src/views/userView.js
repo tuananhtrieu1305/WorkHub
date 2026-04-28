@@ -6,7 +6,9 @@ import {
   updateUser,
   deleteUser,
   getMe,
+  searchUsersForChat,
   updateProfile,
+  updateActivityStatus,
   updateAvatar,
   getPreferences,
   updatePreferences,
@@ -21,9 +23,11 @@ const router = express.Router();
 // Profile endpoints (for /me)
 router.get("/me", protect, getMe);
 router.put("/me", protect, updateProfile);
+router.patch("/me/activity-status", protect, updateActivityStatus);
 router.put("/me/avatar", protect, upload.single("avatar"), updateAvatar);
 router.get("/me/preferences", protect, getPreferences);
 router.put("/me/preferences", protect, updatePreferences);
+router.get("/search", protect, searchUsersForChat);
 
 // Admin endpoints
 router.get("/", admin, getUsers);

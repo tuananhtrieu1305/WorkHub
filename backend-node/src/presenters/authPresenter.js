@@ -4,6 +4,7 @@ import User from "../models/User.js";
 import generateToken from "../utils/generateToken.js";
 import generateRefreshToken from "../utils/generateRefreshToken.js";
 import { isInactiveUser } from "../middlewares/authMiddleware.js";
+import { getPresenceFields } from "../services/presenceService.js";
 import {
   sendVerificationEmail,
   sendResetPasswordEmail,
@@ -129,6 +130,7 @@ export const verifyEmail = async (req, res) => {
       email: user.email,
       role: user.role,
       avatar: user.avatar,
+      ...getPresenceFields(user),
       token: generateToken(user._id),
       refreshToken: refreshToken,
     });
@@ -224,6 +226,7 @@ export const login = async (req, res) => {
       email: user.email,
       role: user.role,
       avatar: user.avatar,
+      ...getPresenceFields(user),
       token: generateToken(user._id),
       refreshToken: refreshToken,
     });
@@ -277,6 +280,7 @@ export const googleLogin = async (req, res) => {
       email: user.email,
       role: user.role,
       avatar: user.avatar,
+      ...getPresenceFields(user),
       token: generateToken(user._id),
       refreshToken: refreshToken,
     });
@@ -386,6 +390,7 @@ export const getMe = async (req, res) => {
       email: user.email,
       role: user.role,
       avatar: user.avatar,
+      ...getPresenceFields(user),
     });
   } catch (error) {
     console.error("GetMe error:", error.message);

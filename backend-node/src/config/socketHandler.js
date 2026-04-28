@@ -1,6 +1,33 @@
 import jwt from "jsonwebtoken";
 import User from "../models/User.js";
 import Conversation from "../models/Conversation.js";
+import {
+  buildPresencePayload,
+  markUserConnected,
+  markUserDisconnected,
+} from "../services/presenceService.js";
+
+const emitPresenceChanged = async (io, userId) => {
+  const freshUser = await User.findById(userId).select(
+    "_id fullName avatar activityStatus activityStatusExpiresAt"
+  );
+  if (!freshUser) return;
+
+  const payload = buildPresencePayload(freshUser);
+
+  io.to(`user:${freshUser._id}`).emit("activity_status_changed", payload);
+
+  const conversations = await Conversation.find({
+    "participants.userId": freshUser._id,
+  }).select("_id");
+
+  conversations.forEach((conversation) => {
+    io.to(`conversation:${conversation._id}`).emit(
+      "activity_status_changed",
+      payload,
+    );
+  });
+};
 
 export const setupSocket = (io) => {
   // Authentication middleware
@@ -24,6 +51,8 @@ export const setupSocket = (io) => {
 
   io.on("connection", async (socket) => {
     console.log(`User connected: ${socket.user.fullName} (${socket.user._id})`);
+    socket.join(`user:${socket.user._id}`);
+    const becameOnline = markUserConnected(socket.user._id, socket.id);
 
     // Auto-join all conversation rooms
     try {
@@ -34,6 +63,10 @@ export const setupSocket = (io) => {
       conversations.forEach((conv) => {
         socket.join(`conversation:${conv._id}`);
       });
+
+      if (becameOnline) {
+        await emitPresenceChanged(io, socket.user._id);
+      }
     } catch (error) {
       console.error("Error joining rooms:", error.message);
     }
@@ -72,8 +105,16 @@ export const setupSocket = (io) => {
       }
     });
 
-    socket.on("disconnect", () => {
+    socket.on("disconnect", async () => {
       console.log(`User disconnected: ${socket.user.fullName}`);
+      const becameOffline = markUserDisconnected(socket.user._id, socket.id);
+      if (!becameOffline) return;
+
+      try {
+        await emitPresenceChanged(io, socket.user._id);
+      } catch (error) {
+        console.error("Presence disconnect error:", error.message);
+      }
     });
   });
 

@@ -179,7 +179,7 @@ const CreatePostBox = ({ onPostCreated }) => {
   ];
 
   return (
-    <div className="bg-white/80 backdrop-blur-sm rounded-2xl shadow-sm border border-slate-200/60 p-5">
+    <div className="bg-white/80 backdrop-blur-sm rounded-2xl shadow-sm border border-slate-200/60 p-5 relative z-20">
       <div className="flex gap-4">
         {avatarUrl ? (
           <img

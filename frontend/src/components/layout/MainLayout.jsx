@@ -1,20 +1,30 @@
-import { Outlet } from "react-router-dom";
+import { Outlet, useLocation } from "react-router-dom";
 import Sidebar from "./Sidebar";
 import Header from "./Header";
 import RightSidebar from "./RightSidebar";
+import { SocketProvider } from "../../context/SocketContext";
 
 const MainLayout = () => {
+  const location = useLocation();
+  const isChatRoute = location.pathname.startsWith("/messages");
+
   return (
-    <div className="bg-[#f8f9fc] text-slate-900 min-h-screen flex flex-col">
-      <Header />
-      <div className="flex flex-1 overflow-hidden">
-        <Sidebar />
-        <main className="flex-1 overflow-y-auto bg-transparent">
-          <Outlet />
-        </main>
-        <RightSidebar />
+    <SocketProvider>
+      <div className="bg-[#f8f9fc] text-slate-900 h-screen overflow-hidden flex flex-col">
+        <Header />
+        <div className="flex flex-1 min-h-0 overflow-hidden">
+          <Sidebar />
+          <main
+            className={`flex-1 min-w-0 min-h-0 bg-transparent ${
+              isChatRoute ? "overflow-hidden" : "overflow-y-auto"
+            }`}
+          >
+            <Outlet />
+          </main>
+          {!isChatRoute && <RightSidebar />}
+        </div>
       </div>
-    </div>
+    </SocketProvider>
   );
 };
 

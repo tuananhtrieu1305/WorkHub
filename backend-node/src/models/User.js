@@ -66,6 +66,15 @@ const userSchema = new mongoose.Schema(
       enum: ["active", "inactive", "suspended", "locked", "disabled"],
       default: "active",
     },
+    activityStatus: {
+      type: String,
+      enum: ["online", "idle", "dnd", "invisible"],
+      default: "online",
+    },
+    activityStatusExpiresAt: {
+      type: Date,
+      default: null,
+    },
     lockedAt: {
       type: Date,
       default: null,

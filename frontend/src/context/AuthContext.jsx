@@ -97,9 +97,24 @@ export const AuthProvider = ({ children }) => {
     setUser(null);
   };
 
+  const updateCurrentUser = useCallback((updates) => {
+    setUser((currentUser) =>
+      currentUser ? { ...currentUser, ...updates } : currentUser
+    );
+  }, []);
+
   return (
     <AuthContext.Provider
-      value={{ user, loading, login, googleLogin, register, verifyAndLogin, logout }}
+      value={{
+        user,
+        loading,
+        login,
+        googleLogin,
+        register,
+        verifyAndLogin,
+        logout,
+        updateCurrentUser,
+      }}
     >
       {children}
     </AuthContext.Provider>

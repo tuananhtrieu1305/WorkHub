@@ -8,6 +8,7 @@ import {
   addConversationMember,
   removeConversationMember,
   getMessages,
+  uploadConversationAttachment,
   sendMessage,
   updateMessage,
   deleteMessage,
@@ -15,6 +16,7 @@ import {
   removeReaction,
 } from "../presenters/conversationPresenter.js";
 import protect from "../middlewares/authMiddleware.js";
+import { uploadAttachment } from "../config/multer.js";
 
 const router = express.Router();
 
@@ -26,6 +28,7 @@ router.delete("/:id", protect, deleteConversation);
 router.post("/:id/members", protect, addConversationMember);
 router.delete("/:id/members/:userId", protect, removeConversationMember);
 router.get("/:id/messages", protect, getMessages);
+router.post("/:id/attachments", protect, uploadAttachment.single("file"), uploadConversationAttachment);
 router.post("/:id/messages", protect, sendMessage);
 router.put("/:id/messages/:messageId", protect, updateMessage);
 router.delete("/:id/messages/:messageId", protect, deleteMessage);

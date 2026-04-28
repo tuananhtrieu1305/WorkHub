@@ -1,7 +1,7 @@
 @import url("https://fonts.googleapis.com/css2?family=Momo+Trust+Sans:wght@200..800&display=swap");
 @import "tailwindcss";
 @import "./styles/layout/layout.css";
-
+@import "./styles/chat/chat.css";
 
 @layer base {
   *,
