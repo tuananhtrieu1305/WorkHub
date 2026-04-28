@@ -1,17 +1,37 @@
 import { useRef, useState } from "react";
+import { EmojiPickerButton } from "../../components/emoji";
 import { applyComposerFormat } from "./chatComposerUtils";
 
-const toolbarItems = [
-  { icon: "format_bold", title: "In đậm", action: "bold" },
-  { icon: "format_italic", title: "In nghiêng", action: "italic" },
-  { icon: "strikethrough_s", title: "Gạch ngang", action: "strike" },
-  { divider: true },
-  { icon: "link", title: "Liên kết", action: "link" },
-  { icon: "format_list_bulleted", title: "Danh sách", action: "list" },
-  { icon: "code", title: "Code", action: "code" },
+const pendingComposerActions = [
+  { icon: "emoji_symbols", title: "Chọn nhãn dán" },
+  { icon: "gif_box", title: "Chọn file GIF" },
+  { icon: "contact_page", title: "Gửi danh thiếp" },
+  { icon: "mic", title: "Gửi voice" },
 ];
 
-const quickEmojis = ["👍", "❤️", "😂", "🎉", "🙏", "🔥", "✅", "👀"];
+const formatToolbarItems = [
+  { label: "B", title: "In đậm", action: "bold", className: "font-bold" },
+  { label: "I", title: "In nghiêng", action: "italic", className: "italic" },
+  { label: "U", title: "Gạch chân", action: "underline", className: "underline" },
+  { label: "S", title: "Gạch ngang", action: "strike", className: "line-through" },
+  { label: "aA", title: "Đổi kiểu chữ", action: "case", className: "font-semibold" },
+  {
+    label: "A",
+    title: "Màu chữ",
+    disabled: true,
+    className: "underline decoration-2 underline-offset-4",
+  },
+  { icon: "ink_eraser", title: "Xóa định dạng", action: "clear" },
+  { divider: true },
+  { icon: "format_list_bulleted", title: "Danh sách dấu đầu dòng", action: "list" },
+  { icon: "format_list_numbered", title: "Danh sách đánh số", action: "orderedList" },
+  { icon: "format_indent_increase", title: "Tăng thụt lề", action: "indent" },
+  { icon: "format_indent_decrease", title: "Giảm thụt lề", action: "outdent" },
+  { icon: "undo", title: "Hoàn tác", disabled: true },
+  { icon: "redo", title: "Làm lại", disabled: true },
+  { divider: true },
+  { icon: "open_in_full", title: "Mở rộng trình soạn thảo", disabled: true },
+];
 
 const ChatInput = ({
   onSend,
@@ -24,7 +44,7 @@ const ChatInput = ({
   disabled = false,
 }) => {
   const [content, setContent] = useState(initialContent);
-  const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+  const [showFormattingToolbar, setShowFormattingToolbar] = useState(false);
   const [attachments, setAttachments] = useState([]);
   const [isUploading, setIsUploading] = useState(false);
   const [attachmentError, setAttachmentError] = useState("");
@@ -50,7 +70,6 @@ const ChatInput = ({
     setContent("");
     setAttachments([]);
     setAttachmentError("");
-    setShowEmojiPicker(false);
     onTypingChange?.(false);
     textareaRef.current?.focus();
   };
@@ -60,6 +79,12 @@ const ChatInput = ({
   };
 
   const handleKeyDown = (e) => {
+    if (e.ctrlKey && e.shiftKey && e.key.toLowerCase() === "x") {
+      e.preventDefault();
+      setShowFormattingToolbar((value) => !value);
+      return;
+    }
+
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
       handleSend();
@@ -71,6 +96,8 @@ const ChatInput = ({
   };
 
   const handleFormat = (action) => {
+    if (!action) return;
+
     const textarea = textareaRef.current;
     const selectionStart = textarea?.selectionStart ?? content.length;
     const selectionEnd = textarea?.selectionEnd ?? content.length;
@@ -96,15 +123,6 @@ const ChatInput = ({
     focusSelection(cursor, cursor);
   };
 
-  const handleCancel = () => {
-    setContent("");
-    setAttachments([]);
-    setAttachmentError("");
-    setShowEmojiPicker(false);
-    onTypingChange?.(false);
-    onCancelDraft?.();
-  };
-
   const handleFileChange = async (e) => {
     const file = e.target.files?.[0];
     e.target.value = "";
@@ -123,49 +141,69 @@ const ChatInput = ({
     }
   };
 
-  const sendLabel = mode === "edit" ? "Lưu" : "Gửi";
-  const canSend = Boolean(content.trim()) || attachments.length > 0;
+  const canAttach = Boolean(onUploadAttachment) && mode !== "edit";
 
   return (
     <div className="px-4 sm:px-6 pb-4 pt-2 bg-white">
-      <div className="flex flex-col border border-slate-300 rounded-xl bg-white focus-within:ring-2 focus-within:ring-blue-500/30 focus-within:border-blue-500 transition-all shadow-sm">
-        <div className="bg-slate-50/80 border-b border-slate-200 px-3 py-1.5 flex items-center gap-0.5 rounded-t-xl">
-          {toolbarItems.map((item, idx) =>
-            item.divider ? (
-              <div
-                key={`div-${idx}`}
-                className="w-px h-4 bg-slate-300 mx-1"
-              />
-            ) : (
+      <div className="flex flex-col overflow-visible border border-slate-300 rounded-xl bg-white focus-within:ring-2 focus-within:ring-blue-500/30 focus-within:border-blue-500 transition-all shadow-sm">
+        <div className="flex items-center justify-between gap-2 border-b border-slate-100 bg-slate-50/80 px-3 py-2 rounded-t-xl">
+          <input
+            ref={fileInputRef}
+            type="file"
+            className="hidden"
+            onChange={handleFileChange}
+          />
+
+          <div className="flex items-center gap-1">
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={disabled || isUploading || !canAttach}
+              className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-slate-500 transition-colors hover:bg-blue-50 hover:text-blue-600 disabled:cursor-not-allowed disabled:opacity-40"
+              title="Đính kèm file"
+              aria-label="Đính kèm file"
+            >
+              <span className="material-symbols-outlined text-[20px]">
+                {isUploading ? "sync" : "attach_file"}
+              </span>
+            </button>
+
+            {pendingComposerActions.map((item) => (
               <button
-                key={item.icon}
+                key={item.title}
                 type="button"
-                onClick={() => handleFormat(item.action)}
-                className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-200 rounded transition-colors"
-                title={item.title}
+                disabled
+                className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-slate-300"
+                title={`${item.title} (sắp có)`}
+                aria-label={item.title}
               >
-                <span className="material-symbols-outlined text-[18px]">
+                <span className="material-symbols-outlined text-[20px]">
                   {item.icon}
                 </span>
               </button>
-            )
-          )}
+            ))}
+          </div>
+
+          <button
+            type="button"
+            onClick={() => setShowFormattingToolbar((value) => !value)}
+            className={`inline-flex h-8 items-center gap-2 rounded-lg px-2.5 text-sm font-semibold transition-colors ${
+              showFormattingToolbar
+                ? "bg-blue-50 text-blue-700"
+                : "text-slate-500 hover:bg-blue-50 hover:text-blue-600"
+            }`}
+            title="Định dạng tin nhắn"
+            aria-pressed={showFormattingToolbar}
+          >
+            <span className="material-symbols-outlined text-[20px]">
+              format_bold
+            </span>
+            <span className="hidden sm:inline">Định dạng tin nhắn</span>
+          </button>
         </div>
 
-        <textarea
-          ref={textareaRef}
-          value={content}
-          onChange={handleChange}
-          onKeyDown={handleKeyDown}
-          onBlur={() => onTypingChange?.(false)}
-          placeholder={placeholder}
-          disabled={disabled}
-          rows={1}
-          className="chat-composer-textarea w-full bg-transparent border-none focus:ring-0 px-4 py-3 text-[15px] placeholder:text-slate-400 resize-none overflow-y-auto outline-none"
-        />
-
         {(attachments.length > 0 || attachmentError) && (
-          <div className="px-3 pb-2 flex flex-wrap gap-2">
+          <div className="flex flex-wrap gap-2 px-3 pt-3">
             {attachments.map((attachment, index) => (
               <span
                 key={`${attachment.fileUrl}-${index}`}
@@ -183,6 +221,7 @@ const ChatInput = ({
                     )
                   }
                   className="text-slate-400 hover:text-red-500"
+                  title="Gỡ file đính kèm"
                 >
                   <span className="material-symbols-outlined text-[14px]">
                     close
@@ -198,88 +237,73 @@ const ChatInput = ({
           </div>
         )}
 
-        <div className="flex items-center justify-between px-2 pb-2 pt-0 border-t border-slate-100 mt-1">
-          <div className="flex items-center gap-0.5 relative">
-            <input
-              ref={fileInputRef}
-              type="file"
-              className="hidden"
-              onChange={handleFileChange}
-            />
-            <button
-              type="button"
-              onClick={() => fileInputRef.current?.click()}
-              disabled={disabled || isUploading || mode === "edit"}
-              className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-full transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-              title="Đính kèm file"
-            >
-              <span className="material-symbols-outlined text-[20px]">
-                {isUploading ? "sync" : "add_circle"}
-              </span>
-            </button>
-            <button
-              type="button"
-              onClick={() => setShowEmojiPicker((value) => !value)}
-              className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-full transition-colors"
-              title="Biểu tượng cảm xúc"
-            >
-              <span className="material-symbols-outlined text-[20px]">
-                mood
-              </span>
-            </button>
-            <button
-              type="button"
-              onClick={() => insertText("@")}
-              className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-full transition-colors"
-              title="Nhắc đến ai đó"
-            >
-              <span className="material-symbols-outlined text-[20px]">
-                alternate_email
-              </span>
-            </button>
+        <div className="chat-composer-input-shell relative flex items-start">
+          <textarea
+            ref={textareaRef}
+            value={content}
+            onChange={handleChange}
+            onKeyDown={handleKeyDown}
+            onBlur={() => onTypingChange?.(false)}
+            placeholder={placeholder}
+            disabled={disabled}
+            rows={1}
+            className="chat-composer-textarea w-full bg-transparent border-none focus:ring-0 px-4 py-3.5 pr-12 text-[15px] placeholder:text-slate-400 resize-none overflow-y-auto outline-none"
+          />
+          <EmojiPickerButton
+            align="right"
+            buttonClassName="chat-composer-emoji-button"
+            className="absolute right-2 top-2"
+            label="Biểu tượng cảm xúc"
+            onEmojiSelect={insertText}
+            placement="top"
+            popoverClassName="chat-composer-emoji-popover"
+          />
+        </div>
 
-            {showEmojiPicker && (
-              <div className="absolute bottom-11 left-8 z-20 rounded-xl border border-slate-200 bg-white shadow-xl p-2 grid grid-cols-4 gap-1">
-                {quickEmojis.map((emoji) => (
+        {showFormattingToolbar && (
+          <div className="chat-format-panel border-t border-slate-100 bg-slate-900 px-3 py-3 text-slate-300">
+            <p className="mb-3 text-sm font-medium text-slate-400">
+              Nhấn Ctrl + Shift + X để định dạng tin nhắn
+            </p>
+            <div className="flex flex-wrap items-center gap-1">
+              {formatToolbarItems.map((item, index) =>
+                item.divider ? (
+                  <span
+                    key={`format-divider-${index}`}
+                    className="mx-1 h-6 w-px bg-slate-600"
+                  />
+                ) : (
                   <button
-                    key={emoji}
+                    key={item.title}
                     type="button"
-                    onClick={() => {
-                      insertText(emoji);
-                      setShowEmojiPicker(false);
-                    }}
-                    className="w-9 h-9 rounded-lg hover:bg-slate-100 text-lg"
+                    onClick={() => handleFormat(item.action)}
+                    disabled={item.disabled}
+                    className="inline-flex h-8 min-w-8 items-center justify-center rounded-md px-2 text-slate-200 transition-colors hover:bg-slate-700 hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
+                    title={item.title}
+                    aria-label={item.title}
                   >
-                    {emoji}
+                    {item.icon ? (
+                      <span className="material-symbols-outlined text-[20px]">
+                        {item.icon}
+                      </span>
+                    ) : (
+                      <span className={item.className}>{item.label}</span>
+                    )}
                   </button>
-                ))}
-              </div>
-            )}
-          </div>
-
-          <div className="flex items-center gap-2 pr-1">
+                )
+              )}
+            </div>
             {mode !== "send" && (
               <button
                 type="button"
-                onClick={handleCancel}
-                className="px-3 py-1.5 rounded-full text-slate-500 hover:text-slate-700 hover:bg-slate-100 transition-colors font-medium text-sm"
+                onClick={onCancelDraft}
+                className="mt-3 text-sm font-semibold text-slate-400 transition-colors hover:text-white"
               >
                 Hủy
               </button>
             )}
-            <button
-              type="button"
-              onClick={handleSend}
-              disabled={!canSend || disabled || isUploading}
-              className="flex items-center gap-2 px-4 py-1.5 rounded-full bg-blue-600 text-white hover:bg-blue-700 transition-colors shadow-sm font-medium text-sm disabled:opacity-40 disabled:cursor-not-allowed"
-            >
-              <span>{sendLabel}</span>
-              <span className="material-symbols-outlined text-[16px]">
-                {mode === "edit" ? "check" : "send"}
-              </span>
-            </button>
           </div>
-        </div>
+        )}
       </div>
     </div>
   );

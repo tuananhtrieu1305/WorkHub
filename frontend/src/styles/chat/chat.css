@@ -71,6 +71,28 @@
   max-height: 160px;
 }
 
+.chat-composer-input-shell .chat-composer-emoji-button {
+  width: 2rem;
+  height: 2rem;
+  color: #64748b;
+}
+
+.chat-composer-input-shell .chat-composer-emoji-button:hover,
+.chat-composer-input-shell .chat-composer-emoji-button[data-open="true"] {
+  background: #eff6ff;
+  color: #2563eb;
+  box-shadow: none;
+  transform: none;
+}
+
+.chat-composer-input-shell .chat-composer-emoji-popover {
+  border-color: rgba(148, 163, 184, 0.35);
+  background: #ffffff;
+  box-shadow:
+    0 20px 48px rgba(15, 23, 42, 0.16),
+    0 8px 18px rgba(15, 23, 42, 0.08);
+}
+
 .activity-status-symbol {
   font-variation-settings:
     "FILL" 1,

@@ -5,8 +5,13 @@ const formatConfigs = {
     placeholder: "văn bản",
   },
   italic: {
-    prefix: "_",
-    suffix: "_",
+    prefix: "*",
+    suffix: "*",
+    placeholder: "văn bản",
+  },
+  underline: {
+    prefix: "<u>",
+    suffix: "</u>",
     placeholder: "văn bản",
   },
   strike: {
@@ -52,6 +57,64 @@ const prefixSelectedLines = ({ text, selectionStart, selectionEnd }) => {
   };
 };
 
+const numberSelectedLines = ({ text, selectionStart, selectionEnd }) => {
+  const selectedText = text.slice(selectionStart, selectionEnd) || "mục danh sách";
+  const numberedText = selectedText
+    .split("\n")
+    .map((line, index) =>
+      /^\d+\.\s/.test(line) ? line : `${index + 1}. ${line}`
+    )
+    .join("\n");
+
+  return {
+    text: `${text.slice(0, selectionStart)}${numberedText}${text.slice(selectionEnd)}`,
+    selectionStart,
+    selectionEnd: selectionStart + numberedText.length,
+  };
+};
+
+const updateSelectedLines = (
+  { text, selectionStart, selectionEnd },
+  fallback,
+  updateLine
+) => {
+  const selectedText = text.slice(selectionStart, selectionEnd) || fallback;
+  const nextSelectedText = selectedText.split("\n").map(updateLine).join("\n");
+
+  return {
+    text: `${text.slice(0, selectionStart)}${nextSelectedText}${text.slice(selectionEnd)}`,
+    selectionStart,
+    selectionEnd: selectionStart + nextSelectedText.length,
+  };
+};
+
+const toggleSelectionCase = ({ text, selectionStart, selectionEnd }) => {
+  return updateSelectedLines(
+    { text, selectionStart, selectionEnd },
+    "văn bản",
+    (line) => (line === line.toUpperCase() ? line.toLowerCase() : line.toUpperCase())
+  );
+};
+
+const clearFormatting = ({ text, selectionStart, selectionEnd }) => {
+  const selectedText = text.slice(selectionStart, selectionEnd) || text;
+  const nextSelectedText = selectedText
+    .replace(/\*\*([^*]+)\*\*/g, "$1")
+    .replace(/\*([^*]+)\*/g, "$1")
+    .replace(/<u>([^<]+)<\/u>/g, "$1")
+    .replace(/~~([^~]+)~~/g, "$1")
+    .replace(/`([^`]+)`/g, "$1")
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1");
+  const targetStart = selectionStart === selectionEnd ? 0 : selectionStart;
+  const targetEnd = selectionStart === selectionEnd ? text.length : selectionEnd;
+
+  return {
+    text: `${text.slice(0, targetStart)}${nextSelectedText}${text.slice(targetEnd)}`,
+    selectionStart: targetStart,
+    selectionEnd: targetStart + nextSelectedText.length,
+  };
+};
+
 export const applyComposerFormat = ({
   text,
   selectionStart,
@@ -60,6 +123,34 @@ export const applyComposerFormat = ({
 }) => {
   if (action === "list") {
     return prefixSelectedLines({ text, selectionStart, selectionEnd });
+  }
+
+  if (action === "orderedList") {
+    return numberSelectedLines({ text, selectionStart, selectionEnd });
+  }
+
+  if (action === "indent") {
+    return updateSelectedLines(
+      { text, selectionStart, selectionEnd },
+      "văn bản",
+      (line) => `  ${line}`
+    );
+  }
+
+  if (action === "outdent") {
+    return updateSelectedLines(
+      { text, selectionStart, selectionEnd },
+      "văn bản",
+      (line) => line.replace(/^ {1,2}/, "")
+    );
+  }
+
+  if (action === "case") {
+    return toggleSelectionCase({ text, selectionStart, selectionEnd });
+  }
+
+  if (action === "clear") {
+    return clearFormatting({ text, selectionStart, selectionEnd });
   }
 
   const config = formatConfigs[action];

@@ -56,7 +56,7 @@ const sanitizeHref = (href) => {
 
 const renderInlineMarkdown = (text) => {
   const pattern =
-    /(\*\*([^*]+)\*\*|\*([^*]+)\*|~~([^~]+)~~|`([^`]+)`|\[([^\]]+)\]\(([^)]+)\))/g;
+    /(\*\*([^*]+)\*\*|\*([^*]+)\*|<u>([^<]+)<\/u>|~~([^~]+)~~|`([^`]+)`|\[([^\]]+)\]\(([^)]+)\))/g;
   const parts = [];
   let lastIndex = 0;
   let match;
@@ -72,26 +72,28 @@ const renderInlineMarkdown = (text) => {
     } else if (match[3]) {
       parts.push(<em key={key}>{match[3]}</em>);
     } else if (match[4]) {
-      parts.push(<s key={key}>{match[4]}</s>);
+      parts.push(<u key={key}>{match[4]}</u>);
     } else if (match[5]) {
+      parts.push(<s key={key}>{match[5]}</s>);
+    } else if (match[6]) {
       parts.push(
         <code
           key={key}
           className="rounded bg-black/10 px-1 py-0.5 font-mono text-[0.9em]"
         >
-          {match[5]}
+          {match[6]}
         </code>
       );
-    } else if (match[6]) {
+    } else if (match[7]) {
       parts.push(
         <a
           key={key}
-          href={sanitizeHref(match[7])}
+          href={sanitizeHref(match[8])}
           target="_blank"
           rel="noreferrer"
           className="font-semibold underline underline-offset-2"
         >
-          {match[6]}
+          {match[7]}
         </a>
       );
     }
@@ -112,6 +114,8 @@ const MessageText = ({ content }) => {
   const lines = content.split(/\r?\n/);
   const isList =
     lines.length > 1 && lines.every((line) => line.trim().startsWith("- "));
+  const isOrderedList =
+    lines.length > 1 && lines.every((line) => /^\d+\.\s/.test(line.trim()));
 
   if (isList) {
     return (
@@ -122,6 +126,18 @@ const MessageText = ({ content }) => {
           </li>
         ))}
       </ul>
+    );
+  }
+
+  if (isOrderedList) {
+    return (
+      <ol className="list-decimal space-y-1 pl-4">
+        {lines.map((line, index) => (
+          <li key={`${line}-${index}`}>
+            {renderInlineMarkdown(line.trim().replace(/^\d+\.\s/, ""))}
+          </li>
+        ))}
+      </ol>
     );
   }
 
