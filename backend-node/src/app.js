@@ -25,6 +25,7 @@ import taskRoutes, {
 import notificationRoutes from "./views/notificationView.js";
 import adminRoutes from "./views/adminView.js";
 import meetingRoutes from "./views/meetingView.js";
+import { setMeetingIo } from "./presenters/meetingPresenter.js";
 import errorMiddleware from "./utils/errorMiddleware.js";
 import { legacyUploadsDir, uploadsDir } from "./config/uploadPaths.js";
 
@@ -87,6 +88,7 @@ if (process.env.NODE_ENV !== "test") {
   setupSocket(io);
   setIo(io);
   setUserIo(io);
+  setMeetingIo(io);
 
   const PORT = process.env.PORT || 5000;
   server.listen(PORT, () => {

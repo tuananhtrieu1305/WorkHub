@@ -7,13 +7,19 @@ import {
   VideoCameraAddOutlined,
 } from "@ant-design/icons";
 import { listMeetings } from "../../services/meetingService";
+import { useSocket } from "../../context/SocketContext";
 import { useMeetingContext } from "./meetingContextValue";
+import {
+  removeMeetingById,
+  upsertActiveMeeting,
+} from "./meetingListState";
 
 const { Title, Text } = Typography;
 
 export default function MeetingPage() {
   const navigate = useNavigate();
   const { createMeeting, joinMeeting } = useMeetingContext();
+  const { socket } = useSocket();
   const [form] = Form.useForm();
   const [joinForm] = Form.useForm();
   const [meetings, setMeetings] = useState([]);
@@ -37,6 +43,29 @@ export default function MeetingPage() {
     loadMeetings();
   }, []);
 
+  useEffect(() => {
+    if (!socket) return undefined;
+
+    const handleMeetingCreated = ({ meeting }) => {
+      setMeetings((currentMeetings) =>
+        upsertActiveMeeting(currentMeetings, meeting),
+      );
+    };
+    const handleMeetingEnded = ({ meeting }) => {
+      setMeetings((currentMeetings) =>
+        removeMeetingById(currentMeetings, meeting?.id || meeting?._id),
+      );
+    };
+
+    socket.on("meeting_created", handleMeetingCreated);
+    socket.on("meeting_ended", handleMeetingEnded);
+
+    return () => {
+      socket.off("meeting_created", handleMeetingCreated);
+      socket.off("meeting_ended", handleMeetingEnded);
+    };
+  }, [socket]);
+
   const handleCreate = async (values) => {
     setCreating(true);
     try {
@@ -53,8 +82,8 @@ export default function MeetingPage() {
   const handleJoin = async (values) => {
     setJoining(true);
     try {
-      await joinMeeting(values.meetingId.trim());
-      navigate(`/meetings/${values.meetingId.trim()}`);
+      const data = await joinMeeting(values.meetingId.trim());
+      navigate(`/meetings/${data.meeting?.id || values.meetingId.trim()}`);
     } catch (error) {
       message.error(error.response?.data?.message || "Khong the tham gia cuoc goi");
     } finally {

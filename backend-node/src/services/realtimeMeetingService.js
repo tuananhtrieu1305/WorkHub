@@ -72,6 +72,47 @@ export class RealtimeMeetingService {
 
     return json.result || json.data;
   }
+
+  async refreshParticipantToken({ meetingId, participantId }) {
+    const response = await fetch(
+      `${this.baseUrl}/meetings/${meetingId}/participants/${participantId}/token`,
+      {
+        method: "POST",
+        headers: this.headers,
+      },
+    );
+
+    const json = await response.json().catch(() => ({}));
+    if (!response.ok || json.success === false) {
+      throw new ApiError(502, "Unable to refresh meeting participant token");
+    }
+
+    return json.result || json.data;
+  }
+
+  async kickParticipantFromActiveSession({ meetingId, customParticipantId }) {
+    const response = await fetch(
+      `${this.baseUrl}/meetings/${meetingId}/active-session/kick`,
+      {
+        method: "POST",
+        headers: this.headers,
+        body: JSON.stringify({
+          custom_participant_ids: [String(customParticipantId)],
+        }),
+      },
+    );
+
+    if (response.status === 404) {
+      return null;
+    }
+
+    const json = await response.json().catch(() => ({}));
+    if (!response.ok || json.success === false) {
+      throw new ApiError(502, "Unable to remove stale meeting participant session");
+    }
+
+    return json.result || json.data;
+  }
 }
 
 export const setRealtimeMeetingServiceOverride = (override) => {

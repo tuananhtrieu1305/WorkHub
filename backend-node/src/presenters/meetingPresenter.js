@@ -8,6 +8,12 @@ const DEFAULT_PAGE = 1;
 const DEFAULT_LIMIT = 20;
 const MAX_LIMIT = 100;
 
+let meetingIo = null;
+
+export const setMeetingIo = (io) => {
+  meetingIo = io;
+};
+
 const parsePage = (value) => {
   const parsed = Number.parseInt(value, 10);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : DEFAULT_PAGE;
@@ -30,15 +36,33 @@ const isOwnerOrHost = (user, meeting) => {
   );
 };
 
+// Centralize meeting access rules so project/department permissions can be added here later.
+const buildActiveMeetingConditions = () => [
+  { status: "active" },
+  { status: { $exists: false }, endedAt: null },
+  { status: null, endedAt: null },
+];
+
+const isActiveMeeting = (meeting) =>
+  meeting?.status === "active" ||
+  (!meeting?.status && meeting?.endedAt == null);
+
+const getMeetingStatus = (meeting) => {
+  if (meeting?.status) return meeting.status;
+  return meeting?.endedAt ? "ended" : "active";
+};
+
+const isSystemVisibleMeeting = (meeting) => isActiveMeeting(meeting);
+
+const canReadMeeting = (user, meeting) =>
+  isAdmin(user) || isOwnerOrHost(user, meeting) || isSystemVisibleMeeting(meeting);
+
 const buildReadableMeetingQuery = (user, filters = {}) => {
   const query = {};
 
-  if (!isAdmin(user)) {
-    const userId = toId(user);
-    query.$or = [{ createdBy: userId }, { hostUserId: userId }];
-  }
-
-  if (filters.status) {
+  if (filters.status === "active") {
+    query.$or = buildActiveMeetingConditions();
+  } else if (filters.status) {
     query.status = filters.status;
   }
 
@@ -48,6 +72,17 @@ const buildReadableMeetingQuery = (user, filters = {}) => {
 
   if (filters.departmentId) {
     query.departmentId = filters.departmentId;
+  }
+
+  if (!isAdmin(user) && filters.status !== "active") {
+    const userId = toId(user);
+    query.$or = filters.status
+      ? [{ createdBy: userId }, { hostUserId: userId }]
+      : [
+          ...buildActiveMeetingConditions(),
+          { createdBy: userId },
+          { hostUserId: userId },
+        ];
   }
 
   return query;
@@ -63,7 +98,7 @@ const serializeMeeting = (meeting) => {
     cloudflareMeetingId: data.cloudflareMeetingId,
     createdBy: toId(data.createdBy) || null,
     hostUserId: toId(data.hostUserId) || null,
-    status: data.status,
+    status: getMeetingStatus(data),
     projectId: data.projectId ? toId(data.projectId) : null,
     departmentId: data.departmentId ? toId(data.departmentId) : null,
     startedAt: data.startedAt || null,
@@ -78,19 +113,133 @@ const serializeParticipant = (participant) => ({
   token: participant?.token,
 });
 
-const ensureObjectId = (id, label = "id") => {
-  if (!mongoose.Types.ObjectId.isValid(id)) {
-    throw new ApiError(400, `Invalid ${label}`);
+const emitMeetingEvent = (event, meeting) => {
+  meetingIo?.emit?.(event, { meeting: serializeMeeting(meeting) });
+};
+
+const getProviderParticipantId = (participant) =>
+  participant?.id || participant?.participantId || null;
+
+const buildStoredParticipant = ({ user, participant, role }) => ({
+  userId: user._id,
+  cloudflareParticipantId: getProviderParticipantId(participant),
+  role,
+  tokenIssuedAt: new Date(),
+  joinedAt: new Date(),
+});
+
+const findStoredParticipant = (meeting, user) => {
+  const userId = toId(user);
+  return (meeting?.participants || []).find(
+    (participant) => toId(participant.userId) === userId,
+  );
+};
+
+const rememberParticipantTokenIssue = async ({ meeting, user, participant, role }) => {
+  const participantId = getProviderParticipantId(participant);
+  if (!participantId) return;
+
+  await Meeting.updateOne(
+    { _id: meeting._id, "participants.userId": { $ne: user._id } },
+    {
+      $push: {
+        participants: buildStoredParticipant({ user, participant, role }),
+      },
+    },
+  );
+};
+
+const touchExistingParticipantTokenIssue = async ({ meeting, user, role }) => {
+  await Meeting.updateOne(
+    { _id: meeting._id, "participants.userId": user._id },
+    {
+      $set: {
+        "participants.$.role": role,
+        "participants.$.tokenIssuedAt": new Date(),
+        "participants.$.joinedAt": new Date(),
+      },
+    },
+  );
+};
+
+const removeStaleActivePeer = async ({ realtimeService, meeting, user }) => {
+  if (!realtimeService.kickParticipantFromActiveSession) return;
+
+  try {
+    await realtimeService.kickParticipantFromActiveSession({
+      meetingId: meeting.cloudflareMeetingId,
+      customParticipantId: toId(user),
+    });
+  } catch {
+    // Best effort cleanup: joining should not fail just because there is no live session to kick.
   }
 };
 
-const loadMeetingForUser = async (id, user) => {
-  ensureObjectId(id, "meeting id");
-  const meeting = await Meeting.findById(id);
+const issueParticipantToken = async ({ meeting, user, role, realtimeService }) => {
+  await removeStaleActivePeer({ realtimeService, meeting, user });
+
+  const storedParticipant = findStoredParticipant(meeting, user);
+  if (
+    storedParticipant?.cloudflareParticipantId &&
+    realtimeService.refreshParticipantToken
+  ) {
+    const refreshed = await callRealtimeProvider(
+      () =>
+        realtimeService.refreshParticipantToken({
+          meetingId: meeting.cloudflareMeetingId,
+          participantId: storedParticipant.cloudflareParticipantId,
+        }),
+      "Unable to create meeting participant token",
+    );
+
+    await touchExistingParticipantTokenIssue({ meeting, user, role });
+
+    return {
+      id: storedParticipant.cloudflareParticipantId,
+      token: refreshed?.token,
+    };
+  }
+
+  const participant = await callRealtimeProvider(
+    () =>
+      realtimeService.createParticipantToken({
+        meetingId: meeting.cloudflareMeetingId,
+        user,
+        role,
+      }),
+    "Unable to create meeting participant token",
+  );
+
+  await rememberParticipantTokenIssue({ meeting, user, participant, role });
+
+  return participant;
+};
+
+const loadMeetingByRoomId = async (id) => {
+  const roomId = String(id || "").trim();
+  if (!roomId) {
+    throw new ApiError(400, "Meeting id is required");
+  }
+
+  let meeting = null;
+  if (mongoose.Types.ObjectId.isValid(roomId)) {
+    meeting = await Meeting.findById(roomId);
+  }
+
+  if (!meeting) {
+    meeting = await Meeting.findOne({ cloudflareMeetingId: roomId });
+  }
+
   if (!meeting) {
     throw new ApiError(404, "Meeting not found");
   }
-  if (!isAdmin(user) && !isOwnerOrHost(user, meeting)) {
+
+  return meeting;
+};
+
+const loadMeetingForUser = async (id, user) => {
+  const meeting = await loadMeetingByRoomId(id);
+  if (!canReadMeeting(user, meeting)) {
     throw new ApiError(403, "You do not have permission to access this meeting");
   }
   return meeting;
@@ -138,17 +287,6 @@ export const createMeeting = async (req, res) => {
     throw new ApiError(502, "Realtime meeting provider returned invalid data");
   }
 
-  const meeting = await Meeting.create({
-    title,
-    cloudflareMeetingId,
-    createdBy: req.user._id,
-    hostUserId: req.user._id,
-    projectId: req.body?.projectId || null,
-    departmentId: req.body?.departmentId || null,
-    status: "active",
-    startedAt: new Date(),
-  });
-
   const participant = await callRealtimeProvider(
     () =>
       realtimeService.createParticipantToken({
@@ -159,12 +297,31 @@ export const createMeeting = async (req, res) => {
     "Unable to create meeting participant token",
   );
 
+  const meeting = await Meeting.create({
+    title,
+    cloudflareMeetingId,
+    createdBy: req.user._id,
+    hostUserId: req.user._id,
+    projectId: req.body?.projectId || null,
+    departmentId: req.body?.departmentId || null,
+    status: "active",
+    startedAt: new Date(),
+    participants: [
+      buildStoredParticipant({
+        user: req.user,
+        participant,
+        role: "host",
+      }),
+    ],
+  });
+
   await logMeetingActivity({
     req,
     action: "meeting.created",
     meeting,
     metadata: { title },
   });
+  emitMeetingEvent("meeting_created", meeting);
 
   return res.status(201).json({
     meeting: serializeMeeting(meeting),
@@ -174,19 +331,17 @@ export const createMeeting = async (req, res) => {
 
 export const joinMeeting = async (req, res) => {
   const meeting = await loadMeetingForUser(req.params.id, req.user);
-  if (meeting.status !== "active") {
+  if (!isActiveMeeting(meeting)) {
     throw new ApiError(409, "Meeting is not active");
   }
 
-  const participant = await callRealtimeProvider(
-    () =>
-      getRealtimeMeetingService().createParticipantToken({
-        meetingId: meeting.cloudflareMeetingId,
-        user: req.user,
-        role: isOwnerOrHost(req.user, meeting) ? "host" : "participant",
-      }),
-    "Unable to create meeting participant token",
-  );
+  const realtimeService = getRealtimeMeetingService();
+  const participant = await issueParticipantToken({
+    meeting,
+    user: req.user,
+    role: isOwnerOrHost(req.user, meeting) ? "host" : "participant",
+    realtimeService,
+  });
 
   await logMeetingActivity({
     req,
@@ -248,6 +403,7 @@ export const endMeeting = async (req, res) => {
     action: "meeting.ended",
     meeting: updated || meeting,
   });
+  emitMeetingEvent("meeting_ended", updated || meeting);
 
   return res.status(200).json({ meeting: serializeMeeting(updated || meeting) });
 };

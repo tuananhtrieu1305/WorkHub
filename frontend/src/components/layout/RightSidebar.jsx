@@ -1,10 +1,16 @@
 import { useState, useEffect } from "react";
 import { getNotifications } from "../../api/notificationApi";
 import { listMeetings } from "../../services/meetingService";
+import { useSocket } from "../../context/SocketContext";
+import {
+  removeMeetingById,
+  upsertActiveMeeting,
+} from "../../modules/meeting/meetingListState";
 
 const API_URL = import.meta.env.VITE_NODE_API_URL || "http://localhost:5000";
 
 const RightSidebar = () => {
+  const { socket } = useSocket();
   const [inboxTab, setInboxTab] = useState("all");
   const [notifications, setNotifications] = useState([]);
   const [meetings, setMeetings] = useState([]);
@@ -14,7 +20,7 @@ const RightSidebar = () => {
       try {
         const [notifRes, meetingRes] = await Promise.allSettled([
           getNotifications({ page: 1, size: 5 }),
-          listMeetings({ page: 1, size: 3 }),
+          listMeetings({ page: 1, size: 3, status: "active" }),
         ]);
         if (notifRes.status === "fulfilled") {
           setNotifications(notifRes.value?.content || notifRes.value || []);
@@ -28,6 +34,29 @@ const RightSidebar = () => {
     };
     fetchData();
   }, []);
+
+  useEffect(() => {
+    if (!socket) return undefined;
+
+    const handleMeetingCreated = ({ meeting }) => {
+      setMeetings((currentMeetings) =>
+        upsertActiveMeeting(currentMeetings, meeting).slice(0, 3),
+      );
+    };
+    const handleMeetingEnded = ({ meeting }) => {
+      setMeetings((currentMeetings) =>
+        removeMeetingById(currentMeetings, meeting?.id || meeting?._id),
+      );
+    };
+
+    socket.on("meeting_created", handleMeetingCreated);
+    socket.on("meeting_ended", handleMeetingEnded);
+
+    return () => {
+      socket.off("meeting_created", handleMeetingCreated);
+      socket.off("meeting_ended", handleMeetingEnded);
+    };
+  }, [socket]);
 
   const inboxTabs = [
     { key: "all", label: "Tất cả" },
