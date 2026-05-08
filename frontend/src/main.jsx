@@ -3,15 +3,10 @@ import { createRoot } from "react-dom/client";
 import "./index.css";
 import { RouterProvider } from "react-router-dom";
 import { router } from "./routes/route.jsx";
+import { defineCustomElements } from "@cloudflare/realtimekit-ui/loader";
 import { GoogleOAuthProvider } from '@react-oauth/google';
 
-try {
-  const cfModule = "@cloudflare/realtimekit-ui/loader";
-  const { defineCustomElements } = await import(/* @vite-ignore */ cfModule);
-  defineCustomElements(window);
-} catch {
-  // Cloudflare RealtimeKit UI not available
-}
+defineCustomElements(window);
 
 createRoot(document.getElementById("root")).render(
   <StrictMode>

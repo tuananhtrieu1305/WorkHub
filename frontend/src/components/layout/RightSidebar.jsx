@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { getNotifications } from "../../api/notificationApi";
-import { getMeetings } from "../../api/meetingApi";
+import { listMeetings } from "../../services/meetingService";
 
 const API_URL = import.meta.env.VITE_NODE_API_URL || "http://localhost:5000";
 
@@ -14,7 +14,7 @@ const RightSidebar = () => {
       try {
         const [notifRes, meetingRes] = await Promise.allSettled([
           getNotifications({ page: 1, size: 5 }),
-          getMeetings({ page: 1, size: 3 }),
+          listMeetings({ page: 1, size: 3 }),
         ]);
         if (notifRes.status === "fulfilled") {
           setNotifications(notifRes.value?.content || notifRes.value || []);
