@@ -2,6 +2,11 @@ import Comment from "../models/Comment.js";
 import Post from "../models/Post.js";
 import Like from "../models/Like.js";
 import User from "../models/User.js";
+import {
+  buildPostAttachments,
+  hasPostBody,
+  serializePostAttachments,
+} from "./postPresenter.js";
 
 // GET /comments/:id
 export const getCommentById = async (req, res) => {
@@ -11,7 +16,14 @@ export const getCommentById = async (req, res) => {
       return res.status(404).json({ message: "Comment not found" });
     }
 
-    const author = await User.findById(comment.authorId).select("_id fullName email avatar");
+    const [author, existingLike] = await Promise.all([
+      User.findById(comment.authorId).select("_id fullName email avatar"),
+      Like.findOne({
+        targetType: "comment",
+        targetId: comment._id,
+        userId: req.user._id,
+      }),
+    ]);
 
     // Get users who liked this comment
     const likes = await Like.find({ targetType: "comment", targetId: comment._id });
@@ -27,7 +39,9 @@ export const getCommentById = async (req, res) => {
       parentId: comment.parentId,
       author,
       content: comment.content,
+      attachments: serializePostAttachments(comment.attachments),
       likesCount: comment.likesCount,
+      isLiked: !!existingLike,
       likedBy: likedByUsers,
       createdAt: comment.createdAt,
       updatedAt: comment.updatedAt,
@@ -72,6 +86,7 @@ export const updateComment = async (req, res) => {
       parentId: comment.parentId,
       author,
       content: comment.content,
+      attachments: serializePostAttachments(comment.attachments),
       likesCount: comment.likesCount,
       createdAt: comment.createdAt,
       updatedAt: comment.updatedAt,
@@ -160,16 +175,24 @@ export const getCommentReplies = async (req, res) => {
 
     const content = await Promise.all(
       replies.map(async (reply) => {
-        const author = await User.findById(reply.authorId).select(
-          "_id fullName email avatar"
-        );
+        const [author, existingLike] = await Promise.all([
+          User.findById(reply.authorId).select("_id fullName email avatar"),
+          Like.findOne({
+            targetType: "comment",
+            targetId: reply._id,
+            userId: req.user._id,
+          }),
+        ]);
         return {
           id: reply._id,
           postId: reply.postId,
           parentId: reply.parentId,
           author,
           content: reply.content,
+          attachments: serializePostAttachments(reply.attachments),
           likesCount: reply.likesCount,
+          isLiked: !!existingLike,
+          repliesCount: 0,
           createdAt: reply.createdAt,
           updatedAt: reply.updatedAt,
         };
@@ -195,15 +218,20 @@ export const addCommentReply = async (req, res) => {
     }
 
     const { content } = req.body;
-    if (!content) {
-      return res.status(400).json({ message: "Reply content is required" });
+    const attachments = buildPostAttachments(req.files || []);
+    const replyContent =
+      typeof content === "string" && content.trim().length > 0 ? content : "";
+
+    if (!hasPostBody(replyContent, attachments)) {
+      return res.status(400).json({ message: "Reply content or image is required" });
     }
 
     const reply = await Comment.create({
       postId: parentComment.postId,
       parentId: parentComment._id,
       authorId: req.user._id,
-      content,
+      content: replyContent,
+      attachments,
     });
 
     // Increment commentsCount on post
@@ -217,7 +245,10 @@ export const addCommentReply = async (req, res) => {
       parentId: reply.parentId,
       author,
       content: reply.content,
+      attachments: serializePostAttachments(reply.attachments),
       likesCount: reply.likesCount,
+      isLiked: false,
+      repliesCount: 0,
       createdAt: reply.createdAt,
       updatedAt: reply.updatedAt,
     });

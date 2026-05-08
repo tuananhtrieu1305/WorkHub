@@ -27,8 +27,7 @@
   transition:
     background-color 160ms ease,
     color 160ms ease,
-    box-shadow 160ms ease,
-    transform 160ms ease;
+    box-shadow 160ms ease;
 }
 
 .workhub-emoji-trigger:hover,
@@ -36,7 +35,6 @@
   background: #fce7f3;
   color: #be185d;
   box-shadow: 0 8px 22px rgba(219, 39, 119, 0.16);
-  transform: translateY(-1px);
 }
 
 .workhub-emoji-trigger:focus-visible {

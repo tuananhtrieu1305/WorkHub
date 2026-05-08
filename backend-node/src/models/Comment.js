@@ -19,8 +19,23 @@ const commentSchema = new mongoose.Schema(
     },
     content: {
       type: String,
-      required: [true, "Comment content is required"],
+      default: "",
     },
+    attachments: [
+      {
+        fileName: String,
+        storedFileName: String,
+        fileUrl: String,
+        downloadUrl: String,
+        fileSize: Number,
+        mimeType: String,
+        fileType: {
+          type: String,
+          enum: ["image", "video", "file"],
+          default: "image",
+        },
+      },
+    ],
     likesCount: {
       type: Number,
       default: 0,
@@ -30,6 +45,17 @@ const commentSchema = new mongoose.Schema(
     timestamps: true,
   }
 );
+
+commentSchema.pre("validate", function validateCommentBody(next) {
+  const hasContent = typeof this.content === "string" && this.content.trim().length > 0;
+  const hasAttachments = Array.isArray(this.attachments) && this.attachments.length > 0;
+
+  if (!hasContent && !hasAttachments) {
+    this.invalidate("content", "Comment content or attachment is required");
+  }
+
+  next();
+});
 
 commentSchema.index({ postId: 1, createdAt: -1 });
 commentSchema.index({ parentId: 1 });

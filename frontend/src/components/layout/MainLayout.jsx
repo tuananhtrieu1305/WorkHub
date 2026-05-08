@@ -1,7 +1,6 @@
 import { Outlet, useLocation } from "react-router-dom";
 import Sidebar from "./Sidebar";
 import Header from "./Header";
-import RightSidebar from "./RightSidebar";
 import { SocketProvider } from "../../context/SocketContext";
 
 const MainLayout = () => {
@@ -21,7 +20,6 @@ const MainLayout = () => {
           >
             <Outlet />
           </main>
-          {!isChatRoute && <RightSidebar />}
         </div>
       </div>
     </SocketProvider>

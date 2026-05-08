@@ -9,8 +9,10 @@ import {
   getAttachmentIconClass,
   getAttachmentType,
 } from "./attachmentUtils";
-
-const API_URL = import.meta.env.VITE_NODE_API_URL || "http://localhost:5000";
+import {
+  getAvatarReferrerPolicy,
+  getAvatarUrl,
+} from "../../utils/avatar";
 
 const FEELINGS = [
   { emoji: "😀", label: "Vui vẻ" },
@@ -55,11 +57,7 @@ const CreatePostBox = ({ onPostCreated }) => {
   const mentionRef = useRef(null);
 
   const userInitial = user?.fullName?.charAt(0)?.toUpperCase() || "U";
-  const avatarUrl = user?.avatar
-    ? user.avatar.startsWith("http")
-      ? user.avatar
-      : `${API_URL}${user.avatar}`
-    : null;
+  const avatarUrl = getAvatarUrl(user?.avatar);
 
   const handleFileSelect = (e) => {
     const selected = Array.from(e.target.files);
@@ -185,6 +183,7 @@ const CreatePostBox = ({ onPostCreated }) => {
           <img
             src={avatarUrl}
             alt={user?.fullName}
+            referrerPolicy={getAvatarReferrerPolicy(avatarUrl)}
             className="size-12 rounded-full shadow-sm object-cover shrink-0"
           />
         ) : (
@@ -370,11 +369,7 @@ const CreatePostBox = ({ onPostCreated }) => {
       {showMentionDropdown && (
         <div className="ml-16 mt-2 bg-white border border-slate-200 rounded-xl shadow-lg overflow-hidden relative z-10">
           {mentionResults.map((u) => {
-            const mAvatar = u.avatar
-              ? u.avatar.startsWith("http")
-                ? u.avatar
-                : `${API_URL}${u.avatar}`
-              : null;
+            const mAvatar = getAvatarUrl(u.avatar);
             return (
               <button
                 key={u._id}
@@ -385,6 +380,7 @@ const CreatePostBox = ({ onPostCreated }) => {
                   <img
                     src={mAvatar}
                     alt=""
+                    referrerPolicy={getAvatarReferrerPolicy(mAvatar)}
                     className="size-8 rounded-full object-cover"
                   />
                 ) : (
@@ -409,7 +405,7 @@ const CreatePostBox = ({ onPostCreated }) => {
             <button
               key={btn.icon}
               onClick={btn.onClick}
-              className={`relative inline-flex size-9 shrink-0 items-center justify-center rounded-full transition-colors ${btn.color} group`}
+              className={`relative inline-flex size-9 shrink-0 items-center justify-center rounded-full transition-colors cursor-pointer ${btn.color} group`}
               title={btn.label}
             >
               <span className="material-symbols-outlined text-xl leading-none">{btn.icon}</span>
@@ -450,12 +446,13 @@ const CreatePostBox = ({ onPostCreated }) => {
         <button
           onClick={handleSubmit}
           disabled={isSubmitting || (!content.trim() && files.length === 0)}
-          className="bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 disabled:cursor-not-allowed text-white px-6 py-2 rounded-full text-sm font-bold shadow-lg shadow-blue-500/20 transition-all duration-300 hover:-translate-y-0.5 flex items-center gap-2"
+          className="bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 cursor-pointer disabled:cursor-not-allowed text-white px-4 py-2 rounded-full text-sm font-bold shadow-lg shadow-blue-500/20 transition-colors duration-300 flex items-center gap-2"
         >
           {isSubmitting && (
             <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
           )}
           Đăng bài
+          <span className="material-symbols-outlined text-base leading-none">send</span>
         </button>
       </div>
     </div>

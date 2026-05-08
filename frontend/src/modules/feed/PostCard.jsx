@@ -10,6 +10,10 @@ import {
   getAttachmentType,
   getAttachmentUrl,
 } from "./attachmentUtils";
+import {
+  getAvatarReferrerPolicy,
+  getAvatarUrl,
+} from "../../utils/avatar";
 
 const API_URL = import.meta.env.VITE_NODE_API_URL || "http://localhost:5000";
 
@@ -35,11 +39,6 @@ const PostCard = ({ post, onPostDeleted, onPostUpdated }) => {
     const days = Math.floor(hours / 24);
     if (days < 7) return `${days} ngày trước`;
     return new Date(dateStr).toLocaleDateString("vi-VN");
-  };
-
-  const getAvatarUrl = (avatar) => {
-    if (!avatar) return null;
-    return avatar.startsWith("http") ? avatar : `${API_URL}${avatar}`;
   };
 
   const getPostAttachmentUrl = (attachment) =>
@@ -117,6 +116,7 @@ const PostCard = ({ post, onPostDeleted, onPostUpdated }) => {
               <img
                 src={authorAvatar}
                 alt={post.author?.fullName}
+                referrerPolicy={getAvatarReferrerPolicy(authorAvatar)}
                 className="size-11 rounded-full shadow-sm object-cover"
               />
             ) : (

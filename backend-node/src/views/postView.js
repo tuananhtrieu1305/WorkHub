@@ -12,7 +12,7 @@ import {
   togglePostLike,
 } from "../presenters/postPresenter.js";
 import protect from "../middlewares/authMiddleware.js";
-import { uploadAttachment } from "../config/multer.js";
+import { uploadAttachment, uploadCommentImages } from "../config/multer.js";
 
 const router = express.Router();
 
@@ -23,7 +23,7 @@ router.get("/:id", protect, getPostById);
 router.put("/:id", protect, updatePost);
 router.delete("/:id", protect, deletePost);
 router.get("/:id/comments", protect, getPostComments);
-router.post("/:id/comments", protect, addPostComment);
+router.post("/:id/comments", protect, uploadCommentImages.array("attachments", 4), addPostComment);
 router.get("/:id/likes", protect, getPostLikes);
 router.post("/:id/likes", protect, togglePostLike);
 

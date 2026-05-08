@@ -22,6 +22,11 @@ export const markAllAsRead = async () => {
   return data;
 };
 
+export const deleteNotification = async (notificationId) => {
+  const { data } = await axiosClient.delete(`/notifications/${notificationId}`);
+  return data;
+};
+
 export const getNotificationSettings = async () => {
   const { data } = await axiosClient.get("/notifications/settings");
   return data;

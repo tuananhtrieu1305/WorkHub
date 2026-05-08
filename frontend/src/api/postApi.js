@@ -45,6 +45,21 @@ export const createComment = async (postId, payload) => {
   return data;
 };
 
+export const getCommentReplies = async (commentId, params = {}) => {
+  const { data } = await axiosClient.get(`/comments/${commentId}/replies`, { params });
+  return data;
+};
+
+export const createCommentReply = async (commentId, payload) => {
+  const { data } = await axiosClient.post(`/comments/${commentId}/replies`, payload);
+  return data;
+};
+
+export const likeComment = async (commentId) => {
+  const { data } = await axiosClient.post(`/comments/${commentId}/likes`);
+  return data;
+};
+
 export const deleteComment = async (commentId) => {
   const { data } = await axiosClient.delete(`/comments/${commentId}`);
   return data;

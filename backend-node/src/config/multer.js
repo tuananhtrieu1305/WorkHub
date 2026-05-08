@@ -8,6 +8,9 @@ import {
 } from "./uploadPaths.js";
 
 export const POST_ATTACHMENT_FILE_SIZE_LIMIT = 100 * 1024 * 1024;
+export const COMMENT_IMAGE_FILE_SIZE_LIMIT = 10 * 1024 * 1024;
+
+const imageMimes = ["image/jpeg", "image/png", "image/gif", "image/webp"];
 
 const ensureUploadDir = (dir) => {
   fs.mkdirSync(dir, { recursive: true });
@@ -41,8 +44,7 @@ const upload = multer({
   storage: avatarStorage,
   limits: { fileSize: 5 * 1024 * 1024 },
   fileFilter: (req, file, cb) => {
-    const allowedMimes = ["image/jpeg", "image/png", "image/gif", "image/webp"];
-    if (allowedMimes.includes(file.mimetype)) {
+    if (imageMimes.includes(file.mimetype)) {
       cb(null, true);
     } else {
       cb(new Error("Only image files (JPEG, PNG, GIF, WebP) are allowed"), false);
@@ -96,10 +98,27 @@ export const postAttachmentFileFilter = (req, file, cb) => {
   cb(null, true);
 };
 
+export const commentImageFileFilter = (req, file, cb) => {
+  if (imageMimes.includes(file.mimetype)) {
+    cb(null, true);
+    return;
+  }
+  cb(new Error("Only image comments (JPEG, PNG, GIF, WebP) are allowed"), false);
+};
+
 export const uploadAttachment = multer({
   storage: attachmentStorage,
   limits: { fileSize: POST_ATTACHMENT_FILE_SIZE_LIMIT },
   fileFilter: postAttachmentFileFilter,
+});
+
+export const uploadCommentImages = multer({
+  storage: attachmentStorage,
+  limits: {
+    fileSize: COMMENT_IMAGE_FILE_SIZE_LIMIT,
+    files: 4,
+  },
+  fileFilter: commentImageFileFilter,
 });
 
 export default upload;

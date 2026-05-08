@@ -1,12 +1,11 @@
 import { useAuth } from "../../context/AuthContext";
+import {
+  getAvatarReferrerPolicy,
+  getAvatarUrl,
+} from "../../utils/avatar";
 
 const API_URL = import.meta.env.VITE_NODE_API_URL || "http://localhost:5000";
 const quickReactions = ["👍", "❤️", "😂", "🎉"];
-
-const getAvatarUrl = (avatar) => {
-  if (!avatar) return null;
-  return avatar.startsWith("http") ? avatar : `${API_URL}${avatar}`;
-};
 
 const getFileUrl = (url) => {
   if (!url) return "#";
@@ -274,6 +273,7 @@ const MessageBubble = ({
       <img
         src={avatarUrl}
         alt={senderName}
+        referrerPolicy={getAvatarReferrerPolicy(avatarUrl)}
         className={`w-9 h-9 rounded-full object-cover shadow-sm shrink-0 ${className}`}
       />
     ) : (

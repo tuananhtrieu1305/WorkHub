@@ -6,15 +6,12 @@ import {
   canCreateConversation,
   toggleSelectedUser,
 } from "./newConversationState";
-
-const API_URL = import.meta.env.VITE_NODE_API_URL || "http://localhost:5000";
+import {
+  getAvatarReferrerPolicy,
+  getAvatarUrl,
+} from "../../utils/avatar";
 
 const getUserId = (user) => String(user?.id || user?._id || "");
-
-const getAvatarUrl = (avatar) => {
-  if (!avatar) return null;
-  return avatar.startsWith("http") ? avatar : `${API_URL}${avatar}`;
-};
 
 const NewConversationModal = ({ isOpen, onClose, onCreate }) => {
   const [type, setType] = useState("private");
@@ -290,6 +287,7 @@ const NewConversationModal = ({ isOpen, onClose, onCreate }) => {
                         <img
                           src={avatarUrl}
                           alt={result.fullName}
+                          referrerPolicy={getAvatarReferrerPolicy(avatarUrl)}
                           className="w-10 h-10 rounded-full object-cover"
                         />
                       ) : (

@@ -1,7 +1,4 @@
 import { NavLink, useLocation } from "react-router-dom";
-import { useAuth } from "../../context/AuthContext";
-
-const API_URL = import.meta.env.VITE_NODE_API_URL || "http://localhost:5000";
 
 const navItems = [
   {
@@ -71,19 +68,11 @@ const navItems = [
 
 const Sidebar = () => {
   const location = useLocation();
-  const { user } = useAuth();
 
   const isActive = (path) => {
     if (path === "/") return location.pathname === "/";
     return location.pathname.startsWith(path);
   };
-
-  const userInitial = user?.fullName?.charAt(0)?.toUpperCase() || "U";
-  const avatarUrl = user?.avatar
-    ? user.avatar.startsWith("http")
-      ? user.avatar
-      : `${API_URL}${user.avatar}`
-    : null;
 
   return (
     <aside className="w-20 border-r border-slate-200/50 bg-slate-50/50 hidden md:flex flex-col flex-shrink-0 overflow-y-auto">

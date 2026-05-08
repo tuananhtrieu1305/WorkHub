@@ -38,7 +38,7 @@ export const hasPostBody = (content, attachments = []) => {
   return hasContent || attachments.length > 0;
 };
 
-const serializePostAttachments = (attachments = []) =>
+export const serializePostAttachments = (attachments = []) =>
   attachments.map((attachment) => {
     const plain =
       typeof attachment?.toObject === "function" ? attachment.toObject() : attachment;
@@ -372,17 +372,24 @@ export const getPostComments = async (req, res) => {
 
     const content = await Promise.all(
       comments.map(async (comment) => {
-        const author = await User.findById(comment.authorId).select(
-          "_id fullName email avatar"
-        );
-        const repliesCount = await Comment.countDocuments({ parentId: comment._id });
+        const [author, repliesCount, existingLike] = await Promise.all([
+          User.findById(comment.authorId).select("_id fullName email avatar"),
+          Comment.countDocuments({ parentId: comment._id }),
+          Like.findOne({
+            targetType: "comment",
+            targetId: comment._id,
+            userId: req.user._id,
+          }),
+        ]);
         return {
           id: comment._id,
           postId: comment.postId,
           parentId: comment.parentId,
           author,
           content: comment.content,
+          attachments: serializePostAttachments(comment.attachments),
           likesCount: comment.likesCount,
+          isLiked: !!existingLike,
           repliesCount,
           createdAt: comment.createdAt,
           updatedAt: comment.updatedAt,
@@ -409,9 +416,12 @@ export const addPostComment = async (req, res) => {
     }
 
     const { content, parentId } = req.body;
+    const attachments = buildPostAttachments(req.files || []);
+    const commentContent =
+      typeof content === "string" && content.trim().length > 0 ? content : "";
 
-    if (!content) {
-      return res.status(400).json({ message: "Comment content is required" });
+    if (!hasPostBody(commentContent, attachments)) {
+      return res.status(400).json({ message: "Comment content or image is required" });
     }
 
     // If parentId, verify parent comment exists and belongs to same post
@@ -429,7 +439,8 @@ export const addPostComment = async (req, res) => {
       postId: post._id,
       parentId: parentId || null,
       authorId: req.user._id,
-      content,
+      content: commentContent,
+      attachments,
     });
 
     // Increment comments count on post
@@ -443,7 +454,10 @@ export const addPostComment = async (req, res) => {
       parentId: comment.parentId,
       author,
       content: comment.content,
+      attachments: serializePostAttachments(comment.attachments),
       likesCount: comment.likesCount,
+      isLiked: false,
+      repliesCount: 0,
       createdAt: comment.createdAt,
       updatedAt: comment.updatedAt,
     });

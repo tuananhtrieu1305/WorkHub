@@ -16,6 +16,17 @@ const generateOTP = () => {
 
 const inactiveAccountMessage =
   "Your account is not active. Please contact an administrator.";
+
+const getValidHttpUrl = (value) => {
+  if (!value || typeof value !== "string") return "";
+  const trimmedValue = value.trim();
+  try {
+    const parsedUrl = new URL(trimmedValue);
+    return ["http:", "https:"].includes(parsedUrl.protocol) ? trimmedValue : "";
+  } catch {
+    return "";
+  }
+};
 export const register = async (req, res) => {
   try {
     const { fullName, email, password } = req.body;
@@ -239,6 +250,7 @@ export const login = async (req, res) => {
 export const googleLogin = async (req, res) => {
   try {
     const { email, name, picture, sub: googleId } = req.body;
+    const googleAvatar = getValidHttpUrl(picture);
 
     if (!email || !googleId) {
       return res
@@ -257,7 +269,9 @@ export const googleLogin = async (req, res) => {
         user.googleId = googleId;
         user.authProvider = "google";
         user.isVerified = true;
-        if (!user.avatar) user.avatar = picture;
+      }
+      if (googleAvatar && user.avatar !== googleAvatar) {
+        user.avatar = googleAvatar;
       }
     } else {
       user = await User.create({
@@ -265,7 +279,7 @@ export const googleLogin = async (req, res) => {
         email,
         googleId,
         authProvider: "google",
-        avatar: picture,
+        avatar: googleAvatar,
         isVerified: true,
       });
     }

@@ -6,13 +6,10 @@ import {
   getEffectiveActivityStatus,
 } from "./activityStatus";
 import ActivityStatusIcon from "./ActivityStatusIcon";
-
-const API_URL = import.meta.env.VITE_NODE_API_URL || "http://localhost:5000";
-
-const getAvatarUrl = (avatar) => {
-  if (!avatar) return null;
-  return avatar.startsWith("http") ? avatar : `${API_URL}${avatar}`;
-};
+import {
+  getAvatarReferrerPolicy,
+  getAvatarUrl,
+} from "../../utils/avatar";
 
 const ActivityStatusBadge = ({ meta }) => (
   <span
@@ -112,6 +109,7 @@ const ChatWindow = ({
                 <img
                   src={displayAvatar}
                   alt={displayName}
+                  referrerPolicy={getAvatarReferrerPolicy(displayAvatar)}
                   className="w-10 h-10 rounded-full object-cover ring-2 ring-white shadow-sm"
                 />
               ) : (
