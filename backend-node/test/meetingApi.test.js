@@ -18,6 +18,7 @@ const {
   clearRealtimeMeetingServiceOverride,
   setRealtimeMeetingServiceOverride,
 } = await import("../src/services/realtimeMeetingService.js");
+const { reconcileStaleMeetings } = await import("../src/presenters/meetingPresenter.js");
 
 const originals = {
   userFindById: User.findById,
@@ -25,6 +26,8 @@ const originals = {
   meetingFind: Meeting.find,
   meetingFindById: Meeting.findById,
   meetingFindByIdAndUpdate: Meeting.findByIdAndUpdate,
+  meetingFindOneAndUpdate: Meeting.findOneAndUpdate,
+  meetingUpdateOne: Meeting.updateOne,
   meetingCountDocuments: Meeting.countDocuments,
   activityCreate: ActivityLog.create,
 };
@@ -104,6 +107,8 @@ test.beforeEach(() => {
   Meeting.findById = async () => baseMeeting();
   Meeting.find = () => pagedQuery([baseMeeting()]);
   Meeting.countDocuments = async () => 1;
+  Meeting.updateOne = async () => ({ modifiedCount: 1 });
+  Meeting.findOneAndUpdate = async () => baseMeeting();
   Meeting.findByIdAndUpdate = async (id, update) =>
     baseMeeting({ _id: id, ...update.$set });
   ActivityLog.create = async (payload) =>
@@ -116,6 +121,8 @@ test.afterEach(() => {
   Meeting.find = originals.meetingFind;
   Meeting.findById = originals.meetingFindById;
   Meeting.findByIdAndUpdate = originals.meetingFindByIdAndUpdate;
+  Meeting.findOneAndUpdate = originals.meetingFindOneAndUpdate;
+  Meeting.updateOne = originals.meetingUpdateOne;
   Meeting.countDocuments = originals.meetingCountDocuments;
   ActivityLog.create = originals.activityCreate;
   clearRealtimeMeetingServiceOverride();
@@ -146,12 +153,135 @@ test("POST /api/meetings creates a Cloudflare meeting and participant token", as
   assert.equal(res.body.cloudflareApiToken, undefined);
 });
 
+test("POST /api/meetings issues host token without marking the host as joined", async () => {
+  let createdPayload;
+  Meeting.create = async (payload) => {
+    createdPayload = payload;
+    return baseMeeting({
+      ...payload,
+      _id: meetingId,
+      cloudflareMeetingId: payload.cloudflareMeetingId,
+    });
+  };
+
+  const res = await auth(request(app).post("/api/meetings")).send({
+    title: "Daily sync",
+  });
+
+  assert.equal(res.status, 201);
+  assert.equal(createdPayload.participants[0].cloudflareParticipantId, "participant-1");
+  assert.equal(createdPayload.participants[0].joinedAt, null);
+  assert.equal(createdPayload.participants[0].lastHeartbeatAt, null);
+  assert.equal(createdPayload.participants[0].leftAt, null);
+});
+
 test("POST /api/meetings/:id/join returns a token for readable meetings", async () => {
   const res = await auth(request(app).post(`/api/meetings/${meetingId}/join`)).send();
 
   assert.equal(res.status, 200);
   assert.equal(res.body.meeting.id, meetingId);
   assert.equal(res.body.participant.token, "participant-token");
+});
+
+test("POST /api/meetings/:id/joined marks the participant live after SDK room join", async () => {
+  let updateQuery;
+  let updatePayload;
+  Meeting.findById = async () =>
+    baseMeeting({
+      participants: [
+        {
+          userId,
+          cloudflareParticipantId: "participant-1",
+          role: "host",
+          tokenIssuedAt: new Date("2026-04-27T00:00:00.000Z"),
+          joinedAt: null,
+          leftAt: null,
+          lastHeartbeatAt: null,
+        },
+      ],
+    });
+  Meeting.findOneAndUpdate = async (query, update) => {
+    updateQuery = query;
+    updatePayload = update;
+    return baseMeeting({
+      participants: [
+        {
+          userId,
+          cloudflareParticipantId: "participant-1",
+          role: "host",
+          tokenIssuedAt: new Date("2026-04-27T00:00:00.000Z"),
+          joinedAt: update.$set["participants.$.joinedAt"],
+          leftAt: update.$set["participants.$.leftAt"],
+          lastHeartbeatAt: update.$set["participants.$.lastHeartbeatAt"],
+        },
+      ],
+    });
+  };
+
+  const res = await auth(request(app).post(`/api/meetings/${meetingId}/joined`)).send();
+
+  assert.equal(res.status, 200);
+  assert.equal(String(updateQuery._id), meetingId);
+  assert.equal(String(updateQuery["participants.userId"]), userId);
+  assert.ok(updatePayload.$set["participants.$.joinedAt"] instanceof Date);
+  assert.ok(updatePayload.$set["participants.$.lastHeartbeatAt"] instanceof Date);
+  assert.equal(updatePayload.$set["participants.$.leftAt"], null);
+});
+
+test("POST /api/meetings/:id/leave before joined does not end the meeting", async () => {
+  let endCalled = false;
+  Meeting.findById = async () =>
+    baseMeeting({
+      participants: [
+        {
+          userId,
+          cloudflareParticipantId: "participant-1",
+          role: "host",
+          tokenIssuedAt: new Date("2026-04-27T00:00:00.000Z"),
+          joinedAt: null,
+          leftAt: null,
+          lastHeartbeatAt: null,
+        },
+      ],
+    });
+  Meeting.findByIdAndUpdate = async (id, update) => {
+    endCalled = update.$set?.status === "ended";
+    return baseMeeting({ _id: id, ...update.$set });
+  };
+
+  const res = await auth(request(app).post(`/api/meetings/${meetingId}/leave`)).send();
+
+  assert.equal(res.status, 200);
+  assert.equal(res.body.meeting.status, "active");
+  assert.equal(endCalled, false);
+});
+
+test("reconciler does not end a token-issued meeting before anyone joins the room", async () => {
+  let endCalled = false;
+  Meeting.find = () =>
+    pagedQuery([
+      baseMeeting({
+        participants: [
+          {
+            userId,
+            cloudflareParticipantId: "participant-1",
+            role: "host",
+            tokenIssuedAt: new Date("2026-04-27T00:00:00.000Z"),
+            joinedAt: null,
+            leftAt: null,
+            lastHeartbeatAt: null,
+          },
+        ],
+      }),
+    ]);
+  Meeting.findByIdAndUpdate = async (id, update) => {
+    endCalled = update.$set?.status === "ended";
+    return baseMeeting({ _id: id, ...update.$set });
+  };
+
+  await reconcileStaleMeetings();
+
+  assert.equal(endCalled, false);
 });
 
 test("GET /api/meetings/:id returns meeting detail for owner", async () => {
@@ -174,6 +304,9 @@ test("GET /api/meetings lists only meetings scoped to the current user", async (
   assert.equal(res.status, 200);
   assert.equal(res.body.totalElements, 1);
   assert.deepEqual(countQuery.$or, [
+    { status: "active" },
+    { status: { $exists: false }, endedAt: null },
+    { status: null, endedAt: null },
     { createdBy: userId },
     { hostUserId: userId },
   ]);

@@ -5,13 +5,16 @@ import { RouterProvider } from "react-router-dom";
 import { router } from "./routes/route.jsx";
 import { defineCustomElements } from "@cloudflare/realtimekit-ui/loader";
 import { GoogleOAuthProvider } from '@react-oauth/google';
+import { App as AntdApp } from "antd";
 
 defineCustomElements(window);
 
 createRoot(document.getElementById("root")).render(
   <StrictMode>
     <GoogleOAuthProvider clientId={import.meta.env.VITE_GOOGLE_CLIENT_ID}>
-      <RouterProvider router={router} />
+      <AntdApp>
+        <RouterProvider router={router} />
+      </AntdApp>
     </GoogleOAuthProvider>
   </StrictMode>,
 );

@@ -12,6 +12,7 @@ import ResetPasswordPage from "../modules/auth/ResetPasswordPage";
 
 const MeetingPage = lazy(() => import("../modules/meeting/MeetingPage"));
 const MeetingRoomPage = lazy(() => import("../modules/meeting/MeetingRoomPage"));
+const CallRoomPage = lazy(() => import("../modules/call/CallRoomPage"));
 const FeedPage = lazy(() => import("../modules/feed/FeedPage"));
 const ChatPage = lazy(() => import("../modules/chat/ChatPage"));
 
@@ -71,6 +72,14 @@ export const router = createBrowserRouter([
             element: (
               <Suspense fallback={<LazyFallback />}>
                 <MeetingRoomPage />
+              </Suspense>
+            ),
+          },
+          {
+            path: "calls/:id",
+            element: (
+              <Suspense fallback={<LazyFallback />}>
+                <CallRoomPage />
               </Suspense>
             ),
           },

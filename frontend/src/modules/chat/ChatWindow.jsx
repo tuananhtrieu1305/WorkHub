@@ -1,5 +1,6 @@
 import MessageBubble from "./MessageBubble";
 import ChatInput from "./ChatInput";
+import { App } from "antd";
 import { useAuth } from "../../context/AuthContext";
 import {
   getActivityStatusMeta,
@@ -33,6 +34,7 @@ const ChatWindow = ({
   onDeleteMessage,
   onToggleReaction,
   onCancelDraft,
+  onStartCall,
   onBack,
   onToggleDetail,
   replyToMessage = null,
@@ -42,6 +44,7 @@ const ChatWindow = ({
   isSending = false,
 }) => {
   const { user } = useAuth();
+  const { message } = App.useApp();
 
   // Empty state - no conversation selected
   if (!conversation) {
@@ -83,12 +86,30 @@ const ChatWindow = ({
     : getAvatarUrl(conversation.avatar);
 
   const displayInitial = displayName.charAt(0).toUpperCase();
-  const activityStatusMeta = getActivityStatusMeta(
-    getEffectiveActivityStatus(otherParticipant)
-  );
+  const effectiveActivityStatus = getEffectiveActivityStatus(otherParticipant);
+  const activityStatusMeta = getActivityStatusMeta(effectiveActivityStatus);
   const shouldShowActivityStatus = isPrivate && activityStatusMeta.label;
 
   const participantCount = conversation.participants?.length || 0;
+  const conversationId = conversation.id || conversation._id;
+  const calleeUserId = otherParticipant?._id || otherParticipant?.id;
+  const isCalleeAvailableForCall = !["offline", "invisible"].includes(
+    effectiveActivityStatus,
+  );
+  const canAttemptPrivateCall = isPrivate && Boolean(calleeUserId);
+  const handleStartCall = (mediaType) => {
+    if (!canAttemptPrivateCall) return;
+    if (!isCalleeAvailableForCall) {
+      message.warning("Người dùng đang ngoại tuyến");
+      return;
+    }
+    onStartCall?.({
+      conversationId,
+      calleeUserId,
+      mediaType,
+      callee: otherParticipant,
+    });
+  };
 
   return (
     <main className="flex-1 flex flex-col h-full bg-white min-w-0">
@@ -150,15 +171,19 @@ const ChatWindow = ({
         {/* Actions */}
         <div className="flex items-center gap-1 shrink-0">
           <button
+            onClick={() => handleStartCall("audio")}
+            disabled={!canAttemptPrivateCall}
+            aria-label="Gọi thoại"
             className="hidden sm:flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-slate-600 hover:bg-slate-100 rounded-lg transition-colors border border-slate-200"
-            title="Gọi thoại"
           >
             <span className="material-symbols-outlined text-[18px]">call</span>
             <span className="hidden lg:inline">Gọi</span>
           </button>
           <button
+            onClick={() => handleStartCall("video")}
+            disabled={!canAttemptPrivateCall}
+            aria-label="Gọi video"
             className="hidden sm:flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors shadow-sm"
-            title="Gọi video"
           >
             <span className="material-symbols-outlined text-[18px]">
               videocam

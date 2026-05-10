@@ -44,6 +44,7 @@ const formatReplyMessage = async (replyTo) => {
     sender: formatConversationUser(sender),
     type: replyMessage.type,
     content: replyMessage.content,
+    metadata: replyMessage.metadata || {},
     attachments: replyMessage.attachments,
     createdAt: replyMessage.createdAt,
   };
@@ -60,6 +61,7 @@ const formatMessage = async (message) => {
     sender: formatConversationUser(sender),
     type: message.type,
     content: message.content,
+    metadata: message.metadata || {},
     attachments: message.attachments,
     mentions: message.mentions,
     replyTo: await formatReplyMessage(message.replyTo),
@@ -481,7 +483,7 @@ export const sendMessage = async (req, res) => {
       return res.status(403).json({ message: "You are not a participant of this conversation" });
     }
 
-    const { type, content, attachments, mentions, replyTo } = req.body;
+    const { type, content, attachments, mentions, replyTo, metadata } = req.body;
 
     if (!content && (!attachments || attachments.length === 0)) {
       return res.status(400).json({ message: "Message content or attachments required" });
@@ -499,6 +501,7 @@ export const sendMessage = async (req, res) => {
       senderId: req.user._id,
       type: type || "text",
       content: content || "",
+      metadata: metadata || {},
       attachments: attachments || [],
       mentions: mentions || [],
       replyTo: replyTo || null,

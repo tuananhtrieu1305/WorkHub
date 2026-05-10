@@ -26,6 +26,7 @@ import {
   upsertMessageById,
 } from "./realtimeMessageState";
 import { useSocket } from "../../context/SocketContext";
+import { useCall } from "../call/callContextValue";
 
 const toComparableId = (value) => {
   if (value == null) return "";
@@ -43,10 +44,11 @@ const normalizeMessagesForDisplay = (items = []) => {
 };
 
 const ChatPage = () => {
-  const { user, updateCurrentUser } = useAuth();
+  const { user } = useAuth();
   const { conversationId } = useParams();
   const navigate = useNavigate();
   const { socket, isAuthenticated } = useSocket();
+  const { startCall } = useCall();
   const [conversations, setConversations] = useState([]);
   const [selectedConversation, setSelectedConversation] = useState(null);
   const [messages, setMessages] = useState([]);
@@ -461,6 +463,7 @@ const ChatPage = () => {
           onDeleteMessage={handleDeleteMessage}
           onToggleReaction={handleToggleReaction}
           onCancelDraft={handleCancelDraft}
+          onStartCall={startCall}
           onBack={handleBackToList}
           onToggleDetail={() => setShowDetail(!showDetail)}
           replyToMessage={replyToMessage}

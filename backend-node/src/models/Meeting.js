@@ -27,6 +27,14 @@ const meetingParticipantSchema = new Schema(
       type: Date,
       default: null,
     },
+    leftAt: {
+      type: Date,
+      default: null,
+    },
+    lastHeartbeatAt: {
+      type: Date,
+      default: null,
+    },
   },
   {
     _id: false,

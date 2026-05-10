@@ -25,7 +25,9 @@ import taskRoutes, {
 import notificationRoutes from "./views/notificationView.js";
 import adminRoutes from "./views/adminView.js";
 import meetingRoutes from "./views/meetingView.js";
-import { setMeetingIo } from "./presenters/meetingPresenter.js";
+import { setMeetingIo, startMeetingReconciler } from "./presenters/meetingPresenter.js";
+import callRoutes from "./views/callView.js";
+import { setCallIo, startCallReconciler } from "./presenters/callPresenter.js";
 import errorMiddleware from "./utils/errorMiddleware.js";
 import { legacyUploadsDir, uploadsDir } from "./config/uploadPaths.js";
 
@@ -62,6 +64,7 @@ export const createApp = () => {
   app.use("/api/notifications", notificationRoutes);
   app.use("/api/admin", adminRoutes);
   app.use("/api/meetings", meetingRoutes);
+  app.use("/api/calls", callRoutes);
 
   app.get("/", (req, res) => {
     res.send("WorkHub API is running");
@@ -89,6 +92,9 @@ if (process.env.NODE_ENV !== "test") {
   setIo(io);
   setUserIo(io);
   setMeetingIo(io);
+  startMeetingReconciler();
+  setCallIo(io);
+  startCallReconciler();
 
   const PORT = process.env.PORT || 5000;
   server.listen(PORT, () => {

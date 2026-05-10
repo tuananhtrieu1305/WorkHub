@@ -1,31 +1,32 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Alert, Button, Card, Spin, Switch, Typography, message } from "antd";
+import { Alert, Button, Card, Spin, Switch, Typography } from "antd";
 import { useNavigate, useParams } from "react-router-dom";
 import {
   ArrowLeftOutlined,
   AudioMutedOutlined,
   AudioOutlined,
-  PhoneOutlined,
   VideoCameraOutlined,
   VideoCameraAddOutlined,
 } from "@ant-design/icons";
-import RealtimeKitClient from "@cloudflare/realtimekit";
 import { useMeetingContext } from "./meetingContextValue";
 import MeetingUI from "./MeetingUI";
-import WhiteboardController from "./components/WhiteboardController";
-import { endMeeting, getMeeting } from "../../services/meetingService";
+import { getMeeting } from "../../services/meetingService";
 
 const { Text, Title } = Typography;
 
 export default function MeetingRoomPage() {
   const { id } = useParams();
   const navigate = useNavigate();
-  const { meeting, joinMeeting, clearMeetingSession } = useMeetingContext();
+  const {
+    meeting,
+    activeMeeting: sessionMeeting,
+    meetingClient,
+    meetingJoinError,
+    isJoiningMeeting,
+    joinMeeting,
+    joinActiveMeeting,
+  } = useMeetingContext();
   const [roomInfo, setRoomInfo] = useState(null);
-  const [client, setClient] = useState(null);
-  const [isInRoom, setIsInRoom] = useState(false);
-  const [isJoining, setIsJoining] = useState(false);
-  const [isEnding, setIsEnding] = useState(false);
   const [isLoadingRoom, setIsLoadingRoom] = useState(true);
   const [error, setError] = useState("");
   const [previewError, setPreviewError] = useState("");
@@ -34,11 +35,16 @@ export default function MeetingRoomPage() {
   const [isPreviewAudioOn, setIsPreviewAudioOn] = useState(false);
   const previewVideoRef = useRef(null);
   const previewStreamRef = useRef(null);
-  const clientRef = useRef(null);
 
   const routeMeetingId = String(id || "");
   const contextMeetingId = meeting?.id || meeting?._id;
-  const activeMeeting =
+  const activeMeetingId = sessionMeeting?.id || sessionMeeting?._id;
+  const isInRoom =
+    Boolean(meetingClient) &&
+    Boolean(activeMeetingId) &&
+    String(activeMeetingId) === routeMeetingId;
+  const displayMeeting =
+    (isInRoom ? sessionMeeting : null) ||
     roomInfo ||
     (contextMeetingId && String(contextMeetingId) === routeMeetingId ? meeting : null);
 
@@ -47,30 +53,6 @@ export default function MeetingRoomPage() {
     previewStreamRef.current = null;
     if (previewVideoRef.current) {
       previewVideoRef.current.srcObject = null;
-    }
-  }, []);
-
-  const leaveCurrentClient = useCallback(async (resetState = true) => {
-    const activeClient = clientRef.current;
-    clientRef.current = null;
-
-    if (!activeClient) {
-      if (resetState) {
-        setClient(null);
-        setIsInRoom(false);
-      }
-      return;
-    }
-
-    try {
-      await activeClient.leaveRoom?.("workhub-navigation");
-    } catch {
-      // The SDK may already be disconnected; local cleanup still matters.
-    } finally {
-      if (resetState) {
-        setClient(null);
-        setIsInRoom(false);
-      }
     }
   }, []);
 
@@ -146,27 +128,9 @@ export default function MeetingRoomPage() {
     };
   }, [isInRoom, isPreviewAudioOn, isPreviewVideoOn, previewRefreshKey, stopPreviewStream]);
 
-  useEffect(() => {
-    const handlePageExit = () => {
-      stopPreviewStream();
-      clientRef.current?.leaveRoom?.("workhub-page-exit");
-    };
-
-    window.addEventListener("pagehide", handlePageExit);
-    window.addEventListener("beforeunload", handlePageExit);
-
-    return () => {
-      window.removeEventListener("pagehide", handlePageExit);
-      window.removeEventListener("beforeunload", handlePageExit);
-      stopPreviewStream();
-      void leaveCurrentClient(false);
-    };
-  }, [leaveCurrentClient, stopPreviewStream]);
-
   const handleJoinNow = async () => {
-    if (!id || isJoining) return;
+    if (!id || isJoiningMeeting) return;
 
-    setIsJoining(true);
     setError("");
 
     try {
@@ -180,62 +144,41 @@ export default function MeetingRoomPage() {
 
       stopPreviewStream();
 
-      const meetingClient = await RealtimeKitClient.init({
-        authToken: participantToken,
+      await joinActiveMeeting({
+        meeting: data.meeting,
+        participantToken,
         defaults: {
           audio: isPreviewAudioOn,
           video: isPreviewVideoOn,
         },
       });
-
-      clientRef.current = meetingClient;
-      await meetingClient.joinRoom();
-      setClient(meetingClient);
-      setIsInRoom(true);
     } catch (err) {
       setError(err.response?.data?.message || err?.message || "Khong the tham gia cuoc goi");
       setPreviewRefreshKey((currentKey) => currentKey + 1);
-    } finally {
-      setIsJoining(false);
     }
   };
 
-  const handleBackToList = async () => {
-    await leaveCurrentClient();
-    clearMeetingSession();
+  const handleBackToList = () => {
     navigate("/meetings");
   };
 
-  const handleEndMeeting = async () => {
-    setIsEnding(true);
-    try {
-      await leaveCurrentClient();
-      await endMeeting(id);
-      clearMeetingSession();
-      message.success("Da ket thuc cuoc goi");
-      navigate("/meetings");
-    } catch (err) {
-      message.error(err.response?.data?.message || "Khong the ket thuc cuoc goi");
-    } finally {
-      setIsEnding(false);
-    }
-  };
+  const displayError = error || meetingJoinError;
 
-  if (error && !activeMeeting && !isInRoom) {
+  if (displayError && !displayMeeting && !isInRoom) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-slate-50 p-6">
         <Alert
           type="error"
           showIcon
           message="Khong the mo cuoc goi"
-          description={error}
+          description={displayError}
           action={<Button onClick={() => navigate("/meetings")}>Quay lai</Button>}
         />
       </div>
     );
   }
 
-  if (isLoadingRoom && !activeMeeting) {
+  if (isLoadingRoom && !displayMeeting) {
     return (
       <div className="flex min-h-screen flex-col items-center justify-center gap-4 bg-slate-950 text-white">
         <Spin size="large" />
@@ -259,7 +202,7 @@ export default function MeetingRoomPage() {
           <div className="grid flex-1 items-center gap-8 lg:grid-cols-[1.4fr_0.8fr]">
             <div>
               <Title className="!mb-2 !text-white" level={2}>
-                {activeMeeting?.title || "WorkHub meeting"}
+                {displayMeeting?.title || "WorkHub meeting"}
               </Title>
               <Text className="!text-white/60">
                 Kiem tra thiet bi truoc khi vao phong.
@@ -277,7 +220,7 @@ export default function MeetingRoomPage() {
                   ) : (
                     <div className="flex h-full w-full flex-col items-center justify-center gap-4 text-white/70">
                       <div className="flex h-24 w-24 items-center justify-center rounded-full bg-blue-600 text-3xl font-semibold">
-                        {(activeMeeting?.title || "W").charAt(0).toUpperCase()}
+                        {(displayMeeting?.title || "W").charAt(0).toUpperCase()}
                       </div>
                       <Text className="!text-white/60">Camera dang tat</Text>
                     </div>
@@ -300,7 +243,7 @@ export default function MeetingRoomPage() {
                 <div className="rounded-xl bg-slate-50 p-4">
                   <Text type="secondary">Meeting ID</Text>
                   <div className="mt-1 break-all font-mono text-sm text-slate-900">
-                    {activeMeeting?.id || id}
+                    {displayMeeting?.id || id}
                   </div>
                 </div>
 
@@ -324,14 +267,14 @@ export default function MeetingRoomPage() {
                   <Switch checked={isPreviewAudioOn} onChange={setIsPreviewAudioOn} />
                 </div>
 
-                {error && <Alert type="error" showIcon message={error} />}
+                {displayError && <Alert type="error" showIcon message={displayError} />}
 
                 <Button
                   block
                   size="large"
                   type="primary"
                   icon={<VideoCameraAddOutlined />}
-                  loading={isJoining}
+                  loading={isJoiningMeeting}
                   onClick={handleJoinNow}
                 >
                   Join now
@@ -345,29 +288,21 @@ export default function MeetingRoomPage() {
   }
 
   return (
-    <div className="flex h-screen flex-col bg-slate-950">
+    <div className="flex h-full min-h-0 flex-col bg-slate-950">
       <div className="flex items-center justify-between border-b border-white/10 px-4 py-3 text-white">
         <Button icon={<ArrowLeftOutlined />} onClick={handleBackToList}>
           Danh sach
         </Button>
         <div className="min-w-0 px-4 text-center">
           <div className="truncate text-sm font-semibold">
-            {activeMeeting?.title || "WorkHub meeting"}
+            {displayMeeting?.title || "WorkHub meeting"}
           </div>
-          <div className="truncate text-xs text-white/60">ID: {activeMeeting?.id || id}</div>
+          <div className="truncate text-xs text-white/60">ID: {displayMeeting?.id || id}</div>
         </div>
-        <Button
-          danger
-          icon={<PhoneOutlined />}
-          loading={isEnding}
-          onClick={handleEndMeeting}
-        >
-          Ket thuc
-        </Button>
+        <div className="w-[88px]" />
       </div>
 
-      <MeetingUI meeting={client} />
-      <WhiteboardController meeting={client} hostId={activeMeeting?.hostUserId} />
+      <MeetingUI meeting={meetingClient} />
     </div>
   );
 }

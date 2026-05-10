@@ -6,7 +6,10 @@ const errorMiddleware = (err, req, res, next) => {
   }
 
   if (err instanceof ApiError) {
-    return res.status(err.statusCode).json({ message: err.message });
+    return res.status(err.statusCode).json({
+      message: err.message,
+      ...(err.code ? { code: err.code } : {}),
+    });
   }
 
   if (err?.name === "ValidationError") {
