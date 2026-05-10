@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { NavLink, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../../context/AuthContext";
 import { useSocket } from "../../context/SocketContext";
 import { updateMyActivityStatus } from "../../api/userApi";
@@ -26,6 +26,7 @@ import {
   getAvatarReferrerPolicy,
   getAvatarUrl,
 } from "../../utils/avatar";
+import { navItems } from "./navItems";
 import {
   buildMeetingPath,
   filterNotificationsByTab,
@@ -69,8 +70,10 @@ const Header = ({ overlay = false }) => {
   const { user, logout, updateCurrentUser } = useAuth();
   const { socket } = useSocket();
   const navigate = useNavigate();
+  const location = useLocation();
   const [showDropdown, setShowDropdown] = useState(false);
   const [showNotificationPanel, setShowNotificationPanel] = useState(false);
+  const [showMobileMenu, setShowMobileMenu] = useState(false);
   const [hoveredDurationStatus, setHoveredDurationStatus] = useState(null);
   const [isUpdatingStatus, setIsUpdatingStatus] = useState(false);
   const [inboxTab, setInboxTab] = useState("all");
@@ -80,6 +83,12 @@ const Header = ({ overlay = false }) => {
   const [isMarkingAllRead, setIsMarkingAllRead] = useState(false);
   const dropdownRef = useRef(null);
   const notificationRef = useRef(null);
+  const mobileMenuRef = useRef(null);
+
+  const isActiveNavItem = (path) => {
+    if (path === "/") return location.pathname === "/";
+    return location.pathname.startsWith(path);
+  };
 
   const loadNotificationPanelData = useCallback(async () => {
     try {
@@ -121,10 +130,17 @@ const Header = ({ overlay = false }) => {
       ) {
         setShowNotificationPanel(false);
       }
+      if (mobileMenuRef.current && !mobileMenuRef.current.contains(e.target)) {
+        setShowMobileMenu(false);
+      }
     };
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
+
+  useEffect(() => {
+    setShowMobileMenu(false);
+  }, [location.pathname]);
 
   useEffect(() => {
     loadNotificationPanelData();
@@ -219,6 +235,7 @@ const Header = ({ overlay = false }) => {
     const next = !showDropdown;
     if (next) {
       setShowNotificationPanel(false);
+      setShowMobileMenu(false);
     } else {
       setHoveredDurationStatus(null);
     }
@@ -229,10 +246,21 @@ const Header = ({ overlay = false }) => {
     const next = !showNotificationPanel;
     if (next) {
       setShowDropdown(false);
+      setShowMobileMenu(false);
       setHoveredDurationStatus(null);
       loadNotificationPanelData();
     }
     setShowNotificationPanel(next);
+  };
+
+  const toggleMobileMenu = () => {
+    const next = !showMobileMenu;
+    if (next) {
+      setShowDropdown(false);
+      setShowNotificationPanel(false);
+      setHoveredDurationStatus(null);
+    }
+    setShowMobileMenu(next);
   };
 
   const handleMarkAllAsRead = async () => {
@@ -301,24 +329,121 @@ const Header = ({ overlay = false }) => {
 
   return (
     <header
-      className={`flex shrink-0 items-center justify-between whitespace-nowrap px-4 py-2.5 sm:px-6 top-0 z-50 ${
+      className={`top-0 z-50 flex min-h-16 shrink-0 items-center justify-between gap-2 whitespace-nowrap px-3 py-2.5 sm:px-4 lg:px-6 ${
         overlay
           ? "absolute left-0 right-0 border-b border-transparent bg-transparent"
           : "sticky border-b border-solid border-slate-200/50 bg-white/80 backdrop-blur-md"
       }`}
     >
-      <div className="flex items-center gap-8">
-        <div className="flex items-center gap-3">
+      <div className="flex min-w-0 flex-1 items-center gap-3 lg:gap-8">
+        <NavLink
+          to="/"
+          className="flex shrink-0 items-center gap-3 rounded-xl focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
+          aria-label="Về bảng tin"
+        >
           <img
             src={workHubLogo}
             alt="WorkHub"
             className="w-9 h-9 rounded-lg object-cover shadow-sm"
           />
-        </div>
+        </NavLink>
+
+        <nav className="hidden min-w-0 items-center gap-1.5 rounded-2xl border border-slate-200/70 bg-slate-50/80 px-2 py-1.5 shadow-sm md:flex lg:hidden">
+          {navItems.map((item) => {
+            const active = isActiveNavItem(item.path);
+            return (
+              <NavLink
+                key={item.path}
+                to={item.path}
+                end={item.path === "/"}
+                aria-label={item.label}
+                title={item.label}
+                className={`sidebar-nav-link group flex size-10 shrink-0 items-center justify-center rounded-xl transition-all duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 ${
+                  active
+                    ? "sidebar-nav-link--active"
+                    : "bg-white/70 hover:shadow-sm"
+                }`}
+                style={{
+                  "--sidebar-color": item.color,
+                  "--sidebar-hover-bg": item.hoverBg,
+                  "--sidebar-active-bg": item.activeBg,
+                  "--sidebar-active-border": item.activeBorder,
+                  "--sidebar-active-shadow": item.activeShadow,
+                }}
+              >
+                <span
+                  className={`material-symbols-outlined text-[22px] leading-none transition-transform duration-200 group-hover:-translate-y-0.5 ${
+                    active && item.iconFill ? "icon-fill" : ""
+                  }`}
+                >
+                  {item.icon}
+                </span>
+              </NavLink>
+            );
+          })}
+        </nav>
       </div>
 
-      <div className="flex flex-1 justify-end gap-4">
-        <div className="flex gap-3">
+      <div className="flex shrink-0 items-center justify-end gap-2 sm:gap-3">
+        <div className="relative md:hidden" ref={mobileMenuRef}>
+          <button
+            type="button"
+            className={`flex size-10 items-center justify-center rounded-full border transition-colors duration-200 ${
+              showMobileMenu
+                ? "border-blue-200 bg-blue-50 text-blue-600 shadow-sm"
+                : "border-transparent bg-slate-100 text-slate-600 hover:border-blue-100 hover:bg-blue-50 hover:text-blue-600"
+            }`}
+            aria-label="Mở menu chính"
+            aria-haspopup="menu"
+            aria-expanded={showMobileMenu}
+            onClick={toggleMobileMenu}
+          >
+            <span className="material-symbols-outlined text-[23px] leading-none">
+              {showMobileMenu ? "close" : "menu"}
+            </span>
+          </button>
+
+          {showMobileMenu && (
+            <nav
+              className="fixed right-3 top-[4.25rem] z-50 w-[min(18rem,calc(100vw-1.5rem))] overflow-hidden rounded-2xl border border-slate-200 bg-white p-2 text-slate-900 shadow-[0_22px_70px_rgba(15,23,42,0.18)]"
+              aria-label="Menu chính"
+            >
+              {navItems.map((item) => {
+                const active = isActiveNavItem(item.path);
+                return (
+                  <NavLink
+                    key={item.path}
+                    to={item.path}
+                    end={item.path === "/"}
+                    className={`sidebar-nav-link group flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-bold transition-all duration-200 ${
+                      active
+                        ? "sidebar-nav-link--active"
+                        : "hover:bg-slate-50"
+                    }`}
+                    style={{
+                      "--sidebar-color": item.color,
+                      "--sidebar-hover-bg": item.hoverBg,
+                      "--sidebar-active-bg": item.activeBg,
+                      "--sidebar-active-border": item.activeBorder,
+                      "--sidebar-active-shadow": item.activeShadow,
+                    }}
+                  >
+                    <span
+                      className={`material-symbols-outlined text-[22px] leading-none ${
+                        active && item.iconFill ? "icon-fill" : ""
+                      }`}
+                    >
+                      {item.icon}
+                    </span>
+                    <span className="min-w-0 truncate">{item.label}</span>
+                  </NavLink>
+                );
+              })}
+            </nav>
+          )}
+        </div>
+
+        <div className="flex items-center gap-2 sm:gap-3">
           <div className="relative" ref={notificationRef}>
             <button
               type="button"
@@ -343,7 +468,7 @@ const Header = ({ overlay = false }) => {
             </button>
 
             {showNotificationPanel && (
-              <div className="workhub-notification-panel fixed right-4 top-[4.75rem] z-50 flex max-h-[calc(100vh-5.5rem)] w-[calc(100vw-2rem)] flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white text-slate-900 shadow-[0_22px_70px_rgba(15,23,42,0.18)] sm:right-6 sm:w-[25rem] xl:w-[26rem]">
+              <div className="workhub-notification-panel fixed right-3 top-[4.25rem] z-50 flex max-h-[calc(100dvh-5rem)] w-[calc(100vw-1.5rem)] flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white text-slate-900 shadow-[0_22px_70px_rgba(15,23,42,0.18)] sm:right-6 sm:top-[4.75rem] sm:max-h-[calc(100dvh-5.5rem)] sm:w-[25rem] xl:w-[26rem]">
                 <div className="flex items-center justify-between gap-3 border-b border-slate-100 px-4 py-3">
                   <div className="min-w-0">
                     <h2 className="text-base font-extrabold uppercase tracking-wide text-slate-900">
@@ -571,7 +696,7 @@ const Header = ({ overlay = false }) => {
             )}
           </div>
           <button
-            className="flex items-center justify-center rounded-full size-10 bg-slate-100 text-slate-600 hover:bg-slate-200 hover:text-purple-600 transition-all duration-300 cursor-pointer"
+            className="hidden items-center justify-center rounded-full size-10 bg-slate-100 text-slate-600 hover:bg-slate-200 hover:text-purple-600 transition-all duration-300 cursor-pointer lg:flex"
             title="Trợ giúp"
           >
             <span className="material-symbols-outlined text-xl">help</span>
@@ -605,7 +730,7 @@ const Header = ({ overlay = false }) => {
           </button>
 
           {showDropdown && (
-            <div className="absolute right-0 top-full z-50 mt-2 w-80 rounded-xl border border-white/10 bg-[#383941] text-white shadow-[0_18px_50px_rgba(15,23,42,0.35)]">
+            <div className="absolute right-0 top-full z-50 mt-2 w-[min(20rem,calc(100vw-1rem))] rounded-xl border border-white/10 bg-[#383941] text-white shadow-[0_18px_50px_rgba(15,23,42,0.35)]">
               <div className="p-4 border-b border-white/10">
                 <p className="text-sm font-bold text-white truncate">
                   {user?.fullName}

@@ -80,7 +80,7 @@ const FeedPage = () => {
   };
 
   return (
-    <div className="w-full max-w-[900px] mx-auto xl:-translate-x-[60px] py-6 px-4 sm:px-6 lg:px-8 flex flex-col gap-6">
+    <div className="mx-auto flex w-full max-w-[920px] flex-col gap-4 px-3 py-4 sm:gap-5 sm:px-5 sm:py-6 lg:gap-6 lg:px-8 lg:py-8">
       <CreatePostBox onPostCreated={handlePostCreated} />
 
       {isInitialLoad ? (

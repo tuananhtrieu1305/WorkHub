@@ -178,17 +178,17 @@ const CreatePostBox = ({ onPostCreated }) => {
   ];
 
   return (
-    <div className="bg-white/80 backdrop-blur-sm rounded-2xl shadow-sm border border-slate-200/60 p-5 relative z-20">
-      <div className="flex gap-4">
+    <div className="relative z-20 rounded-xl border border-slate-200/60 bg-white/80 p-4 shadow-sm backdrop-blur-sm sm:rounded-2xl sm:p-5">
+      <div className="flex gap-3 sm:gap-4">
         {avatarUrl ? (
           <img
             src={avatarUrl}
             alt={user?.fullName}
             referrerPolicy={getAvatarReferrerPolicy(avatarUrl)}
-            className="size-12 rounded-full shadow-sm object-cover shrink-0"
+            className="size-10 shrink-0 rounded-full object-cover shadow-sm sm:size-12"
           />
         ) : (
-          <div className="size-12 rounded-full shadow-sm bg-blue-600 text-white flex items-center justify-center text-lg font-bold shrink-0">
+          <div className="flex size-10 shrink-0 items-center justify-center rounded-full bg-blue-600 text-base font-bold text-white shadow-sm sm:size-12 sm:text-lg">
             {userInitial}
           </div>
         )}
@@ -197,7 +197,7 @@ const CreatePostBox = ({ onPostCreated }) => {
             ref={textareaRef}
             value={content}
             onChange={(e) => setContent(e.target.value)}
-            className="w-full bg-transparent border-none focus:ring-0 py-2 pl-2 pr-12 text-slate-900 placeholder-slate-400 resize-none min-h-[60px] text-lg font-medium focus:outline-none"
+            className="min-h-[60px] w-full resize-none border-none bg-transparent py-2 pl-0 pr-12 text-base font-medium text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-0 sm:pl-2 sm:text-lg"
             placeholder="Bạn đang nghĩ gì? Chia sẻ một cập nhật..."
           />
           <EmojiPickerButton
@@ -210,7 +210,7 @@ const CreatePostBox = ({ onPostCreated }) => {
 
       {/* Selected feeling display */}
       {selectedFeeling && (
-        <div className="flex items-center gap-2 ml-16 mt-1 mb-2">
+        <div className="mb-2 mt-2 flex items-center gap-2 sm:ml-16 sm:mt-1">
           <span className="text-sm bg-amber-50 text-amber-700 px-3 py-1 rounded-full font-medium flex items-center gap-1.5">
             {selectedFeeling.emoji} {selectedFeeling.label}
             <button
@@ -225,7 +225,7 @@ const CreatePostBox = ({ onPostCreated }) => {
 
       {/* Selected mentions display */}
       {selectedMentions.length > 0 && (
-        <div className="flex items-center gap-2 ml-16 mt-1 mb-2 flex-wrap">
+        <div className="mb-2 mt-2 flex flex-wrap items-center gap-2 sm:ml-16 sm:mt-1">
           {selectedMentions.map((m) => (
             <span
               key={m._id}
@@ -245,7 +245,7 @@ const CreatePostBox = ({ onPostCreated }) => {
 
       {/* File previews */}
       {files.length > 0 && (
-        <div className="flex flex-wrap gap-3 ml-16 mt-3 mb-2">
+        <div className="mb-2 mt-3 flex flex-wrap gap-3 sm:ml-16">
           {files.map((file, idx) => {
             const attachmentType = getAttachmentType(file);
             const isImage = attachmentType === "image";
@@ -311,7 +311,7 @@ const CreatePostBox = ({ onPostCreated }) => {
 
       {/* Feeling/Activity popup */}
       {showFeeling && (
-        <div className="ml-16 mt-3 bg-white border border-slate-200 rounded-xl shadow-lg p-4 relative z-10">
+        <div className="relative z-10 mt-3 rounded-xl border border-slate-200 bg-white p-4 shadow-lg sm:ml-16">
           <div className="flex items-center justify-between mb-3">
             <h4 className="text-sm font-bold text-slate-900">
               Bạn đang cảm thấy thế nào?
@@ -345,7 +345,7 @@ const CreatePostBox = ({ onPostCreated }) => {
               Hoạt động
             </button>
           </div>
-          <div className="grid grid-cols-4 gap-2">
+          <div className="grid grid-cols-2 gap-2 min-[420px]:grid-cols-3 sm:grid-cols-4">
             {(feelingTab === "feeling" ? FEELINGS : ACTIVITIES).map((item) => (
               <button
                 key={item.label}
@@ -368,7 +368,7 @@ const CreatePostBox = ({ onPostCreated }) => {
 
       {/* Mention search */}
       {showMentionDropdown && (
-        <div className="ml-16 mt-2 bg-white border border-slate-200 rounded-xl shadow-lg overflow-hidden relative z-10">
+        <div className="relative z-10 mt-2 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-lg sm:ml-16">
           {mentionResults.map((u) => {
             const mAvatar = getAvatarUrl(u.avatar);
             return (
@@ -400,8 +400,8 @@ const CreatePostBox = ({ onPostCreated }) => {
       )}
 
       {/* Action bar */}
-      <div className="flex items-center justify-between mt-4 pt-4 border-t border-slate-100">
-        <div className="flex items-center gap-2">
+      <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 pt-4">
+        <div className="flex min-w-0 flex-1 items-center gap-2">
           {actionButtons.map((btn) => (
             <button
               key={btn.icon}
@@ -424,7 +424,7 @@ const CreatePostBox = ({ onPostCreated }) => {
             placeholder="Tìm người để gắn thẻ..."
             className={`text-sm border border-slate-200 rounded-full px-3 py-1.5 focus:outline-none focus:border-blue-400 transition-all ${
               mentionQuery || showMentionDropdown
-                ? "w-48 opacity-100 ml-2"
+                ? "ml-1 w-36 opacity-100 sm:ml-2 sm:w-48"
                 : "w-0 opacity-0 p-0 border-0"
             }`}
             onFocus={() =>
@@ -447,7 +447,7 @@ const CreatePostBox = ({ onPostCreated }) => {
         <button
           onClick={handleSubmit}
           disabled={isSubmitting || (!content.trim() && files.length === 0)}
-          className="bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 cursor-pointer disabled:cursor-not-allowed text-white px-4 py-2 rounded-full text-sm font-bold shadow-lg shadow-blue-500/20 transition-colors duration-300 flex items-center gap-2"
+          className="flex shrink-0 items-center gap-2 rounded-full bg-blue-600 px-4 py-2 text-sm font-bold text-white shadow-lg shadow-blue-500/20 transition-colors duration-300 hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-blue-400"
         >
           {isSubmitting && (
             <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />

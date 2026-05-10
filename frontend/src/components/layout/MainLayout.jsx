@@ -11,12 +11,12 @@ const MainLayout = () => {
   return (
     <SocketProvider>
       <CallProvider>
-        <div className="bg-[#f8f9fc] text-slate-900 h-screen overflow-hidden flex flex-col">
+        <div className="flex h-dvh min-h-dvh flex-col overflow-hidden bg-[#f8f9fc] text-slate-900">
           <Header />
-          <div className="flex flex-1 min-h-0 overflow-hidden">
+          <div className="flex min-h-0 flex-1 overflow-hidden">
             <Sidebar />
             <main
-              className={`flex-1 min-w-0 min-h-0 bg-transparent ${
+              className={`min-h-0 min-w-0 flex-1 bg-transparent ${
                 isChatRoute ? "overflow-hidden" : "overflow-y-auto"
               }`}
             >

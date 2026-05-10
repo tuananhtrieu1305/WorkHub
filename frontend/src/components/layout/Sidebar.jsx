@@ -1,84 +1,5 @@
 import { NavLink, useLocation } from "react-router-dom";
-
-const navItems = [
-  {
-    label: "Bảng tin",
-    path: "/",
-    icon: "home",
-    color: "#1d4ed8",
-    activeBg: "#dbeafe",
-    activeBorder: "#93c5fd",
-    activeShadow: "rgba(37, 99, 235, 0.24)",
-    hoverBg: "#eff6ff",
-    iconFill: true,
-  },
-  {
-    label: "Tin nhắn",
-    path: "/messages",
-    icon: "chat",
-    color: "#047857",
-    activeBg: "#d1fae5",
-    activeBorder: "#34d399",
-    activeShadow: "rgba(4, 120, 87, 0.24)",
-    hoverBg: "#ecfdf5",
-    iconFill: false,
-  },
-  {
-    label: "Cuộc gọi",
-    path: "/meetings",
-    icon: "call",
-    color: "#ea580c",
-    activeBg: "#ffedd5",
-    activeBorder: "#fb923c",
-    activeShadow: "rgba(234, 88, 12, 0.24)",
-    hoverBg: "#fffbeb",
-    iconFill: false,
-  },
-  {
-    label: "Công việc",
-    path: "/tasks",
-    icon: "task_alt",
-    color: "#7e22ce",
-    activeBg: "#f3e8ff",
-    activeBorder: "#c084fc",
-    activeShadow: "rgba(126, 34, 206, 0.24)",
-    hoverBg: "#faf5ff",
-    iconFill: false,
-  },
-  {
-    label: "Lịch",
-    path: "/calendar",
-    icon: "calendar_today",
-    color: "#db2777",
-    activeBg: "#fce7f3",
-    activeBorder: "#f9a8d4",
-    activeShadow: "rgba(219, 39, 119, 0.24)",
-    hoverBg: "#fdf2f8",
-    iconFill: false,
-  },
-  {
-    label: "Tài liệu",
-    path: "/docs",
-    icon: "description",
-    color: "#0e7490",
-    activeBg: "#cffafe",
-    activeBorder: "#67e8f9",
-    activeShadow: "rgba(14, 116, 144, 0.24)",
-    hoverBg: "#ecfeff",
-    iconFill: false,
-  },
-  {
-    label: "Nhóm",
-    path: "/departments",
-    icon: "groups",
-    color: "#4f46e5",
-    activeBg: "#e0e7ff",
-    activeBorder: "#a5b4fc",
-    activeShadow: "rgba(79, 70, 229, 0.24)",
-    hoverBg: "#eef2ff",
-    iconFill: false,
-  },
-];
+import { navItems } from "./navItems";
 
 const Sidebar = () => {
   const location = useLocation();
@@ -89,7 +10,7 @@ const Sidebar = () => {
   };
 
   return (
-    <aside className="w-20 border-r border-slate-200/50 bg-slate-50/50 hidden md:flex flex-col flex-shrink-0 overflow-y-auto">
+    <aside className="hidden w-20 flex-shrink-0 flex-col overflow-y-auto border-r border-slate-200/50 bg-slate-50/50 lg:flex">
       <div className="p-3 flex flex-col gap-6 items-center">
         {/* <div className="flex flex-col items-center">
           {avatarUrl ? (

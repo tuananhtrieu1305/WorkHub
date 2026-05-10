@@ -142,27 +142,27 @@ const PostCard = ({ post, onPostDeleted, onPostUpdated }) => {
         isDeleting ? "opacity-50 pointer-events-none" : ""
       }`}
     >
-      <div className="p-5">
+      <div className="p-4 sm:p-5">
         {/* Header */}
-        <div className="flex items-center justify-between mb-4">
-          <div className="flex items-center gap-3">
+        <div className="mb-4 flex items-center justify-between gap-3">
+          <div className="flex min-w-0 items-center gap-3">
             {authorAvatar ? (
               <img
                 src={authorAvatar}
                 alt={post.author?.fullName}
                 referrerPolicy={getAvatarReferrerPolicy(authorAvatar)}
-                className="size-11 rounded-full shadow-sm object-cover"
+                className="size-10 shrink-0 rounded-full object-cover shadow-sm sm:size-11"
               />
             ) : (
-              <div className="size-11 rounded-full shadow-sm bg-blue-600 text-white flex items-center justify-center text-sm font-bold">
+              <div className="flex size-10 shrink-0 items-center justify-center rounded-full bg-blue-600 text-sm font-bold text-white shadow-sm sm:size-11">
                 {post.author?.fullName?.charAt(0) || "?"}
               </div>
             )}
-            <div>
-              <p className="text-slate-900 text-sm font-bold">
+            <div className="min-w-0">
+              <p className="truncate text-sm font-bold text-slate-900">
                 {post.author?.fullName || "Ẩn danh"}
               </p>
-              <p className="text-slate-500 text-xs font-medium">
+              <p className="truncate text-xs font-medium text-slate-500">
                 {authorPosition && `${authorPosition} • `}
                 {formatTime(post.createdAt)}
               </p>
@@ -235,7 +235,7 @@ const PostCard = ({ post, onPostDeleted, onPostUpdated }) => {
                   className={`w-full object-cover rounded-xl cursor-pointer hover:opacity-90 transition-opacity ${
                     imageAttachments.length === 1
                       ? "max-h-[400px]"
-                      : "h-48"
+                      : "h-36 sm:h-48"
                   }`}
                 />
                 <a
@@ -321,7 +321,7 @@ const PostCard = ({ post, onPostDeleted, onPostUpdated }) => {
       </div>
 
       {/* Action bar */}
-      <div className="px-5 py-3 border-t border-slate-100 flex items-center gap-6 bg-slate-50/50 rounded-b-2xl">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-b-2xl border-t border-slate-100 bg-slate-50/50 px-4 py-3 sm:gap-x-6 sm:px-5">
         <ReactionPicker
           isActive={reactionState.isLiked}
           reactionType={reactionState.reactionType}
@@ -343,7 +343,7 @@ const PostCard = ({ post, onPostDeleted, onPostUpdated }) => {
           </span>
         </button>
 
-        <button className="group flex items-center gap-1.5 text-slate-500 hover:text-slate-800 transition-colors text-sm font-bold ml-auto">
+        <button className="group flex items-center gap-1.5 text-sm font-bold text-slate-500 transition-colors hover:text-slate-800 sm:ml-auto">
           <span className="inline-flex size-8 items-center justify-center rounded-full transition-colors group-hover:bg-slate-100">
             <span className="material-symbols-outlined text-[20px] leading-none">share</span>
           </span>
