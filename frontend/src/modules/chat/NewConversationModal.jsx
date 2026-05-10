@@ -110,7 +110,7 @@ const NewConversationModal = ({ isOpen, onClose, onCreate }) => {
     if (!canCreateConversation(type, groupName, selectedUsers)) {
       setError(
         type === "group"
-          ? "Vui lòng nhập tên nhóm và chọn ít nhất một thành viên."
+          ? "Vui lòng chọn ít nhất hai thành viên."
           : "Vui lòng chọn một người để bắt đầu chat.",
       );
       return;

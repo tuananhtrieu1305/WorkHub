@@ -9,7 +9,12 @@ import {
   getAvatarUrl,
 } from "../../utils/avatar";
 
-const ChatDetailPanel = ({ conversation, currentUserId, onClose }) => {
+const ChatDetailPanel = ({
+  conversation,
+  currentUserId,
+  onClose,
+  className = "hidden w-80 border-l border-slate-200 bg-white xl:flex",
+}) => {
   if (!conversation) return null;
 
   const display = getChatDetailDisplay(conversation, currentUserId);
@@ -29,12 +34,15 @@ const ChatDetailPanel = ({ conversation, currentUserId, onClose }) => {
   );
 
   return (
-    <aside className="w-80 bg-slate-50/50 border-l border-slate-200/50 flex flex-col h-full overflow-y-auto shrink-0 hidden xl:flex">
+    <aside className={`chat-detail-panel h-full shrink-0 flex-col overflow-y-auto ${className}`}>
       {/* Header - Close button */}
-      <div className="flex items-center justify-end p-4 border-b border-slate-200/50">
+      <div className="flex items-center justify-between border-b border-slate-200 bg-white p-4">
+        <h2 className="text-sm font-bold uppercase tracking-wide text-slate-700">
+          Chi tiết
+        </h2>
         <button
           onClick={onClose}
-          className="p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg transition-colors cursor-pointer"
+          className="rounded-lg p-1.5 text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-900 cursor-pointer"
           title="Đóng"
         >
           <span className="material-symbols-outlined text-[20px]">close</span>
@@ -42,21 +50,21 @@ const ChatDetailPanel = ({ conversation, currentUserId, onClose }) => {
       </div>
 
       {/* Profile Section */}
-      <div className="p-5 border-b border-slate-200/50 flex flex-col items-center">
+      <div className="flex flex-col items-center border-b border-slate-200 bg-slate-50 p-5">
         <div className="relative mb-3">
           {displayAvatar ? (
             <img
               src={displayAvatar}
               alt={displayName}
               referrerPolicy={getAvatarReferrerPolicy(displayAvatar)}
-              className="w-20 h-20 rounded-full object-cover ring-4 ring-white shadow-md"
+              className="h-20 w-20 rounded-full object-cover ring-4 ring-white shadow-md"
             />
           ) : isPrivate ? (
-            <div className="w-20 h-20 rounded-full ring-4 ring-white shadow-md bg-blue-600 text-white flex items-center justify-center text-2xl font-bold">
+            <div className="flex h-20 w-20 items-center justify-center rounded-full bg-blue-600 text-2xl font-bold text-white ring-4 ring-white shadow-md">
               {displayInitial}
             </div>
           ) : (
-            <div className="w-20 h-20 rounded-xl ring-4 ring-white shadow-md bg-gradient-to-br from-emerald-400 to-teal-500 text-white flex items-center justify-center text-2xl font-bold">
+            <div className="flex h-20 w-20 items-center justify-center rounded-xl bg-gradient-to-br from-emerald-400 to-teal-500 text-2xl font-bold text-white ring-4 ring-white shadow-md">
               {displayInitial}
             </div>
           )}
@@ -74,20 +82,20 @@ const ChatDetailPanel = ({ conversation, currentUserId, onClose }) => {
         <h3 className="text-lg font-bold text-slate-900">{displayName}</h3>
 
         {isPrivate && email && (
-          <p className="text-sm text-slate-500 mt-0.5">
+          <p className="mt-0.5 max-w-full break-all text-center text-sm font-medium text-slate-600">
             {email}
           </p>
         )}
 
         {!isPrivate && (
-          <p className="text-sm text-slate-500 mt-0.5">
+          <p className="mt-0.5 text-sm font-medium text-slate-600">
             {participantCount} thành viên
           </p>
         )}
 
         {/* Quick Actions */}
-        <div className="flex gap-2 w-full mt-4">
-          <button className="flex-1 flex flex-col items-center justify-center py-2.5 bg-white border border-slate-200 rounded-xl hover:border-blue-500/50 hover:text-blue-600 transition-colors text-slate-600 cursor-pointer">
+        <div className="mt-4 flex w-full gap-2">
+          <button className="flex flex-1 flex-col items-center justify-center rounded-xl border border-slate-300 bg-white py-2.5 text-slate-700 shadow-sm transition-colors hover:border-blue-300 hover:bg-blue-50 hover:text-blue-700 cursor-pointer">
             <span className="material-symbols-outlined text-[20px] mb-1">
               person
             </span>
@@ -95,7 +103,7 @@ const ChatDetailPanel = ({ conversation, currentUserId, onClose }) => {
               Hồ sơ
             </span>
           </button>
-          <button className="flex-1 flex flex-col items-center justify-center py-2.5 bg-white border border-slate-200 rounded-xl hover:border-blue-500/50 hover:text-blue-600 transition-colors text-slate-600 cursor-pointer">
+          <button className="flex flex-1 flex-col items-center justify-center rounded-xl border border-slate-300 bg-white py-2.5 text-slate-700 shadow-sm transition-colors hover:border-blue-300 hover:bg-blue-50 hover:text-blue-700 cursor-pointer">
             <span className="material-symbols-outlined text-[20px] mb-1">
               search
             </span>
@@ -103,7 +111,7 @@ const ChatDetailPanel = ({ conversation, currentUserId, onClose }) => {
               Tìm kiếm
             </span>
           </button>
-          <button className="flex-1 flex flex-col items-center justify-center py-2.5 bg-white border border-slate-200 rounded-xl hover:border-blue-500/50 hover:text-blue-600 transition-colors text-slate-600 cursor-pointer">
+          <button className="flex flex-1 flex-col items-center justify-center rounded-xl border border-slate-300 bg-white py-2.5 text-slate-700 shadow-sm transition-colors hover:border-blue-300 hover:bg-blue-50 hover:text-blue-700 cursor-pointer">
             <span className="material-symbols-outlined text-[20px] mb-1">
               more_horiz
             </span>
@@ -115,22 +123,22 @@ const ChatDetailPanel = ({ conversation, currentUserId, onClose }) => {
       </div>
 
       {/* Shared Media */}
-      <div className="p-5 border-b border-slate-200/50">
+      <div className="border-b border-slate-200 bg-white p-5">
         <div className="flex items-center justify-between mb-4">
-          <h3 className="font-bold text-slate-800 text-sm uppercase tracking-wider">
+          <h3 className="text-sm font-bold uppercase tracking-wider text-slate-800">
             Phương tiện chia sẻ
           </h3>
-          <button className="text-blue-600 text-xs font-semibold hover:underline cursor-pointer">
+          <button className="text-xs font-bold text-blue-700 hover:underline cursor-pointer">
             Xem tất cả
           </button>
         </div>
         <div className="grid grid-cols-3 gap-2">
           {/* Empty state for shared media */}
           <div className="col-span-3 text-center py-6">
-            <span className="material-symbols-outlined text-3xl text-slate-300 mb-2 block">
+            <span className="material-symbols-outlined mb-2 block text-3xl text-slate-400">
               photo_library
             </span>
-            <p className="text-xs text-slate-400 font-medium">
+            <p className="text-xs font-semibold text-slate-600">
               Chưa có phương tiện
             </p>
           </div>
@@ -139,7 +147,7 @@ const ChatDetailPanel = ({ conversation, currentUserId, onClose }) => {
 
       {/* Members (for groups) */}
       {!isPrivate && (
-        <div className="p-5 border-b border-slate-200/50">
+        <div className="border-b border-slate-200 bg-white p-5">
           <div className="flex items-center justify-between mb-4">
             <h3 className="font-bold text-slate-800 text-sm uppercase tracking-wider flex items-center gap-2">
               <span className="material-symbols-outlined text-[18px] text-blue-500">
@@ -147,7 +155,7 @@ const ChatDetailPanel = ({ conversation, currentUserId, onClose }) => {
               </span>
               Thành viên ({participantCount})
             </h3>
-            <button className="text-slate-400 hover:text-blue-600 transition-colors cursor-pointer">
+            <button className="rounded-lg p-1 text-slate-600 transition-colors hover:bg-blue-50 hover:text-blue-700 cursor-pointer">
               <span className="material-symbols-outlined text-[18px]">
                 person_add
               </span>
@@ -161,21 +169,21 @@ const ChatDetailPanel = ({ conversation, currentUserId, onClose }) => {
               return (
                 <div
                   key={pUser?._id || idx}
-                  className="flex items-center gap-3 p-2 rounded-lg hover:bg-white transition-colors cursor-pointer"
+                  className="flex items-center gap-3 rounded-lg p-2 transition-colors hover:bg-blue-50 cursor-pointer"
                 >
                   {pAvatar ? (
                     <img
                       src={pAvatar}
                       alt={pName}
                       referrerPolicy={getAvatarReferrerPolicy(pAvatar)}
-                      className="w-8 h-8 rounded-full object-cover ring-2 ring-white shadow-sm"
+                      className="h-8 w-8 rounded-full object-cover ring-2 ring-white shadow-sm"
                     />
                   ) : (
-                    <div className="w-8 h-8 rounded-full bg-slate-200 text-slate-600 flex items-center justify-center text-sm font-bold ring-2 ring-white shadow-sm">
+                    <div className="flex h-8 w-8 items-center justify-center rounded-full bg-slate-200 text-sm font-bold text-slate-700 ring-2 ring-white shadow-sm">
                       {pName.charAt(0).toUpperCase()}
                     </div>
                   )}
-                  <span className="text-sm font-medium text-slate-700 truncate">
+                  <span className="truncate text-sm font-semibold text-slate-700">
                     {pName}
                   </span>
                 </div>
@@ -186,7 +194,7 @@ const ChatDetailPanel = ({ conversation, currentUserId, onClose }) => {
       )}
 
       {/* Derived Tasks */}
-      <div className="p-5 flex-1">
+      <div className="flex-1 bg-white p-5">
         <div className="flex items-center justify-between mb-4">
           <h3 className="font-bold text-slate-800 text-sm uppercase tracking-wider flex items-center gap-2">
             <span className="material-symbols-outlined text-[18px] text-blue-500">
@@ -194,17 +202,17 @@ const ChatDetailPanel = ({ conversation, currentUserId, onClose }) => {
             </span>
             Công việc liên quan
           </h3>
-          <button className="text-slate-400 hover:text-blue-600 transition-colors cursor-pointer">
+          <button className="rounded-lg p-1 text-slate-600 transition-colors hover:bg-blue-50 hover:text-blue-700 cursor-pointer">
             <span className="material-symbols-outlined text-[18px]">add</span>
           </button>
         </div>
         <div className="space-y-3">
           {/* Empty state */}
           <div className="text-center py-6">
-            <span className="material-symbols-outlined text-3xl text-slate-300 mb-2 block">
+            <span className="material-symbols-outlined mb-2 block text-3xl text-slate-400">
               checklist
             </span>
-            <p className="text-xs text-slate-400 font-medium">
+            <p className="text-xs font-semibold text-slate-600">
               Chưa có công việc nào
             </p>
           </div>

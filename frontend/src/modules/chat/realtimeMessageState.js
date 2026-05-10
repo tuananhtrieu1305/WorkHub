@@ -147,6 +147,10 @@ const getConversationId = (conversation) => {
   return toComparableId(conversation?.id || conversation?._id);
 };
 
+const getMessageSenderId = (message) => {
+  return toComparableId(message?.sender?._id || message?.sender?.id || message?.senderId);
+};
+
 const sortConversationsByUpdatedAt = (conversations) => {
   return [...conversations].sort((a, b) => {
     const aTime = new Date(a?.updatedAt || 0).getTime();
@@ -155,26 +159,98 @@ const sortConversationsByUpdatedAt = (conversations) => {
   });
 };
 
-export const updateConversationPreview = (conversations, message) => {
+export const markConversationAsRead = (conversations, conversationId) => {
+  const targetConversationId = toComparableId(conversationId);
+  if (!targetConversationId) return conversations;
+
+  return conversations.map((conversation) => {
+    if (getConversationId(conversation) !== targetConversationId) {
+      return conversation;
+    }
+
+    return {
+      ...conversation,
+      hasUnread: false,
+      unreadCount: 0,
+    };
+  });
+};
+
+export const upsertConversationById = (conversations, incomingConversation) => {
+  const incomingConversationId = getConversationId(incomingConversation);
+  if (!incomingConversationId) return conversations;
+
+  const existingIndex = conversations.findIndex(
+    (conversation) => getConversationId(conversation) === incomingConversationId
+  );
+
+  if (existingIndex === -1) {
+    return sortConversationsByUpdatedAt([
+      {
+        ...incomingConversation,
+        id:
+          incomingConversation.id ||
+          incomingConversation._id ||
+          incomingConversationId,
+      },
+      ...conversations,
+    ]);
+  }
+
+  const nextConversations = [...conversations];
+  nextConversations[existingIndex] = {
+    ...nextConversations[existingIndex],
+    ...incomingConversation,
+    id:
+      incomingConversation.id ||
+      incomingConversation._id ||
+      getConversationId(nextConversations[existingIndex]),
+  };
+
+  return sortConversationsByUpdatedAt(nextConversations);
+};
+
+export const updateConversationPreview = (
+  conversations,
+  message,
+  { currentUserId, selectedConversationId } = {},
+) => {
   const conversationId = toComparableId(message?.conversationId);
   if (!conversationId) return conversations;
 
-  const nextConversations = conversations.map((conversation) => {
+  const incomingConversation = message?.conversation;
+  const conversationsWithIncoming =
+    !incomingConversation
+      ? conversations
+      : upsertConversationById(conversations, incomingConversation);
+
+  const nextConversations = conversationsWithIncoming.map((conversation) => {
     if (getConversationId(conversation) !== conversationId) return conversation;
 
     const createdAt = message.createdAt || new Date().toISOString();
     const content =
       message.content ||
       (message.attachments?.length > 0 ? "[Attachment]" : "");
+    const senderId = getMessageSenderId(message);
+    const isSentByCurrentUser =
+      currentUserId && senderId === toComparableId(currentUserId);
+    const isSelectedConversation =
+      selectedConversationId &&
+      conversationId === toComparableId(selectedConversationId);
 
     return {
       ...conversation,
       lastMessage: {
+        id: message.id || message._id,
         content,
-        senderId: message.sender?._id || message.senderId,
+        senderId,
         createdAt,
       },
       updatedAt: createdAt,
+      hasUnread:
+        isSentByCurrentUser || isSelectedConversation
+          ? false
+          : Boolean(senderId) || conversation.hasUnread,
     };
   });
 

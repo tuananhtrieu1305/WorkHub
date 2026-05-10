@@ -1,5 +1,13 @@
 const getUserId = (user) => String(user?.id || user?._id || "");
 
+const buildFallbackGroupName = (selectedUsers) => {
+  return selectedUsers
+    .map((user) => user?.fullName || user?.email || "")
+    .filter(Boolean)
+    .slice(0, 3)
+    .join(", ");
+};
+
 export const toggleSelectedUser = (selectedUsers, user, type) => {
   const userId = getUserId(user);
   if (!userId) return selectedUsers;
@@ -26,7 +34,7 @@ export const buildConversationPayload = ({
   if (type === "group") {
     return {
       type,
-      name: groupName.trim(),
+      name: groupName.trim() || buildFallbackGroupName(selectedUsers),
       participantIds,
     };
   }
@@ -39,6 +47,8 @@ export const buildConversationPayload = ({
 
 export const canCreateConversation = (type, groupName, selectedUsers) => {
   if (!selectedUsers.length) return false;
-  if (type === "group" && !groupName.trim()) return false;
+  if (type === "group") {
+    return selectedUsers.length >= 2;
+  }
   return true;
 };

@@ -144,9 +144,9 @@ const ChatInput = ({
   const canAttach = Boolean(onUploadAttachment) && mode !== "edit";
 
   return (
-    <div className="px-4 sm:px-6 pb-4 pt-2 bg-white">
-      <div className="flex flex-col overflow-visible border border-slate-300 rounded-xl bg-white focus-within:ring-2 focus-within:ring-blue-500/30 focus-within:border-blue-500 transition-all shadow-sm">
-        <div className="flex items-center justify-between gap-2 border-b border-slate-100 bg-slate-50/80 px-3 py-2 rounded-t-xl">
+    <div className="border-t border-slate-200 bg-white px-3 pb-3 pt-3 sm:px-6 sm:pb-4">
+      <div className="flex flex-col overflow-visible rounded-2xl border border-slate-300 bg-white shadow-sm transition-all focus-within:border-blue-600 focus-within:ring-2 focus-within:ring-blue-600/20">
+        <div className="flex items-center justify-between gap-2 overflow-x-auto rounded-t-2xl border-b border-slate-200 bg-slate-50 px-3 py-2">
           <input
             ref={fileInputRef}
             type="file"
@@ -159,7 +159,7 @@ const ChatInput = ({
               type="button"
               onClick={() => fileInputRef.current?.click()}
               disabled={disabled || isUploading || !canAttach}
-              className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-slate-500 transition-colors hover:bg-blue-50 hover:text-blue-600 disabled:cursor-not-allowed disabled:opacity-40"
+              className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-slate-600 transition-colors hover:bg-blue-50 hover:text-blue-700 disabled:cursor-not-allowed disabled:text-slate-300"
               title="Đính kèm file"
               aria-label="Đính kèm file"
             >
@@ -189,8 +189,8 @@ const ChatInput = ({
             onClick={() => setShowFormattingToolbar((value) => !value)}
             className={`inline-flex h-8 items-center gap-2 rounded-lg px-2.5 text-sm font-semibold transition-colors ${
               showFormattingToolbar
-                ? "bg-blue-50 text-blue-700"
-                : "text-slate-500 hover:bg-blue-50 hover:text-blue-600"
+                ? "bg-blue-600 text-white shadow-sm"
+                : "text-slate-700 hover:bg-blue-50 hover:text-blue-700"
             }`}
             title="Định dạng tin nhắn"
             aria-pressed={showFormattingToolbar}
@@ -207,7 +207,7 @@ const ChatInput = ({
             {attachments.map((attachment, index) => (
               <span
                 key={`${attachment.fileUrl}-${index}`}
-                className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-medium text-slate-600"
+                className="inline-flex items-center gap-2 rounded-full border border-slate-300 bg-slate-50 px-3 py-1 text-xs font-semibold text-slate-700"
               >
                 <span className="material-symbols-outlined text-[14px]">
                   attach_file
@@ -220,7 +220,7 @@ const ChatInput = ({
                       prev.filter((_, itemIndex) => itemIndex !== index)
                     )
                   }
-                  className="text-slate-400 hover:text-red-500"
+                  className="text-slate-500 hover:text-red-600"
                   title="Gỡ file đính kèm"
                 >
                   <span className="material-symbols-outlined text-[14px]">
@@ -230,7 +230,7 @@ const ChatInput = ({
               </span>
             ))}
             {attachmentError && (
-              <span className="text-xs font-medium text-red-600">
+              <span className="text-xs font-semibold text-red-600">
                 {attachmentError}
               </span>
             )}
@@ -247,7 +247,7 @@ const ChatInput = ({
             placeholder={placeholder}
             disabled={disabled}
             rows={1}
-            className="chat-composer-textarea w-full bg-transparent border-none focus:ring-0 px-4 py-3.5 pr-12 text-[15px] placeholder:text-slate-400 resize-none overflow-y-auto outline-none"
+            className="chat-composer-textarea w-full resize-none overflow-y-auto border-none bg-transparent px-4 py-3.5 pr-12 text-[15px] font-medium text-slate-900 outline-none placeholder:text-slate-500 focus:ring-0 disabled:text-slate-400"
           />
           <EmojiPickerButton
             align="right"
@@ -261,8 +261,8 @@ const ChatInput = ({
         </div>
 
         {showFormattingToolbar && (
-          <div className="chat-format-panel border-t border-slate-100 bg-slate-900 px-3 py-3 text-slate-300">
-            <p className="mb-3 text-sm font-medium text-slate-400">
+          <div className="chat-format-panel border-t border-slate-800 bg-slate-950 px-3 py-3 text-slate-300">
+            <p className="mb-3 text-sm font-semibold text-slate-300">
               Nhấn Ctrl + Shift + X để định dạng tin nhắn
             </p>
             <div className="flex flex-wrap items-center gap-1">
@@ -278,7 +278,7 @@ const ChatInput = ({
                     type="button"
                     onClick={() => handleFormat(item.action)}
                     disabled={item.disabled}
-                    className="inline-flex h-8 min-w-8 items-center justify-center rounded-md px-2 text-slate-200 transition-colors hover:bg-slate-700 hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
+                    className="inline-flex h-8 min-w-8 items-center justify-center rounded-md px-2 text-slate-200 transition-colors hover:bg-slate-800 hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
                     title={item.title}
                     aria-label={item.title}
                   >

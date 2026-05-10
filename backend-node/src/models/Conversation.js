@@ -34,6 +34,7 @@ const conversationSchema = new mongoose.Schema(
       },
     ],
     lastMessage: {
+      messageId: { type: mongoose.Schema.Types.ObjectId, ref: "Message" },
       content: { type: String, default: "" },
       senderId: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
       createdAt: { type: Date },

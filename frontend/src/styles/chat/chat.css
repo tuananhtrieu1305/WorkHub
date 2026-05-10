@@ -1,5 +1,24 @@
 /* Chat module - Custom CSS (chỉ cho animations/effects không thể dùng Tailwind) */
 
+.chat-page-shell {
+  background:
+    radial-gradient(circle at 18% 12%, rgba(59, 130, 246, 0.1), transparent 28%),
+    linear-gradient(135deg, #eaf1fb 0%, #f8fafc 42%, #eef2f7 100%);
+}
+
+.chat-messages-pane {
+  background:
+    linear-gradient(rgba(248, 250, 252, 0.92), rgba(248, 250, 252, 0.92)),
+    radial-gradient(circle at 12px 12px, rgba(148, 163, 184, 0.18) 1px, transparent 1px);
+  background-size: auto, 24px 24px;
+}
+
+.chat-detail-drawer {
+  width: min(22rem, calc(100vw - 1.5rem));
+  height: auto;
+  max-height: calc(100dvh - 5.5rem);
+}
+
 /* Typing indicator dots animation */
 @keyframes chatTypingBounce {
   0%, 60%, 100% {
@@ -14,7 +33,7 @@
   width: 6px;
   height: 6px;
   border-radius: 50%;
-  background-color: #94a3b8;
+  background-color: #2563eb;
   animation: chatTypingBounce 1.4s ease-in-out infinite;
 }
 
@@ -33,6 +52,11 @@
   opacity: 0;
   transition: opacity 0.15s ease;
 }
+
+.chat-message-actions {
+  z-index: 2;
+}
+
 .chat-message-group:hover .chat-message-actions {
   opacity: 1;
 }
@@ -45,11 +69,11 @@
   background: transparent;
 }
 .chat-messages-scroll::-webkit-scrollbar-thumb {
-  background: #e2e8f0;
+  background: #cbd5e1;
   border-radius: 2px;
 }
 .chat-messages-scroll::-webkit-scrollbar-thumb:hover {
-  background: #cbd5e1;
+  background: #94a3b8;
 }
 
 /* Conversation list scrollbar */
@@ -60,8 +84,12 @@
   background: transparent;
 }
 .chat-conversations-scroll::-webkit-scrollbar-thumb {
-  background: #e2e8f0;
+  background: #cbd5e1;
   border-radius: 2px;
+}
+
+.chat-conversations-scroll::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
 }
 
 /* Textarea auto-resize smooth */
@@ -74,13 +102,13 @@
 .chat-composer-input-shell .chat-composer-emoji-button {
   width: 2rem;
   height: 2rem;
-  color: #64748b;
+  color: #475569;
 }
 
 .chat-composer-input-shell .chat-composer-emoji-button:hover,
 .chat-composer-input-shell .chat-composer-emoji-button[data-open="true"] {
-  background: #eff6ff;
-  color: #2563eb;
+  background: #dbeafe;
+  color: #1d4ed8;
   box-shadow: none;
   transform: none;
 }
@@ -99,4 +127,10 @@
     "wght" 600,
     "GRAD" 0,
     "opsz" 20;
+}
+
+@media (max-width: 767px) {
+  .chat-page-shell {
+    background: #f8fafc;
+  }
 }

@@ -273,7 +273,7 @@ const CallSystemMessage = ({ message }) => {
 
   return (
     <div className="flex justify-center">
-      <div className="inline-flex max-w-[80%] items-center gap-2 rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-600 shadow-sm">
+      <div className="inline-flex max-w-[80%] items-center gap-2 rounded-full border border-slate-300 bg-white px-4 py-2 text-xs font-semibold text-slate-700 shadow-sm">
         <span className="material-symbols-outlined text-[16px] text-blue-500">
           {meta.icon}
         </span>
@@ -398,10 +398,10 @@ const MessageBubble = ({
   if (isMine) {
     return (
       <div className="chat-message-group flex items-start gap-3 justify-end group">
-        <div className="flex flex-col gap-1 items-end max-w-[70%]">
-          {showAvatar && (
-            <div className="flex items-baseline gap-2">
-              <span className="text-xs text-slate-400 font-medium">
+      <div className="flex max-w-[82%] flex-col items-end gap-1 sm:max-w-[70%]">
+        {showAvatar && (
+          <div className="flex items-baseline gap-2">
+              <span className="text-xs font-semibold text-slate-500">
                 {formatTime(message.createdAt)}
               </span>
               <span className="text-sm font-bold text-slate-900">Bạn</span>
@@ -410,7 +410,7 @@ const MessageBubble = ({
           <div className="relative">
             <ReplyQuote replyTo={message.replyTo} isMine />
             <div
-              className={`bg-blue-600 text-white px-4 py-2.5 text-[15px] leading-relaxed shadow-sm group-hover:shadow-md transition-shadow w-fit ml-auto ${
+              className={`ml-auto w-fit bg-blue-600 px-4 py-2.5 text-[15px] font-medium leading-relaxed text-white shadow-sm shadow-blue-900/20 transition-shadow group-hover:shadow-md ${
                 message.replyTo
                   ? "rounded-b-2xl rounded-tr-sm"
                   : "rounded-2xl rounded-tr-sm"
@@ -434,13 +434,13 @@ const MessageBubble = ({
   return (
     <div className="chat-message-group flex items-start gap-3 group">
       {renderAvatar("mt-1 cursor-pointer")}
-      <div className="flex flex-col gap-1 items-start max-w-[70%]">
+      <div className="flex max-w-[82%] flex-col items-start gap-1 sm:max-w-[70%]">
         {showAvatar && (
           <div className="flex items-baseline gap-2">
             <span className="text-sm font-bold text-slate-900 cursor-pointer hover:underline">
               {senderName}
             </span>
-            <span className="text-xs text-slate-400 font-medium">
+            <span className="text-xs font-semibold text-slate-500">
               {formatTime(message.createdAt)}
             </span>
           </div>
@@ -448,7 +448,7 @@ const MessageBubble = ({
         <div className="relative">
           <ReplyQuote replyTo={message.replyTo} />
           <div
-            className={`bg-slate-100 border border-slate-200/80 text-slate-800 px-4 py-2.5 text-[15px] leading-relaxed shadow-sm w-fit group-hover:shadow-md transition-shadow ${
+            className={`w-fit border border-slate-300 bg-white px-4 py-2.5 text-[15px] font-medium leading-relaxed text-slate-900 shadow-sm transition-shadow group-hover:shadow-md ${
               message.replyTo
                 ? "rounded-b-2xl rounded-tl-sm"
                 : "rounded-2xl rounded-tl-sm"

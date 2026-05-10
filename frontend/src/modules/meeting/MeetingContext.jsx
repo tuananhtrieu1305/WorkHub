@@ -29,6 +29,29 @@ const addRoomLeftListener = (meetingClient, handler) => {
   };
 };
 
+const applyPreferredDevices = async (meetingClient, preferredDevices = {}) => {
+  const self = meetingClient?.self;
+  if (!self?.getDeviceById || !self?.setDevice) return;
+
+  const requests = [
+    { deviceId: preferredDevices.audioInputId, kind: "audio" },
+    { deviceId: preferredDevices.videoInputId, kind: "video" },
+  ];
+
+  for (const request of requests) {
+    if (!request.deviceId) continue;
+
+    try {
+      const device = await self.getDeviceById(request.deviceId, request.kind);
+      if (device) {
+        await self.setDevice(device);
+      }
+    } catch {
+      // The browser can revoke or rename devices between preview and join.
+    }
+  }
+};
+
 export const MeetingProvider = ({ children }) => {
   const { message } = App.useApp();
   const navigate = useNavigate();
@@ -186,6 +209,7 @@ export const MeetingProvider = ({ children }) => {
       meeting: meetingToJoin,
       participantToken: explicitParticipantToken,
       defaults = {},
+      preferredDevices = {},
     } = {}) => {
       const meetingId = getMeetingId(meetingToJoin);
       if (!meetingId) {
@@ -218,6 +242,7 @@ export const MeetingProvider = ({ children }) => {
           authToken: token,
           defaults,
         });
+        await applyPreferredDevices(nextClient, preferredDevices);
 
         meetingClientRef.current = nextClient;
         hasReportedLeaveRef.current = false;

@@ -70,10 +70,8 @@ export const normalizeActivityStatus = (status) => {
   return activityStatusMeta[status] ? status : "online";
 };
 
-export const getEffectiveActivityStatus = ({
-  activityStatus,
-  isOnline = true,
-} = {}) => {
+export const getEffectiveActivityStatus = (statusSource = {}) => {
+  const { activityStatus, isOnline = true } = statusSource || {};
   if (!isOnline) return "offline";
   return normalizeActivityStatus(activityStatus);
 };

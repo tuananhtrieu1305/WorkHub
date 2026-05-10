@@ -18,6 +18,7 @@ import ChatDetailPanel from "./ChatDetailPanel";
 import NewConversationModal from "./NewConversationModal";
 import {
   addReactionToMessages,
+  markConversationAsRead,
   removeMessageById,
   removeReactionFromMessages,
   updateConversationParticipantStatus,
@@ -55,6 +56,7 @@ const ChatPage = () => {
   const [isLoadingMessages, setIsLoadingMessages] = useState(false);
   const [isSending, setIsSending] = useState(false);
   const [showDetail, setShowDetail] = useState(true);
+  const [showMobileDetail, setShowMobileDetail] = useState(false);
   const [showNewModal, setShowNewModal] = useState(false);
   const [mobileView, setMobileView] = useState("list"); // "list" | "chat"
   const [typingUsers, setTypingUsers] = useState([]);
@@ -127,6 +129,13 @@ const ChatPage = () => {
         const res = await getMessages(selectedConversationId, { limit: 50 });
         if (!ignore) {
           setMessages(normalizeMessagesForDisplay(res.content || []));
+          setConversations((prev) =>
+            markConversationAsRead(prev, selectedConversationId)
+          );
+          setSelectedConversation((prev) => {
+            if (!prev) return prev;
+            return markConversationAsRead([prev], selectedConversationId)[0];
+          });
         }
       } catch (err) {
         console.error("Failed to fetch messages:", err);
@@ -153,7 +162,6 @@ const ChatPage = () => {
         conversationId: selectedConversationId,
         isTyping: false,
       });
-      socket.emit("leave_conversation", selectedConversationId);
     };
   }, [socket, selectedConversationId]);
 
@@ -177,7 +185,12 @@ const ChatPage = () => {
       if (isSelectedConversationEvent(message.conversationId)) {
         setMessages((prev) => upsertMessageById(prev, message));
       }
-      setConversations((prev) => updateConversationPreview(prev, message));
+      setConversations((prev) =>
+        updateConversationPreview(prev, message, {
+          currentUserId: user?._id || user?.id,
+          selectedConversationId,
+        })
+      );
     };
 
     const handleMessageUpdated = (message) => {
@@ -246,7 +259,7 @@ const ChatPage = () => {
       socket.off("user_typing", handleUserTyping);
       socket.off("activity_status_changed", handleActivityStatusChanged);
     };
-  }, [socket, selectedConversationId, user?._id]);
+  }, [socket, selectedConversationId, user?._id, user?.id]);
 
   const emitTypingStatus = useCallback(
     (isTyping) => {
@@ -278,6 +291,7 @@ const ChatPage = () => {
     setTypingUsers([]);
     setReplyToMessage(null);
     setEditingMessage(null);
+    setShowMobileDetail(false);
     setMobileView("chat");
     navigate(`/messages/${getConversationId(conv)}`);
   };
@@ -288,7 +302,21 @@ const ChatPage = () => {
     setTypingUsers([]);
     setReplyToMessage(null);
     setEditingMessage(null);
+    setShowMobileDetail(false);
     navigate("/messages");
+  };
+
+  const handleToggleDetail = () => {
+    const shouldUseDesktopRail =
+      typeof window !== "undefined" &&
+      window.matchMedia("(min-width: 1280px)").matches;
+
+    if (shouldUseDesktopRail) {
+      setShowDetail((value) => !value);
+      return;
+    }
+
+    setShowMobileDetail((value) => !value);
   };
 
   const handleSendMessage = useCallback(
@@ -314,7 +342,12 @@ const ChatPage = () => {
             });
         setMessages((prev) => upsertMessageById(prev, message));
         if (!editingMessage) {
-          setConversations((prev) => updateConversationPreview(prev, message));
+          setConversations((prev) =>
+            updateConversationPreview(prev, message, {
+              currentUserId: user?._id || user?.id,
+              selectedConversationId,
+            })
+          );
         }
         setReplyToMessage(null);
         setEditingMessage(null);
@@ -325,7 +358,14 @@ const ChatPage = () => {
         setIsSending(false);
       }
     },
-    [editingMessage, handleTypingChange, replyToMessage?.id, selectedConversationId]
+    [
+      editingMessage,
+      handleTypingChange,
+      replyToMessage?.id,
+      selectedConversationId,
+      user?._id,
+      user?.id,
+    ]
   );
 
   const handleUploadAttachment = useCallback(
@@ -430,16 +470,16 @@ const ChatPage = () => {
   };
 
   return (
-    <div className="flex h-full w-full overflow-hidden bg-white">
+    <div className="chat-page-shell flex h-full w-full overflow-hidden bg-slate-100 text-slate-950">
       {/* Conversation List - Hidden on mobile when viewing chat */}
       <div
         className={`${
           mobileView === "chat" ? "hidden" : "flex"
-        } md:flex shrink-0`}
+        } min-w-0 w-full shrink-0 md:flex md:w-[19rem] md:max-w-[38vw] lg:w-[21rem] xl:w-[22rem]`}
       >
         <ConversationList
           conversations={conversations}
-          selectedId={selectedConversation?.id}
+          selectedId={selectedConversationId}
           onSelect={handleSelectConversation}
           onCreateNew={() => setShowNewModal(true)}
           currentUserId={user?._id}
@@ -450,7 +490,7 @@ const ChatPage = () => {
       <div
         className={`${
           mobileView === "list" ? "hidden" : "flex"
-        } md:flex flex-1 min-w-0`}
+        } min-w-0 flex-1 p-2 md:flex md:p-3`}
       >
         <ChatWindow
           conversation={selectedConversation}
@@ -465,7 +505,7 @@ const ChatPage = () => {
           onCancelDraft={handleCancelDraft}
           onStartCall={startCall}
           onBack={handleBackToList}
-          onToggleDetail={() => setShowDetail(!showDetail)}
+          onToggleDetail={handleToggleDetail}
           replyToMessage={replyToMessage}
           editingMessage={editingMessage}
           typingUsers={typingUsers}
@@ -476,11 +516,32 @@ const ChatPage = () => {
 
       {/* Detail Panel - Desktop only, toggleable */}
       {showDetail && selectedConversation && (
-        <ChatDetailPanel
-          conversation={selectedConversation}
-          currentUserId={user?._id || user?.id}
-          onClose={() => setShowDetail(false)}
-        />
+        <div className="hidden shrink-0 py-3 pr-3 xl:flex">
+          <ChatDetailPanel
+            conversation={selectedConversation}
+            currentUserId={user?._id || user?.id}
+            className="flex w-80 rounded-2xl border border-slate-200 bg-white shadow-sm xl:w-[20rem] 2xl:w-80"
+            onClose={() => setShowDetail(false)}
+          />
+        </div>
+      )}
+
+      {/* Detail drawer - Mobile/tablet */}
+      {showMobileDetail && selectedConversation && (
+        <>
+          <button
+            type="button"
+            aria-label="Đóng thông tin hội thoại"
+            className="fixed inset-0 z-40 bg-slate-950/35 backdrop-blur-[2px] xl:hidden"
+            onClick={() => setShowMobileDetail(false)}
+          />
+          <ChatDetailPanel
+            conversation={selectedConversation}
+            currentUserId={user?._id || user?.id}
+            className="chat-detail-drawer fixed bottom-3 right-3 top-[4.75rem] z-50 flex rounded-2xl border border-slate-200 bg-white shadow-2xl xl:hidden"
+            onClose={() => setShowMobileDetail(false)}
+          />
+        </>
       )}
 
       {/* New Conversation Modal */}

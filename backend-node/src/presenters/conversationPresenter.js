@@ -2,6 +2,14 @@ import Conversation from "../models/Conversation.js";
 import Message from "../models/Message.js";
 import User from "../models/User.js";
 import { getPresenceFields } from "../services/presenceService.js";
+import {
+  getConversationRealtimeRoomNames,
+  joinParticipantSocketsToConversationRoom,
+} from "../utils/conversationRealtime.js";
+import {
+  getUniqueParticipantIds,
+  hasMinimumGroupParticipantCount,
+} from "../utils/conversationRules.js";
 
 // Helper: get io instance
 let ioInstance = null;
@@ -13,6 +21,18 @@ export const setIo = (io) => {
 const isParticipant = (conversation, userId) => {
   return conversation.participants.some(
     (p) => p.userId.toString() === userId.toString()
+  );
+};
+
+const toComparableId = (value) => {
+  if (!value) return "";
+  return String(value._id || value.id || value);
+};
+
+const getCurrentParticipant = (conversation, userId) => {
+  const currentUserId = toComparableId(userId);
+  return conversation.participants.find(
+    (participant) => toComparableId(participant.userId) === currentUserId,
   );
 };
 
@@ -71,6 +91,106 @@ const formatMessage = async (message) => {
   };
 };
 
+const formatConversation = async (
+  conversation,
+  { includeEmail = false, includeLastRead = false, currentUserId = null } = {},
+) => {
+  const participantDetails = await Promise.all(
+    conversation.participants.map(async (p) => {
+      const user = await User.findById(p.userId).select(
+        `_id fullName${includeEmail ? " email" : ""} avatar activityStatus activityStatusExpiresAt`,
+      );
+      return {
+        userId: p.userId,
+        user: formatConversationUser(user, includeEmail),
+        joinedAt: p.joinedAt,
+        ...(includeLastRead ? { lastReadMessageId: p.lastReadMessageId } : {}),
+      };
+    }),
+  );
+  const unreadState = currentUserId
+    ? await getConversationUnreadState(conversation, currentUserId)
+    : { hasUnread: false, lastMessageId: null };
+  const preview =
+    conversation.lastMessage?.toObject?.() || conversation.lastMessage || {};
+  const lastMessageId =
+    unreadState.lastMessageId || toComparableId(preview.messageId);
+
+  return {
+    id: conversation._id,
+    type: conversation.type,
+    name: conversation.name,
+    avatar: conversation.avatar,
+    participants: participantDetails,
+    lastMessage: lastMessageId
+      ? { ...preview, id: lastMessageId, messageId: lastMessageId }
+      : preview,
+    hasUnread: unreadState.hasUnread,
+    createdBy: conversation.createdBy,
+    createdAt: conversation.createdAt,
+    updatedAt: conversation.updatedAt,
+  };
+};
+
+const getConversationUnreadState = async (conversation, userId) => {
+  const currentParticipant = getCurrentParticipant(conversation, userId);
+  if (!currentParticipant) {
+    return { hasUnread: false, lastMessageId: null };
+  }
+
+  const latestMessage =
+    (conversation.lastMessage?.messageId &&
+      (await Message.findById(conversation.lastMessage.messageId).select(
+        "_id senderId createdAt",
+      ))) ||
+    (await Message.findOne({ conversationId: conversation._id })
+      .sort({ createdAt: -1 })
+      .select("_id senderId createdAt"));
+
+  if (!latestMessage) {
+    return { hasUnread: false, lastMessageId: null };
+  }
+
+  const latestMessageId = toComparableId(latestMessage._id);
+  const senderId = toComparableId(latestMessage.senderId);
+  if (!senderId || senderId === toComparableId(userId)) {
+    return { hasUnread: false, lastMessageId: latestMessageId };
+  }
+
+  const lastReadMessageId = toComparableId(currentParticipant.lastReadMessageId);
+  if (lastReadMessageId === latestMessageId) {
+    return { hasUnread: false, lastMessageId: latestMessageId };
+  }
+
+  if (!lastReadMessageId) {
+    return { hasUnread: true, lastMessageId: latestMessageId };
+  }
+
+  const lastReadMessage = await Message.findById(lastReadMessageId).select(
+    "createdAt",
+  );
+
+  return {
+    hasUnread:
+      !lastReadMessage || lastReadMessage.createdAt < latestMessage.createdAt,
+    lastMessageId: latestMessageId,
+  };
+};
+
+const markConversationRead = async (conversation, userId, messageId) => {
+  if (!messageId) return;
+
+  const currentParticipant = getCurrentParticipant(conversation, userId);
+  if (!currentParticipant) return;
+
+  if (toComparableId(currentParticipant.lastReadMessageId) === toComparableId(messageId)) {
+    return;
+  }
+
+  currentParticipant.lastReadMessageId = messageId;
+  await conversation.save();
+};
+
 // GET /conversations
 export const getConversations = async (req, res) => {
   try {
@@ -91,32 +211,9 @@ export const getConversations = async (req, res) => {
     const totalPages = Math.ceil(totalElements / pageSize);
 
     const content = await Promise.all(
-      conversations.map(async (conv) => {
-        // Populate participant details (basic info only)
-        const participantDetails = await Promise.all(
-          conv.participants.map(async (p) => {
-            const user = await User.findById(p.userId).select(
-              "_id fullName avatar activityStatus activityStatusExpiresAt"
-            );
-            return {
-              userId: p.userId,
-              user: formatConversationUser(user),
-              joinedAt: p.joinedAt,
-            };
-          })
-        );
-
-        return {
-          id: conv._id,
-          type: conv.type,
-          name: conv.name,
-          avatar: conv.avatar,
-          participants: participantDetails,
-          lastMessage: conv.lastMessage,
-          createdAt: conv.createdAt,
-          updatedAt: conv.updatedAt,
-        };
-      })
+      conversations.map((conv) =>
+        formatConversation(conv, { currentUserId: req.user._id }),
+      ),
     );
 
     res.status(200).json({ content, totalElements, totalPages, currentPage: pageNum, pageSize });
@@ -140,7 +237,11 @@ export const createConversation = async (req, res) => {
     }
 
     // Ensure current user is included
-    const allParticipantIds = [...new Set([req.user._id.toString(), ...participantIds.map(String)])];
+    const allParticipantIds = getUniqueParticipantIds(
+      req.user._id,
+      participantIds,
+    );
+    const groupName = typeof name === "string" ? name.trim() : "";
 
     if (type === "private") {
       if (allParticipantIds.length !== 2) {
@@ -155,28 +256,36 @@ export const createConversation = async (req, res) => {
       });
 
       if (existing) {
+        const conversationData = await formatConversation(existing, {
+          currentUserId: req.user._id,
+        });
         return res.status(200).json({
-          id: existing._id,
-          type: existing.type,
-          name: existing.name,
-          participants: existing.participants,
-          lastMessage: existing.lastMessage,
-          createdAt: existing.createdAt,
-          updatedAt: existing.updatedAt,
+          ...conversationData,
           message: "Conversation already exists",
         });
       }
     }
 
-    if (type === "group" && !name) {
-      return res.status(400).json({ message: "Group conversation requires a name" });
+    if (type === "group") {
+      if (!hasMinimumGroupParticipantCount(allParticipantIds)) {
+        return res.status(400).json({
+          message: "Group conversation requires at least 3 participants",
+        });
+      }
     }
 
     // Verify all participants exist
-    const users = await User.find({ _id: { $in: allParticipantIds } }).select("_id");
+    const users = await User.find({ _id: { $in: allParticipantIds } }).select(
+      "_id fullName email",
+    );
     if (users.length !== allParticipantIds.length) {
       return res.status(400).json({ message: "One or more participant IDs are invalid" });
     }
+    const fallbackGroupName = users
+      .map((user) => user.fullName || user.email)
+      .filter(Boolean)
+      .slice(0, 3)
+      .join(", ");
 
     const participants = allParticipantIds.map((id) => ({
       userId: id,
@@ -185,22 +294,20 @@ export const createConversation = async (req, res) => {
 
     const conversation = await Conversation.create({
       type,
-      name: name || "",
+      name: type === "group" ? groupName || fallbackGroupName || "Nhóm mới" : "",
       participants,
       createdBy: req.user._id,
     });
 
-    res.status(201).json({
-      id: conversation._id,
-      type: conversation.type,
-      name: conversation.name,
-      avatar: conversation.avatar,
-      participants: conversation.participants,
-      lastMessage: conversation.lastMessage,
-      createdBy: conversation.createdBy,
-      createdAt: conversation.createdAt,
-      updatedAt: conversation.updatedAt,
+    const conversationData = await formatConversation(conversation, {
+      currentUserId: req.user._id,
     });
+
+    if (ioInstance) {
+      joinParticipantSocketsToConversationRoom(ioInstance, conversation);
+    }
+
+    res.status(201).json(conversationData);
   } catch (error) {
     console.error("CreateConversation error:", error.message);
     res.status(500).json({ message: "Server error, please try again" });
@@ -219,31 +326,13 @@ export const getConversationById = async (req, res) => {
       return res.status(403).json({ message: "You are not a participant of this conversation" });
     }
 
-    const participantDetails = await Promise.all(
-      conversation.participants.map(async (p) => {
-        const user = await User.findById(p.userId).select(
-          "_id fullName email avatar activityStatus activityStatusExpiresAt"
-        );
-        return {
-          userId: p.userId,
-          user: formatConversationUser(user, true),
-          joinedAt: p.joinedAt,
-          lastReadMessageId: p.lastReadMessageId,
-        };
-      })
+    res.status(200).json(
+      await formatConversation(conversation, {
+        includeEmail: true,
+        includeLastRead: true,
+        currentUserId: req.user._id,
+      }),
     );
-
-    res.status(200).json({
-      id: conversation._id,
-      type: conversation.type,
-      name: conversation.name,
-      avatar: conversation.avatar,
-      participants: participantDetails,
-      lastMessage: conversation.lastMessage,
-      createdBy: conversation.createdBy,
-      createdAt: conversation.createdAt,
-      updatedAt: conversation.updatedAt,
-    });
   } catch (error) {
     console.error("GetConversationById error:", error.message);
     if (error.kind === "ObjectId") {
@@ -272,17 +361,9 @@ export const updateConversation = async (req, res) => {
 
     await conversation.save();
 
-    res.status(200).json({
-      id: conversation._id,
-      type: conversation.type,
-      name: conversation.name,
-      avatar: conversation.avatar,
-      participants: conversation.participants,
-      lastMessage: conversation.lastMessage,
-      createdBy: conversation.createdBy,
-      createdAt: conversation.createdAt,
-      updatedAt: conversation.updatedAt,
-    });
+    res.status(200).json(
+      await formatConversation(conversation, { currentUserId: req.user._id }),
+    );
   } catch (error) {
     console.error("UpdateConversation error:", error.message);
     if (error.kind === "ObjectId") {
@@ -428,6 +509,10 @@ export const getMessages = async (req, res) => {
     const hasMore = messages.length > messageLimit;
     if (hasMore) messages.pop();
 
+    if (!before && messages.length > 0) {
+      await markConversationRead(conversation, req.user._id, messages[0]._id);
+    }
+
     const content = await Promise.all(messages.map(formatMessage));
 
     res.status(200).json({ content, hasMore });
@@ -509,17 +594,24 @@ export const sendMessage = async (req, res) => {
 
     // Update lastMessage on conversation
     conversation.lastMessage = {
+      messageId: message._id,
       content: content || (attachments?.length > 0 ? "[Attachment]" : ""),
       senderId: req.user._id,
       createdAt: message.createdAt,
     };
     await conversation.save();
 
-    const messageData = await formatMessage(message);
+    const [messageData, conversationData] = await Promise.all([
+      formatMessage(message),
+      formatConversation(conversation, { currentUserId: req.user._id }),
+    ]);
 
     // Emit Socket.IO event
     if (ioInstance) {
-      ioInstance.to(`conversation:${conversation._id}`).emit("new_message", messageData);
+      joinParticipantSocketsToConversationRoom(ioInstance, conversation);
+      ioInstance
+        .to(getConversationRealtimeRoomNames(conversation))
+        .emit("new_message", { ...messageData, conversation: conversationData });
     }
 
     res.status(201).json(messageData);

@@ -8,11 +8,12 @@ import {
   getAvatarReferrerPolicy,
   getAvatarUrl,
 } from "../../utils/avatar";
+import { getConversationTabItems } from "./conversationListState";
 
 const filterTabs = [
   { key: "all", label: "Tất cả" },
   { key: "unread", label: "Chưa đọc" },
-  { key: "mentions", label: "Đề cập" },
+  { key: "groups", label: "Nhóm" },
 ];
 
 // Gradient palette for group channel avatars
@@ -72,12 +73,6 @@ const ConversationList = ({
 }) => {
   const [activeTab, setActiveTab] = useState("all");
   const [searchQuery, setSearchQuery] = useState("");
-  const [channelsExpanded, setChannelsExpanded] = useState(true);
-  const [dmsExpanded, setDmsExpanded] = useState(true);
-
-  // Split into groups (channels) and private (DMs)
-  const channels = conversations.filter((c) => c.type === "group");
-  const directMessages = conversations.filter((c) => c.type === "private");
 
   // Search filter
   const filterConversation = (conv) => {
@@ -92,8 +87,15 @@ const ConversationList = ({
     return other?.user?.fullName?.toLowerCase().includes(q);
   };
 
-  const filteredChannels = channels.filter(filterConversation);
-  const filteredDms = directMessages.filter(filterConversation);
+  const filteredConversations = getConversationTabItems(
+    conversations,
+    activeTab,
+    currentUserId,
+  ).filter(filterConversation);
+  const selectedFilterTabIndex = Math.max(
+    filterTabs.findIndex((tab) => tab.key === activeTab),
+    0
+  );
 
   const getDisplayInfo = (conv) => {
     if (conv.type === "group") {
@@ -121,10 +123,11 @@ const ConversationList = ({
   const renderConversationItem = (conv) => {
     const { name, avatarUrl, initial, isGroup, activityStatus, isOnline } =
       getDisplayInfo(conv);
+    const conversationId = conv.id || conv._id;
     const activityStatusMeta = getActivityStatusMeta(
       getEffectiveActivityStatus({ activityStatus, isOnline })
     );
-    const isSelected = selectedId === conv.id;
+    const isSelected = selectedId === conversationId;
     const lastMsg = conv.lastMessage;
     const lastMsgContent = lastMsg?.content || "";
     const lastMsgTime = formatRelativeTime(lastMsg?.createdAt || conv.updatedAt);
@@ -132,12 +135,12 @@ const ConversationList = ({
 
     return (
       <button
-        key={conv.id}
+        key={conversationId}
         onClick={() => onSelect?.(conv)}
-        className={`flex items-start gap-3 p-3 w-full text-left transition-colors border-l-4 cursor-pointer ${
+        className={`mx-2 my-1 flex w-[calc(100%-1rem)] items-start gap-3 rounded-xl border px-3 py-3 text-left transition-all cursor-pointer ${
           isSelected
-            ? "bg-blue-50 border-blue-600"
-            : "border-transparent hover:bg-slate-50"
+            ? "border-blue-200 bg-blue-50 text-slate-950 shadow-[inset_3px_0_0_#3b82f6]"
+            : "border-slate-200 bg-white text-slate-900 hover:border-blue-200 hover:bg-blue-50/80"
         }`}
       >
         {/* Avatar */}
@@ -158,7 +161,13 @@ const ConversationList = ({
               className="w-10 h-10 rounded-full object-cover ring-2 ring-white shadow-sm"
             />
           ) : (
-            <div className="w-10 h-10 rounded-full bg-slate-200 text-slate-600 flex items-center justify-center text-sm font-bold ring-2 ring-white shadow-sm">
+            <div
+              className={`w-10 h-10 rounded-full flex items-center justify-center text-sm font-bold ring-2 ring-white shadow-sm ${
+                isSelected
+                  ? "bg-blue-100 text-blue-700"
+                  : "bg-slate-200 text-slate-700"
+              }`}
+            >
               {initial}
             </div>
           )}
@@ -168,25 +177,27 @@ const ConversationList = ({
         {/* Content */}
         <div className="flex-1 min-w-0">
           <div className="flex justify-between items-baseline mb-0.5">
-            <h3
-              className={`text-sm font-bold truncate ${
-                isSelected ? "text-blue-700" : "text-slate-900"
-              }`}
-            >
+            <h3 className="truncate text-sm font-bold text-slate-950">
               {isGroup ? `# ${name}` : name}
             </h3>
             <span
               className={`text-[11px] whitespace-nowrap ml-2 ${
-                isSelected ? "text-blue-600 font-medium" : "text-slate-400"
+                isSelected ? "text-blue-700 font-semibold" : "text-slate-500"
               }`}
             >
               {lastMsgTime}
             </span>
           </div>
           {lastMsgContent && (
-            <p className="text-[13px] text-slate-500 truncate">
+            <p className="truncate text-[13px] text-slate-600">
               {isMySentMsg && (
-                <span className="font-medium text-slate-700">Bạn: </span>
+                <span
+                  className={`font-semibold ${
+                    isSelected ? "text-blue-800" : "text-slate-800"
+                  }`}
+                >
+                  Bạn:{" "}
+                </span>
               )}
               {lastMsgContent}
             </p>
@@ -197,21 +208,20 @@ const ConversationList = ({
   };
 
   return (
-    <aside className="w-[22rem] max-w-[calc(100vw-5rem)] flex flex-col bg-white border-r border-slate-200/50 shrink-0 h-full">
-      {/* Header */}
-      <div className="p-4 border-b border-slate-200/50 flex justify-between items-center shrink-0">
-        <h1 className="text-lg font-bold text-slate-900">Hội thoại</h1>
-        <button
-          onClick={onCreateNew}
-          className="bg-blue-600 hover:bg-blue-700 text-white p-2 rounded-lg transition-colors shadow-sm flex items-center justify-center cursor-pointer"
-          title="Tạo hội thoại mới"
-        >
-          <span className="material-symbols-outlined text-[20px]">add</span>
-        </button>
-      </div>
+    <aside className="flex h-full w-full max-w-full shrink-0 flex-col overflow-hidden border-r border-slate-200 bg-slate-50">
+      {/* Header + Search + Tabs */}
+      <div className="shrink-0 border-b border-slate-200 bg-white px-4 pb-4 pt-4">
+        <div className="mb-3 flex items-center justify-between">
+          <h1 className="text-lg font-bold text-slate-950">Hội thoại</h1>
+          <button
+            onClick={onCreateNew}
+            className="flex items-center justify-center rounded-lg bg-blue-600 p-2 text-white shadow-sm shadow-blue-900/20 transition-colors hover:bg-blue-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600 cursor-pointer"
+            title="Tạo hội thoại mới"
+          >
+            <span className="material-symbols-outlined text-[20px]">add</span>
+          </button>
+        </div>
 
-      {/* Search + Tabs */}
-      <div className="p-3 border-b border-slate-200/50 shrink-0">
         <div className="relative mb-3">
           <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-[18px]">
             search
@@ -221,12 +231,12 @@ const ConversationList = ({
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             placeholder="Lọc hội thoại..."
-            className="w-full bg-slate-100 border-none rounded-lg h-9 pl-9 pr-3 text-sm focus:ring-2 focus:ring-blue-500/30 focus:bg-white transition-colors outline-none"
+            className="h-10 w-full rounded-xl border border-slate-300 bg-slate-50 pl-9 pr-9 text-sm font-medium text-slate-900 outline-none transition-colors placeholder:text-slate-500 hover:border-slate-400 focus:border-blue-600 focus:bg-white focus:ring-2 focus:ring-blue-600/20"
           />
           {searchQuery && (
             <button
               onClick={() => setSearchQuery("")}
-              className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer"
+              className="absolute right-2 top-1/2 -translate-y-1/2 rounded-md p-1 text-slate-500 transition-colors hover:bg-slate-200 hover:text-slate-700 cursor-pointer"
             >
               <span className="material-symbols-outlined text-[18px]">
                 close
@@ -234,15 +244,22 @@ const ConversationList = ({
             </button>
           )}
         </div>
-        <div className="flex gap-2 overflow-x-auto pb-1">
+        <div
+          className="workhub-notification-tabs flex rounded-xl bg-slate-100 p-1"
+          style={{ "--tab-index": selectedFilterTabIndex }}
+        >
+          <span
+            className="workhub-notification-tab-indicator"
+            aria-hidden="true"
+          />
           {filterTabs.map((tab) => (
             <button
               key={tab.key}
               onClick={() => setActiveTab(tab.key)}
-              className={`px-3 py-1 rounded-full text-xs font-medium whitespace-nowrap transition-colors cursor-pointer ${
+              className={`relative z-10 flex-1 rounded-lg px-2.5 py-2 text-xs font-extrabold whitespace-nowrap transition-colors duration-300 cursor-pointer ${
                 activeTab === tab.key
-                  ? "bg-slate-800 text-white"
-                  : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                  ? "text-blue-700"
+                  : "text-slate-500 hover:text-slate-800"
               }`}
             >
               {tab.label}
@@ -255,76 +272,35 @@ const ConversationList = ({
       <div className="flex-1 overflow-y-auto chat-conversations-scroll">
         {conversations.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-16 px-6 text-center">
-            <span className="material-symbols-outlined text-5xl text-slate-200 mb-3">
+            <span className="material-symbols-outlined mb-3 text-5xl text-slate-300">
               forum
             </span>
-            <p className="text-sm font-bold text-slate-400 mb-1">
+            <p className="mb-1 text-sm font-bold text-slate-700">
               Chưa có hội thoại nào
             </p>
-            <p className="text-xs text-slate-400">
+            <p className="text-xs font-medium text-slate-500">
               Bấm nút + để bắt đầu trò chuyện
             </p>
           </div>
         ) : (
           <>
-            {/* Channels Section */}
-            {filteredChannels.length > 0 && (
-              <div className="mb-1 mt-1">
-                <button
-                  onClick={() => setChannelsExpanded(!channelsExpanded)}
-                  className="flex items-center justify-between px-4 py-2 text-xs font-bold text-slate-500 uppercase tracking-wider hover:bg-slate-50 w-full transition-colors cursor-pointer"
-                >
-                  <span>Kênh</span>
-                  <span
-                    className={`material-symbols-outlined text-[16px] transition-transform ${
-                      channelsExpanded ? "" : "-rotate-90"
-                    }`}
-                  >
-                    expand_more
-                  </span>
-                </button>
-                {channelsExpanded && (
-                  <div className="flex flex-col">
-                    {filteredChannels.map(renderConversationItem)}
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* Direct Messages Section */}
-            {filteredDms.length > 0 && (
-              <div className="mb-1">
-                <button
-                  onClick={() => setDmsExpanded(!dmsExpanded)}
-                  className="flex items-center justify-between px-4 py-2 text-xs font-bold text-slate-500 uppercase tracking-wider hover:bg-slate-50 w-full transition-colors cursor-pointer"
-                >
-                  <span>Tin nhắn riêng</span>
-                  <span
-                    className={`material-symbols-outlined text-[16px] transition-transform ${
-                      dmsExpanded ? "" : "-rotate-90"
-                    }`}
-                  >
-                    expand_more
-                  </span>
-                </button>
-                {dmsExpanded && (
-                  <div className="flex flex-col">
-                    {filteredDms.map(renderConversationItem)}
-                  </div>
-                )}
+            {filteredConversations.length > 0 && (
+              <div className="mb-1 mt-1 flex flex-col">
+                {filteredConversations.map(renderConversationItem)}
               </div>
             )}
 
             {/* No results */}
-            {filteredChannels.length === 0 &&
-              filteredDms.length === 0 &&
-              searchQuery && (
+            {filteredConversations.length === 0 &&
+              (searchQuery || activeTab !== "all") && (
                 <div className="text-center py-10">
-                  <span className="material-symbols-outlined text-3xl text-slate-300 mb-2 block">
+                  <span className="material-symbols-outlined mb-2 block text-3xl text-slate-400">
                     search_off
                   </span>
-                  <p className="text-xs text-slate-400 font-medium">
-                    Không tìm thấy hội thoại
+                  <p className="text-xs font-semibold text-slate-600">
+                    {activeTab === "unread"
+                      ? "Không có hội thoại chưa đọc"
+                      : "Không tìm thấy hội thoại"}
                   </p>
                 </div>
               )}

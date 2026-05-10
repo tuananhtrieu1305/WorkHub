@@ -335,7 +335,7 @@ const Header = ({ overlay = false }) => {
           : "sticky border-b border-solid border-slate-200/50 bg-white/80 backdrop-blur-md"
       }`}
     >
-      <div className="flex min-w-0 flex-1 items-center gap-3 lg:gap-8">
+      <div className="flex min-w-0 shrink-0 items-center gap-2 sm:gap-3 lg:min-w-[22rem] lg:flex-1">
         <NavLink
           to="/"
           className="flex shrink-0 items-center gap-3 rounded-xl focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
@@ -348,41 +348,64 @@ const Header = ({ overlay = false }) => {
           />
         </NavLink>
 
-        <nav className="hidden min-w-0 items-center gap-1.5 rounded-2xl border border-slate-200/70 bg-slate-50/80 px-2 py-1.5 shadow-sm md:flex lg:hidden">
-          {navItems.map((item) => {
-            const active = isActiveNavItem(item.path);
-            return (
-              <NavLink
-                key={item.path}
-                to={item.path}
-                end={item.path === "/"}
-                aria-label={item.label}
-                title={item.label}
-                className={`sidebar-nav-link group flex size-10 shrink-0 items-center justify-center rounded-xl transition-all duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 ${
-                  active
-                    ? "sidebar-nav-link--active"
-                    : "bg-white/70 hover:shadow-sm"
-                }`}
-                style={{
-                  "--sidebar-color": item.color,
-                  "--sidebar-hover-bg": item.hoverBg,
-                  "--sidebar-active-bg": item.activeBg,
-                  "--sidebar-active-border": item.activeBorder,
-                  "--sidebar-active-shadow": item.activeShadow,
-                }}
-              >
-                <span
-                  className={`material-symbols-outlined text-[22px] leading-none transition-transform duration-200 group-hover:-translate-y-0.5 ${
-                    active && item.iconFill ? "icon-fill" : ""
-                  }`}
-                >
-                  {item.icon}
-                </span>
-              </NavLink>
-            );
-          })}
-        </nav>
+        <button
+          type="button"
+          className="flex size-10 shrink-0 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-600 shadow-sm transition-colors duration-200 hover:border-blue-200 hover:bg-blue-50 hover:text-blue-600 lg:hidden"
+          title="Tìm kiếm"
+          aria-label="Tìm kiếm"
+        >
+          <span className="material-symbols-outlined text-[21px] leading-none">
+            search
+          </span>
+        </button>
+
+        <label className="hidden h-10 w-[min(18rem,32vw)] min-w-0 items-center gap-2 rounded-full border border-slate-200 bg-white/85 px-3 text-slate-500 shadow-sm transition-colors duration-200 focus-within:border-blue-300 focus-within:bg-white focus-within:text-blue-600 lg:flex">
+          <span className="material-symbols-outlined text-[20px] leading-none">
+            search
+          </span>
+          <input
+            type="search"
+            className="min-w-0 flex-1 bg-transparent text-sm font-semibold text-slate-700 outline-none placeholder:text-slate-400"
+            placeholder="Tìm kiếm trong WorkHub"
+            aria-label="Tìm kiếm trong WorkHub"
+          />
+        </label>
       </div>
+
+      <nav className="absolute left-1/2 top-1/2 hidden w-[min(28rem,48vw)] -translate-x-1/2 -translate-y-1/2 items-center justify-between rounded-2xl border border-slate-200/70 bg-slate-50/80 px-2.5 py-1.5 shadow-sm md:flex lg:hidden">
+        {navItems.map((item) => {
+          const active = isActiveNavItem(item.path);
+          return (
+            <NavLink
+              key={item.path}
+              to={item.path}
+              end={item.path === "/"}
+              aria-label={item.label}
+              title={item.label}
+              className={`sidebar-nav-link group flex size-10 shrink-0 items-center justify-center rounded-xl transition-all duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 ${
+                active
+                  ? "sidebar-nav-link--active"
+                  : "bg-white/70 hover:shadow-sm"
+              }`}
+              style={{
+                "--sidebar-color": item.color,
+                "--sidebar-hover-bg": item.hoverBg,
+                "--sidebar-active-bg": item.activeBg,
+                "--sidebar-active-border": item.activeBorder,
+                "--sidebar-active-shadow": item.activeShadow,
+              }}
+            >
+              <span
+                className={`material-symbols-outlined text-[22px] leading-none transition-transform duration-200 group-hover:-translate-y-0.5 ${
+                  active && item.iconFill ? "icon-fill" : ""
+                }`}
+              >
+                {item.icon}
+              </span>
+            </NavLink>
+          );
+        })}
+      </nav>
 
       <div className="flex shrink-0 items-center justify-end gap-2 sm:gap-3">
         <div className="relative md:hidden" ref={mobileMenuRef}>
@@ -403,44 +426,48 @@ const Header = ({ overlay = false }) => {
             </span>
           </button>
 
-          {showMobileMenu && (
-            <nav
-              className="fixed right-3 top-[4.25rem] z-50 w-[min(18rem,calc(100vw-1.5rem))] overflow-hidden rounded-2xl border border-slate-200 bg-white p-2 text-slate-900 shadow-[0_22px_70px_rgba(15,23,42,0.18)]"
-              aria-label="Menu chính"
-            >
-              {navItems.map((item) => {
-                const active = isActiveNavItem(item.path);
-                return (
-                  <NavLink
-                    key={item.path}
-                    to={item.path}
-                    end={item.path === "/"}
-                    className={`sidebar-nav-link group flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-bold transition-all duration-200 ${
-                      active
-                        ? "sidebar-nav-link--active"
-                        : "hover:bg-slate-50"
+          <nav
+            className={`fixed right-4 top-[4.25rem] z-50 w-[min(13.75rem,calc(100vw-6rem))] origin-top-right overflow-hidden rounded-2xl border border-slate-200 bg-white p-1.5 text-slate-900 shadow-[0_22px_70px_rgba(15,23,42,0.18)] transition-[opacity,transform,visibility] duration-300 ease-out ${
+              showMobileMenu
+                ? "visible pointer-events-auto translate-y-0 scale-100 opacity-100"
+                : "invisible pointer-events-none -translate-y-2 scale-95 opacity-0"
+            }`}
+            aria-label="Menu chính"
+            aria-hidden={!showMobileMenu}
+          >
+            {navItems.map((item) => {
+              const active = isActiveNavItem(item.path);
+              return (
+                <NavLink
+                  key={item.path}
+                  to={item.path}
+                  end={item.path === "/"}
+                  tabIndex={showMobileMenu ? 0 : -1}
+                  className={`sidebar-nav-link group flex items-center gap-3 rounded-xl px-4 py-2.5 text-sm font-bold transition-all duration-200 ${
+                    active
+                      ? "sidebar-nav-link--active"
+                      : "hover:bg-slate-50"
+                  }`}
+                  style={{
+                    "--sidebar-color": item.color,
+                    "--sidebar-hover-bg": item.hoverBg,
+                    "--sidebar-active-bg": item.activeBg,
+                    "--sidebar-active-border": item.activeBorder,
+                    "--sidebar-active-shadow": item.activeShadow,
+                  }}
+                >
+                  <span
+                    className={`material-symbols-outlined text-[22px] leading-none ${
+                      active && item.iconFill ? "icon-fill" : ""
                     }`}
-                    style={{
-                      "--sidebar-color": item.color,
-                      "--sidebar-hover-bg": item.hoverBg,
-                      "--sidebar-active-bg": item.activeBg,
-                      "--sidebar-active-border": item.activeBorder,
-                      "--sidebar-active-shadow": item.activeShadow,
-                    }}
                   >
-                    <span
-                      className={`material-symbols-outlined text-[22px] leading-none ${
-                        active && item.iconFill ? "icon-fill" : ""
-                      }`}
-                    >
-                      {item.icon}
-                    </span>
-                    <span className="min-w-0 truncate">{item.label}</span>
-                  </NavLink>
-                );
-              })}
-            </nav>
-          )}
+                    {item.icon}
+                  </span>
+                  <span className="min-w-0 truncate">{item.label}</span>
+                </NavLink>
+              );
+            })}
+          </nav>
         </div>
 
         <div className="flex items-center gap-2 sm:gap-3">

@@ -49,17 +49,17 @@ const ChatWindow = ({
   // Empty state - no conversation selected
   if (!conversation) {
     return (
-      <main className="flex-1 flex flex-col h-full bg-white items-center justify-center">
+      <main className="flex h-full flex-1 flex-col items-center justify-center rounded-xl border border-slate-200 bg-slate-50 shadow-sm md:rounded-2xl">
         <div className="text-center px-6">
-          <div className="w-24 h-24 rounded-full bg-blue-50 flex items-center justify-center mx-auto mb-6">
-            <span className="material-symbols-outlined text-5xl text-blue-400">
+          <div className="mx-auto mb-6 flex h-24 w-24 items-center justify-center rounded-2xl border border-blue-100 bg-blue-50 shadow-sm">
+            <span className="material-symbols-outlined text-5xl text-blue-600">
               chat
             </span>
           </div>
-          <h2 className="text-xl font-bold text-slate-900 mb-2">
+          <h2 className="mb-2 text-xl font-bold text-slate-950">
             Chào mừng đến với Tin nhắn
           </h2>
-          <p className="text-sm text-slate-500 max-w-sm">
+          <p className="max-w-sm text-sm font-medium leading-6 text-slate-600">
             Chọn một hội thoại từ danh sách bên trái hoặc tạo hội thoại mới để
             bắt đầu trò chuyện.
           </p>
@@ -112,14 +112,14 @@ const ChatWindow = ({
   };
 
   return (
-    <main className="flex-1 flex flex-col h-full bg-white min-w-0">
+    <main className="flex h-full min-w-0 flex-1 flex-col overflow-hidden rounded-xl border border-slate-200 bg-slate-50 shadow-sm md:rounded-2xl">
       {/* Chat Header */}
-      <div className="flex items-center justify-between px-4 sm:px-6 py-3 border-b border-slate-200/50 bg-white/80 backdrop-blur-md shrink-0 shadow-sm z-10">
+      <div className="z-10 flex shrink-0 items-center justify-between border-b border-slate-200 bg-white px-4 py-3 shadow-sm sm:px-6">
         <div className="flex items-center gap-3 min-w-0">
           {/* Back button for mobile */}
           <button
             onClick={onBack}
-            className="p-1.5 text-slate-500 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition-colors md:hidden"
+            className="rounded-lg p-1.5 text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-900 md:hidden"
           >
             <span className="material-symbols-outlined text-[22px]">
               arrow_back
@@ -133,10 +133,10 @@ const ChatWindow = ({
                 <img
                   src={displayAvatar}
                   alt={displayName}
-                  className="w-10 h-10 rounded-full object-cover ring-2 ring-white shadow-sm"
+                  className="h-10 w-10 rounded-full object-cover ring-2 ring-white shadow-sm"
                 />
               ) : (
-                <div className="w-10 h-10 rounded-full bg-slate-200 text-slate-600 flex items-center justify-center text-sm font-bold ring-2 ring-white shadow-sm">
+                <div className="flex h-10 w-10 items-center justify-center rounded-full bg-slate-200 text-sm font-bold text-slate-700 ring-2 ring-white shadow-sm">
                   {displayInitial}
                 </div>
               )
@@ -151,7 +151,7 @@ const ChatWindow = ({
 
           {/* Info */}
           <div className="flex min-h-10 flex-col justify-center min-w-0">
-            <h2 className="text-base font-bold leading-tight truncate">
+            <h2 className="truncate text-base font-bold leading-tight text-slate-950">
               {isPrivate ? displayName : `# ${displayName}`}
             </h2>
             {shouldShowActivityStatus ? (
@@ -161,7 +161,7 @@ const ChatWindow = ({
                 {activityStatusMeta.label}
               </p>
             ) : !isPrivate ? (
-              <p className="text-xs text-slate-500 truncate">
+              <p className="truncate text-xs font-medium text-slate-600">
                 {participantCount} thành viên
               </p>
             ) : null}
@@ -174,7 +174,7 @@ const ChatWindow = ({
             onClick={() => handleStartCall("audio")}
             disabled={!canAttemptPrivateCall}
             aria-label="Gọi thoại"
-            className="hidden sm:flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-slate-600 hover:bg-slate-100 rounded-lg transition-colors border border-slate-200"
+            className="hidden items-center gap-2 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm font-semibold text-slate-700 transition-colors hover:border-blue-300 hover:bg-blue-50 hover:text-blue-700 disabled:cursor-not-allowed disabled:opacity-50 sm:flex"
           >
             <span className="material-symbols-outlined text-[18px]">call</span>
             <span className="hidden lg:inline">Gọi</span>
@@ -183,7 +183,7 @@ const ChatWindow = ({
             onClick={() => handleStartCall("video")}
             disabled={!canAttemptPrivateCall}
             aria-label="Gọi video"
-            className="hidden sm:flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors shadow-sm"
+            className="hidden items-center gap-2 rounded-lg bg-blue-600 px-3 py-1.5 text-sm font-semibold text-white shadow-sm shadow-blue-900/20 transition-colors hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50 sm:flex"
           >
             <span className="material-symbols-outlined text-[18px]">
               videocam
@@ -192,7 +192,7 @@ const ChatWindow = ({
           </button>
           <div className="w-px h-6 bg-slate-200 mx-1 hidden sm:block" />
           <button
-            className="p-2 text-slate-500 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition-colors"
+            className="rounded-lg p-2 text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-900"
             title="Tìm trong cuộc hội thoại"
           >
             <span className="material-symbols-outlined text-[20px]">
@@ -201,7 +201,7 @@ const ChatWindow = ({
           </button>
           <button
             onClick={onToggleDetail}
-            className="p-2 text-slate-500 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition-colors"
+            className="rounded-lg p-2 text-slate-600 transition-colors hover:bg-blue-50 hover:text-blue-700"
             title="Thông tin hội thoại"
           >
             <span className="material-symbols-outlined text-[20px]">info</span>
@@ -210,25 +210,25 @@ const ChatWindow = ({
       </div>
 
       {/* Messages Area */}
-      <div className="flex-1 overflow-y-auto px-4 sm:px-6 py-6 space-y-4 flex flex-col chat-messages-scroll">
+      <div className="chat-messages-pane chat-messages-scroll flex flex-1 flex-col space-y-4 overflow-y-auto px-4 py-6 sm:px-6">
         {isLoadingMessages ? (
           <div className="flex-1 flex flex-col items-center justify-center text-center">
             <div className="route-loading-spinner mb-3" />
-            <p className="text-sm text-slate-400 font-medium">
+            <p className="text-sm font-semibold text-slate-600">
               Đang tải tin nhắn...
             </p>
           </div>
         ) : messages.length === 0 ? (
           <div className="flex-1 flex flex-col items-center justify-center text-center">
-            <div className="w-16 h-16 rounded-full bg-slate-50 flex items-center justify-center mb-4">
-              <span className="material-symbols-outlined text-3xl text-slate-300">
+            <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-2xl border border-slate-200 bg-white shadow-sm">
+              <span className="material-symbols-outlined text-3xl text-slate-500">
                 waving_hand
               </span>
             </div>
-            <p className="text-sm text-slate-400 font-medium">
+            <p className="text-sm font-bold text-slate-700">
               Hãy bắt đầu cuộc trò chuyện!
             </p>
-            <p className="text-xs text-slate-400 mt-1">
+            <p className="mt-1 text-xs font-medium text-slate-500">
               Gửi tin nhắn đầu tiên bên dưới.
             </p>
           </div>
@@ -236,7 +236,7 @@ const ChatWindow = ({
           <>
             {/* Date separator - example */}
             <div className="flex items-center justify-center my-2">
-              <div className="bg-slate-100 text-slate-500 text-xs font-semibold px-4 py-1.5 rounded-full shadow-sm">
+              <div className="rounded-full border border-slate-200 bg-white px-4 py-1.5 text-xs font-semibold text-slate-600 shadow-sm">
                 Hôm nay
               </div>
             </div>
@@ -267,8 +267,8 @@ const ChatWindow = ({
 
       {/* Typing Indicator */}
       {typingUsers.length > 0 && (
-        <div className="px-6 pb-1">
-          <div className="flex items-center gap-2 text-slate-500 text-xs font-medium italic">
+        <div className="bg-slate-50 px-6 pb-1">
+          <div className="flex items-center gap-2 text-xs font-semibold italic text-slate-600">
             <span className="flex gap-1 items-center">
               <span className="chat-typing-dot" />
               <span className="chat-typing-dot" />
@@ -281,22 +281,22 @@ const ChatWindow = ({
 
       {/* Chat Input */}
       {(replyToMessage || editingMessage) && (
-        <div className="px-6 py-2 border-t border-slate-100 bg-slate-50/80">
-          <div className="flex items-start justify-between gap-3 rounded-lg border border-slate-200 bg-white px-3 py-2">
+        <div className="border-t border-slate-200 bg-white px-4 py-2 sm:px-6">
+          <div className="flex items-start justify-between gap-3 rounded-xl border border-blue-200 bg-blue-50 px-3 py-2">
             <div className="min-w-0">
               <p className="text-xs font-bold text-blue-600">
                 {editingMessage
                   ? "Đang sửa tin nhắn"
                   : `Trả lời ${replyToMessage?.sender?.fullName || "tin nhắn"}`}
               </p>
-              <p className="text-xs text-slate-500 truncate">
+              <p className="truncate text-xs font-medium text-slate-600">
                 {(editingMessage || replyToMessage)?.content || "..."}
               </p>
             </div>
             <button
               type="button"
               onClick={onCancelDraft}
-              className="p-1 text-slate-400 hover:text-slate-700 rounded"
+              className="rounded p-1 text-slate-500 hover:bg-white hover:text-slate-900"
               title="Hủy"
             >
               <span className="material-symbols-outlined text-[18px]">close</span>
