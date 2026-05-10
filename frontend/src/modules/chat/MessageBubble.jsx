@@ -15,6 +15,9 @@ const getFileUrl = (url) => {
 
 const getComparableId = (value) => {
   if (value == null) return "";
+  if (typeof value === "object") {
+    return String(value.id || value._id || "");
+  }
   return String(value);
 };
 
@@ -293,11 +296,21 @@ const MessageBubble = ({
   onToggleReaction,
 }) => {
   const { user } = useAuth();
-  const isMine = message.sender?._id === user?._id;
+  const isMine = getComparableId(message.sender?._id || message.sender?.id) === getComparableId(user?._id || user?.id);
   const senderName = message.sender?.fullName || "Người dùng";
   const avatarUrl = getAvatarUrl(message.sender?.avatar);
   const senderInitial = senderName.charAt(0).toUpperCase();
   const reactionGroups = [...groupReactions(message.reactions || []).values()];
+  const isDeleted = Boolean(message.deletedAt);
+  const deletedById = getComparableId(message.deletedBy || message.sender?._id);
+  const deletedByName =
+    deletedById === getComparableId(user?._id || user?.id)
+      ? "Bạn"
+      : message.deletedBy?.fullName || senderName;
+  const deletedMessageText =
+    deletedById === getComparableId(user?._id || user?.id)
+      ? "Bạn đã gỡ tin nhắn này"
+      : `${deletedByName} đã gỡ tin nhắn này`;
 
   if (message.type === "system" && message.metadata?.eventType?.startsWith("call_")) {
     return <CallSystemMessage message={message} />;
@@ -408,23 +421,33 @@ const MessageBubble = ({
             </div>
           )}
           <div className="relative">
-            <ReplyQuote replyTo={message.replyTo} isMine />
+            {!isDeleted && <ReplyQuote replyTo={message.replyTo} isMine />}
             <div
-              className={`ml-auto w-fit bg-blue-600 px-4 py-2.5 text-[15px] font-medium leading-relaxed text-white shadow-sm shadow-blue-900/20 transition-shadow group-hover:shadow-md ${
-                message.replyTo
-                  ? "rounded-b-2xl rounded-tr-sm"
-                  : "rounded-2xl rounded-tr-sm"
+              className={`ml-auto w-fit px-4 py-2.5 text-[15px] font-medium leading-relaxed shadow-sm transition-shadow ${
+                isDeleted
+                  ? "rounded-2xl rounded-tr-sm border border-slate-200 bg-slate-100 text-slate-500 italic shadow-none"
+                  : `bg-blue-600 text-white shadow-blue-900/20 group-hover:shadow-md ${
+                      message.replyTo
+                        ? "rounded-b-2xl rounded-tr-sm"
+                        : "rounded-2xl rounded-tr-sm"
+                    }`
               }`}
             >
-              <MessageText content={message.content} />
-              <MessageAttachments
-                attachments={message.attachments || []}
-                isMine
-              />
+              {isDeleted ? (
+                <span>{deletedMessageText}</span>
+              ) : (
+                <>
+                  <MessageText content={message.content} />
+                  <MessageAttachments
+                    attachments={message.attachments || []}
+                    isMine
+                  />
+                </>
+              )}
             </div>
-            {renderActions("left")}
+            {!isDeleted && renderActions("left")}
           </div>
-          {renderReactions("justify-end")}
+          {!isDeleted && renderReactions("justify-end")}
         </div>
         {renderAvatar("mt-1")}
       </div>
@@ -446,20 +469,30 @@ const MessageBubble = ({
           </div>
         )}
         <div className="relative">
-          <ReplyQuote replyTo={message.replyTo} />
+          {!isDeleted && <ReplyQuote replyTo={message.replyTo} />}
           <div
-            className={`w-fit border border-slate-300 bg-white px-4 py-2.5 text-[15px] font-medium leading-relaxed text-slate-900 shadow-sm transition-shadow group-hover:shadow-md ${
-              message.replyTo
-                ? "rounded-b-2xl rounded-tl-sm"
-                : "rounded-2xl rounded-tl-sm"
+            className={`w-fit border px-4 py-2.5 text-[15px] font-medium leading-relaxed shadow-sm transition-shadow ${
+              isDeleted
+                ? "rounded-2xl rounded-tl-sm border-slate-200 bg-slate-100 text-slate-500 italic shadow-none"
+                : `border-slate-300 bg-white text-slate-900 group-hover:shadow-md ${
+                    message.replyTo
+                      ? "rounded-b-2xl rounded-tl-sm"
+                      : "rounded-2xl rounded-tl-sm"
+                  }`
             }`}
           >
-            <MessageText content={message.content} />
-            <MessageAttachments attachments={message.attachments || []} />
+            {isDeleted ? (
+              <span>{deletedMessageText}</span>
+            ) : (
+              <>
+                <MessageText content={message.content} />
+                <MessageAttachments attachments={message.attachments || []} />
+              </>
+            )}
           </div>
-          {renderActions("right")}
+          {!isDeleted && renderActions("right")}
         </div>
-        {renderReactions("")}
+        {!isDeleted && renderReactions("")}
       </div>
     </div>
   );

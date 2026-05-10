@@ -6,6 +6,7 @@ import {
   getConversationById,
   getConversations,
   getMessages,
+  markConversationAsRead as markConversationReadRequest,
   removeMessageReaction,
   sendMessage as sendConversationMessage,
   uploadConversationAttachment,
@@ -16,10 +17,11 @@ import ConversationList from "./ConversationList";
 import ChatWindow from "./ChatWindow";
 import ChatDetailPanel from "./ChatDetailPanel";
 import NewConversationModal from "./NewConversationModal";
+import { sortConversationsByActivity } from "./conversationListState";
 import {
   addReactionToMessages,
+  applyDeletedMessage,
   markConversationAsRead,
-  removeMessageById,
   removeReactionFromMessages,
   updateConversationParticipantStatus,
   updateConversationPreview,
@@ -42,6 +44,40 @@ const normalizeMessagesForDisplay = (items = []) => {
   return [...items].sort(
     (a, b) => new Date(a.createdAt || 0) - new Date(b.createdAt || 0)
   );
+};
+
+const mergeConversationUpdate = (
+  conversations,
+  incomingConversation,
+  { preserveUnread = false } = {}
+) => {
+  const incomingConversationId = getConversationId(incomingConversation);
+  if (!incomingConversationId) return conversations;
+
+  const hasExisting = conversations.some(
+    (conversation) => getConversationId(conversation) === incomingConversationId
+  );
+
+  const nextConversations = hasExisting
+    ? conversations.map((conversation) => {
+        if (getConversationId(conversation) !== incomingConversationId) {
+          return conversation;
+        }
+
+        return {
+          ...conversation,
+          ...incomingConversation,
+          ...(preserveUnread
+            ? {
+                hasUnread: conversation.hasUnread,
+                unreadCount: conversation.unreadCount,
+              }
+            : {}),
+        };
+      })
+    : [incomingConversation, ...conversations];
+
+  return sortConversationsByActivity(nextConversations);
 };
 
 const ChatPage = () => {
@@ -75,7 +111,7 @@ const ChatPage = () => {
         const res = await getConversations({ page: 1, size: 50 });
         if (ignore) return;
 
-        const nextConversations = res.content || [];
+        const nextConversations = sortConversationsByActivity(res.content || []);
         setConversations(nextConversations);
 
         if (!conversationId) {
@@ -97,7 +133,9 @@ const ChatPage = () => {
 
         const fetchedConversation = await getConversationById(conversationId);
         if (ignore) return;
-        setConversations((prev) => [fetchedConversation, ...prev]);
+        setConversations((prev) =>
+          sortConversationsByActivity([fetchedConversation, ...prev])
+        );
         setSelectedConversation(fetchedConversation);
         setMobileView("chat");
       } catch (err) {
@@ -199,9 +237,21 @@ const ChatPage = () => {
       }
     };
 
-    const handleMessageDeleted = ({ messageId, conversationId: eventConversationId }) => {
+    const handleMessageDeleted = ({
+      messageId,
+      conversationId: eventConversationId,
+      message,
+      conversation,
+    }) => {
+      const deletedMessage =
+        message || {
+          id: messageId,
+          conversationId: eventConversationId,
+          deletedAt: new Date().toISOString(),
+        };
+
       if (isSelectedConversationEvent(eventConversationId)) {
-        setMessages((prev) => removeMessageById(prev, messageId));
+        setMessages((prev) => applyDeletedMessage(prev, deletedMessage));
         setReplyToMessage((prev) =>
           toComparableId(prev?.id) === toComparableId(messageId) ? null : prev
         );
@@ -209,6 +259,19 @@ const ChatPage = () => {
           toComparableId(prev?.id) === toComparableId(messageId) ? null : prev
         );
       }
+      if (conversation) {
+        setConversations((prev) =>
+          mergeConversationUpdate(prev, conversation, { preserveUnread: true })
+        );
+        return;
+      }
+
+      setConversations((prev) =>
+        updateConversationPreview(prev, deletedMessage, {
+          currentUserId: user?._id || user?.id,
+          selectedConversationId,
+        })
+      );
     };
 
     const handleReactionAdded = (event) => {
@@ -400,13 +463,65 @@ const ChatPage = () => {
       if (!selectedConversationId || !message?.id) return;
 
       try {
-        await deleteConversationMessage(selectedConversationId, message.id);
-        setMessages((prev) => removeMessageById(prev, message.id));
+        const deleteResult = await deleteConversationMessage(
+          selectedConversationId,
+          message.id
+        );
+        const deletedMessage = deleteResult.message || deleteResult;
+        setMessages((prev) => applyDeletedMessage(prev, deletedMessage));
+        setReplyToMessage((prev) =>
+          toComparableId(prev?.id) === toComparableId(message.id) ? null : prev
+        );
+        setEditingMessage((prev) =>
+          toComparableId(prev?.id) === toComparableId(message.id) ? null : prev
+        );
+        if (deleteResult.conversation) {
+          setConversations((prev) =>
+            mergeConversationUpdate(prev, deleteResult.conversation)
+          );
+        } else {
+          setConversations((prev) =>
+            updateConversationPreview(prev, deletedMessage, {
+              currentUserId: user?._id || user?.id,
+              selectedConversationId,
+            })
+          );
+        }
       } catch (err) {
         console.error("Failed to delete message:", err);
       }
     },
-    [selectedConversationId]
+    [selectedConversationId, user?._id, user?.id]
+  );
+
+  const handleMarkConversationRead = useCallback(
+    async (conversation) => {
+      const targetConversationId = getConversationId(conversation);
+      if (!targetConversationId) return;
+
+      setConversations((prev) => markConversationAsRead(prev, targetConversationId));
+      setSelectedConversation((prev) => {
+        if (!prev || getConversationId(prev) !== targetConversationId) return prev;
+        return markConversationAsRead([prev], targetConversationId)[0];
+      });
+
+      try {
+        const updatedConversation = await markConversationReadRequest(
+          targetConversationId
+        );
+        setConversations((prev) =>
+          mergeConversationUpdate(prev, updatedConversation)
+        );
+        setSelectedConversation((prev) =>
+          prev && getConversationId(prev) === targetConversationId
+            ? updatedConversation
+            : prev
+        );
+      } catch (err) {
+        console.error("Failed to mark conversation as read:", err);
+      }
+    },
+    []
   );
 
   const handleToggleReaction = useCallback(
@@ -456,13 +571,15 @@ const ChatPage = () => {
       console.error("Failed to hydrate new conversation:", err);
     }
 
-    setConversations((prev) => [
-      nextConversation,
-      ...prev.filter(
-        (conversation) =>
-          getConversationId(conversation) !== getConversationId(nextConversation)
-      ),
-    ]);
+    setConversations((prev) =>
+      sortConversationsByActivity([
+        nextConversation,
+        ...prev.filter(
+          (conversation) =>
+            getConversationId(conversation) !== getConversationId(nextConversation)
+        ),
+      ])
+    );
     setSelectedConversation(nextConversation);
     setShowNewModal(false);
     setMobileView("chat");
@@ -481,8 +598,9 @@ const ChatPage = () => {
           conversations={conversations}
           selectedId={selectedConversationId}
           onSelect={handleSelectConversation}
+          onMarkRead={handleMarkConversationRead}
           onCreateNew={() => setShowNewModal(true)}
-          currentUserId={user?._id}
+          currentUserId={user?._id || user?.id}
         />
       </div>
 

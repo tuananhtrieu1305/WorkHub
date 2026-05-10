@@ -8,6 +8,7 @@ import {
   addConversationMember,
   removeConversationMember,
   getMessages,
+  markConversationAsRead,
   uploadConversationAttachment,
   sendMessage,
   updateMessage,
@@ -27,6 +28,7 @@ router.put("/:id", protect, updateConversation);
 router.delete("/:id", protect, deleteConversation);
 router.post("/:id/members", protect, addConversationMember);
 router.delete("/:id/members/:userId", protect, removeConversationMember);
+router.post("/:id/read", protect, markConversationAsRead);
 router.get("/:id/messages", protect, getMessages);
 router.post("/:id/attachments", protect, uploadAttachment.single("file"), uploadConversationAttachment);
 router.post("/:id/messages", protect, sendMessage);

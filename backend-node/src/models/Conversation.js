@@ -38,6 +38,8 @@ const conversationSchema = new mongoose.Schema(
       content: { type: String, default: "" },
       senderId: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
       createdAt: { type: Date },
+      deletedAt: { type: Date, default: null },
+      deletedBy: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
     },
     createdBy: {
       type: mongoose.Schema.Types.ObjectId,
@@ -52,6 +54,11 @@ const conversationSchema = new mongoose.Schema(
 
 conversationSchema.index({ "participants.userId": 1 });
 conversationSchema.index({ updatedAt: -1 });
+conversationSchema.index({
+  "participants.userId": 1,
+  "lastMessage.createdAt": -1,
+  createdAt: -1,
+});
 
 const Conversation = mongoose.model("Conversation", conversationSchema);
 export default Conversation;

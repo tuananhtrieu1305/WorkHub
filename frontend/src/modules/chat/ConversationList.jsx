@@ -8,7 +8,11 @@ import {
   getAvatarReferrerPolicy,
   getAvatarUrl,
 } from "../../utils/avatar";
-import { getConversationTabItems } from "./conversationListState";
+import {
+  conversationHasUnread,
+  getConversationPreview,
+  getConversationTabItems,
+} from "./conversationListState";
 
 const filterTabs = [
   { key: "all", label: "Tất cả" },
@@ -68,6 +72,7 @@ const ConversationList = ({
   conversations = [],
   selectedId,
   onSelect,
+  onMarkRead,
   onCreateNew,
   currentUserId,
 }) => {
@@ -129,17 +134,35 @@ const ConversationList = ({
     );
     const isSelected = selectedId === conversationId;
     const lastMsg = conv.lastMessage;
-    const lastMsgContent = lastMsg?.content || "";
+    const hasUnread = conversationHasUnread(conv, currentUserId);
+    const preview = getConversationPreview(conv, currentUserId);
+    const lastMsgContent = preview.content;
     const lastMsgTime = formatRelativeTime(lastMsg?.createdAt || conv.updatedAt);
-    const isMySentMsg = lastMsg?.senderId === currentUserId;
+    const isMySentMsg = preview.isMine;
+    const handleSelect = () => onSelect?.(conv);
+    const handleKeyDown = (event) => {
+      if (event.key === "Enter" || event.key === " ") {
+        event.preventDefault();
+        handleSelect();
+      }
+    };
+    const handleMarkRead = (event) => {
+      event.stopPropagation();
+      onMarkRead?.(conv);
+    };
 
     return (
-      <button
+      <div
         key={conversationId}
-        onClick={() => onSelect?.(conv)}
+        role="button"
+        tabIndex={0}
+        onClick={handleSelect}
+        onKeyDown={handleKeyDown}
         className={`mx-2 my-1 flex w-[calc(100%-1rem)] items-start gap-3 rounded-xl border px-3 py-3 text-left transition-all cursor-pointer ${
           isSelected
             ? "border-blue-200 bg-blue-50 text-slate-950 shadow-[inset_3px_0_0_#3b82f6]"
+            : hasUnread
+              ? "border-blue-200 bg-blue-50/80 text-slate-950 shadow-sm hover:border-blue-300 hover:bg-blue-50"
             : "border-slate-200 bg-white text-slate-900 hover:border-blue-200 hover:bg-blue-50/80"
         }`}
       >
@@ -177,19 +200,29 @@ const ConversationList = ({
         {/* Content */}
         <div className="flex-1 min-w-0">
           <div className="flex justify-between items-baseline mb-0.5">
-            <h3 className="truncate text-sm font-bold text-slate-950">
+            <h3
+              className={`truncate text-sm font-bold ${
+                hasUnread ? "text-blue-950" : "text-slate-950"
+              }`}
+            >
               {isGroup ? `# ${name}` : name}
             </h3>
             <span
               className={`text-[11px] whitespace-nowrap ml-2 ${
-                isSelected ? "text-blue-700 font-semibold" : "text-slate-500"
+                isSelected || hasUnread
+                  ? "text-blue-700 font-semibold"
+                  : "text-slate-500"
               }`}
             >
               {lastMsgTime}
             </span>
           </div>
           {lastMsgContent && (
-            <p className="truncate text-[13px] text-slate-600">
+            <p
+              className={`truncate text-[13px] ${
+                hasUnread ? "font-extrabold text-slate-950" : "text-slate-600"
+              } ${preview.isDeleted ? "italic" : ""}`}
+            >
               {isMySentMsg && (
                 <span
                   className={`font-semibold ${
@@ -202,8 +235,19 @@ const ConversationList = ({
               {lastMsgContent}
             </p>
           )}
+          {hasUnread && (
+            <button
+              type="button"
+              onClick={handleMarkRead}
+              className="mt-2 inline-flex items-center gap-1.5 rounded-full border border-blue-200 bg-white px-2.5 py-1 text-[11px] font-extrabold text-blue-700 shadow-sm transition-colors hover:border-blue-300 hover:bg-blue-50"
+              title="Đánh dấu hội thoại này là đã đọc"
+            >
+              <span className="h-2 w-2 rounded-full bg-blue-600" />
+              Tin nhắn mới chưa đọc
+            </button>
+          )}
         </div>
-      </button>
+      </div>
     );
   };
 

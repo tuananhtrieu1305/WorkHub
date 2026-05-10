@@ -36,6 +36,10 @@ const getCurrentParticipant = (conversation, userId) => {
   );
 };
 
+const getConversationActivityAt = (conversation) => {
+  return conversation.lastMessage?.createdAt || conversation.createdAt;
+};
+
 const formatConversationUser = (user, includeEmail = false) => {
   if (!user) return null;
 
@@ -58,14 +62,22 @@ const formatReplyMessage = async (replyTo) => {
   const sender = await User.findById(replyMessage.senderId).select(
     "_id fullName avatar activityStatus activityStatusExpiresAt"
   );
+  const deletedBy = replyMessage.deletedBy
+    ? await User.findById(replyMessage.deletedBy).select(
+        "_id fullName avatar activityStatus activityStatusExpiresAt",
+      )
+    : null;
+  const isDeleted = Boolean(replyMessage.deletedAt);
 
   return {
     id: replyMessage._id,
     sender: formatConversationUser(sender),
     type: replyMessage.type,
-    content: replyMessage.content,
-    metadata: replyMessage.metadata || {},
-    attachments: replyMessage.attachments,
+    content: isDeleted ? "" : replyMessage.content,
+    metadata: isDeleted ? {} : replyMessage.metadata || {},
+    attachments: isDeleted ? [] : replyMessage.attachments,
+    deletedAt: replyMessage.deletedAt,
+    deletedBy: formatConversationUser(deletedBy),
     createdAt: replyMessage.createdAt,
   };
 };
@@ -74,18 +86,26 @@ const formatMessage = async (message) => {
   const sender = await User.findById(message.senderId).select(
     "_id fullName avatar activityStatus activityStatusExpiresAt"
   );
+  const deletedBy = message.deletedBy
+    ? await User.findById(message.deletedBy).select(
+        "_id fullName avatar activityStatus activityStatusExpiresAt",
+      )
+    : null;
+  const isDeleted = Boolean(message.deletedAt);
 
   return {
     id: message._id,
     conversationId: message.conversationId,
     sender: formatConversationUser(sender),
     type: message.type,
-    content: message.content,
-    metadata: message.metadata || {},
-    attachments: message.attachments,
-    mentions: message.mentions,
+    content: isDeleted ? "" : message.content,
+    metadata: isDeleted ? {} : message.metadata || {},
+    attachments: isDeleted ? [] : message.attachments,
+    mentions: isDeleted ? [] : message.mentions,
     replyTo: await formatReplyMessage(message.replyTo),
-    reactions: message.reactions,
+    reactions: isDeleted ? [] : message.reactions,
+    deletedAt: message.deletedAt,
+    deletedBy: formatConversationUser(deletedBy),
     createdAt: message.createdAt,
     updatedAt: message.updatedAt,
   };
@@ -128,6 +148,7 @@ const formatConversation = async (
     hasUnread: unreadState.hasUnread,
     createdBy: conversation.createdBy,
     createdAt: conversation.createdAt,
+    lastActivityAt: getConversationActivityAt(conversation),
     updatedAt: conversation.updatedAt,
   };
 };
@@ -188,7 +209,7 @@ const markConversationRead = async (conversation, userId, messageId) => {
   }
 
   currentParticipant.lastReadMessageId = messageId;
-  await conversation.save();
+  await conversation.save({ timestamps: false });
 };
 
 // GET /conversations
@@ -204,7 +225,10 @@ export const getConversations = async (req, res) => {
     const skip = (pageNum - 1) * pageSize;
 
     const [conversations, totalElements] = await Promise.all([
-      Conversation.find(filter).skip(skip).limit(pageSize).sort({ updatedAt: -1 }),
+      Conversation.find(filter)
+        .sort({ "lastMessage.createdAt": -1, createdAt: -1, _id: -1 })
+        .skip(skip)
+        .limit(pageSize),
       Conversation.countDocuments(filter),
     ]);
 
@@ -525,6 +549,45 @@ export const getMessages = async (req, res) => {
   }
 };
 
+// POST /conversations/:id/read
+export const markConversationAsRead = async (req, res) => {
+  try {
+    const conversation = await Conversation.findById(req.params.id);
+    if (!conversation) {
+      return res.status(404).json({ message: "Conversation not found" });
+    }
+
+    if (!isParticipant(conversation, req.user._id)) {
+      return res.status(403).json({ message: "You are not a participant of this conversation" });
+    }
+
+    const latestMessage =
+      (conversation.lastMessage?.messageId &&
+        (await Message.findById(conversation.lastMessage.messageId).select("_id"))) ||
+      (await Message.findOne({ conversationId: conversation._id })
+        .sort({ createdAt: -1 })
+        .select("_id"));
+
+    if (latestMessage?._id) {
+      await markConversationRead(conversation, req.user._id, latestMessage._id);
+    }
+
+    res.status(200).json(
+      await formatConversation(conversation, {
+        includeEmail: true,
+        includeLastRead: true,
+        currentUserId: req.user._id,
+      }),
+    );
+  } catch (error) {
+    console.error("MarkConversationAsRead error:", error.message);
+    if (error.kind === "ObjectId") {
+      return res.status(400).json({ message: "Invalid conversation ID" });
+    }
+    res.status(500).json({ message: "Server error, please try again" });
+  }
+};
+
 // POST /conversations/:id/attachments
 export const uploadConversationAttachment = async (req, res) => {
   try {
@@ -598,6 +661,8 @@ export const sendMessage = async (req, res) => {
       content: content || (attachments?.length > 0 ? "[Attachment]" : ""),
       senderId: req.user._id,
       createdAt: message.createdAt,
+      deletedAt: null,
+      deletedBy: null,
     };
     await conversation.save();
 
@@ -645,6 +710,10 @@ export const updateMessage = async (req, res) => {
       return res.status(403).json({ message: "Only the sender can edit this message" });
     }
 
+    if (message.deletedAt) {
+      return res.status(400).json({ message: "Cannot edit a deleted message" });
+    }
+
     const { content } = req.body;
     if (!content) {
       return res.status(400).json({ message: "Message content is required" });
@@ -690,17 +759,50 @@ export const deleteMessage = async (req, res) => {
       return res.status(403).json({ message: "Only the sender can delete this message" });
     }
 
-    const messageId = message._id;
-    await Message.findByIdAndDelete(messageId);
+    message.deletedAt = message.deletedAt || new Date();
+    message.deletedBy = req.user._id;
+    await message.save();
 
-    if (ioInstance) {
-      ioInstance.to(`conversation:${conversation._id}`).emit("message_deleted", {
-        messageId,
-        conversationId: conversation._id,
-      });
+    const messageData = await formatMessage(message);
+    const isLastMessage =
+      toComparableId(conversation.lastMessage?.messageId) ===
+        toComparableId(message._id) ||
+      (!conversation.lastMessage?.messageId &&
+        toComparableId(conversation.lastMessage?.senderId) ===
+          toComparableId(message.senderId) &&
+        conversation.lastMessage?.createdAt &&
+        new Date(conversation.lastMessage.createdAt).getTime() ===
+          new Date(message.createdAt).getTime());
+
+    if (isLastMessage) {
+      conversation.lastMessage = {
+        ...(conversation.lastMessage?.toObject?.() || conversation.lastMessage || {}),
+        messageId: message._id,
+        content: "",
+        senderId: message.senderId,
+        createdAt: message.createdAt,
+        deletedAt: message.deletedAt,
+        deletedBy: req.user._id,
+      };
+      await conversation.save();
     }
 
-    res.status(204).send();
+    const conversationData = await formatConversation(conversation, {
+      currentUserId: req.user._id,
+    });
+
+    if (ioInstance) {
+      ioInstance
+        .to(getConversationRealtimeRoomNames(conversation))
+        .emit("message_deleted", {
+          messageId: message._id,
+          conversationId: conversation._id,
+          message: messageData,
+          conversation: conversationData,
+        });
+    }
+
+    res.status(200).json({ message: messageData, conversation: conversationData });
   } catch (error) {
     console.error("DeleteMessage error:", error.message);
     if (error.kind === "ObjectId") {

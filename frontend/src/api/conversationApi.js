@@ -23,6 +23,11 @@ export const getMessages = async (conversationId, params = {}) => {
   return data;
 };
 
+export const markConversationAsRead = async (conversationId) => {
+  const { data } = await axiosClient.post(`/conversations/${conversationId}/read`);
+  return data;
+};
+
 export const sendMessage = async (conversationId, payload) => {
   const { data } = await axiosClient.post(
     `/conversations/${conversationId}/messages`,
@@ -52,7 +57,10 @@ export const updateMessage = async (conversationId, messageId, payload) => {
 };
 
 export const deleteMessage = async (conversationId, messageId) => {
-  await axiosClient.delete(`/conversations/${conversationId}/messages/${messageId}`);
+  const { data } = await axiosClient.delete(
+    `/conversations/${conversationId}/messages/${messageId}`
+  );
+  return data;
 };
 
 export const addMessageReaction = async (conversationId, messageId, reaction) => {

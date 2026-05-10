@@ -1,3 +1,5 @@
+import { sortConversationsByActivity } from "./conversationListState";
+
 const toComparableId = (value) => {
   if (value == null) return "";
   return String(value);
@@ -36,6 +38,26 @@ export const upsertMessageById = (messages, incomingMessage) => {
 export const removeMessageById = (messages, messageId) => {
   const removedId = toComparableId(messageId);
   return messages.filter((message) => toComparableId(message.id) !== removedId);
+};
+
+export const applyDeletedMessage = (messages, deletedMessage) => {
+  const deletedMessageId = toComparableId(
+    deletedMessage?.id || deletedMessage?._id || deletedMessage?.messageId
+  );
+  if (!deletedMessageId) return messages;
+
+  return messages.map((message) => {
+    if (toComparableId(message.id) !== deletedMessageId) return message;
+
+    return {
+      ...message,
+      ...deletedMessage,
+      id: message.id,
+      content: "",
+      attachments: [],
+      reactions: [],
+    };
+  });
 };
 
 export const addReactionToMessages = (
@@ -151,14 +173,6 @@ const getMessageSenderId = (message) => {
   return toComparableId(message?.sender?._id || message?.sender?.id || message?.senderId);
 };
 
-const sortConversationsByUpdatedAt = (conversations) => {
-  return [...conversations].sort((a, b) => {
-    const aTime = new Date(a?.updatedAt || 0).getTime();
-    const bTime = new Date(b?.updatedAt || 0).getTime();
-    return (Number.isFinite(bTime) ? bTime : 0) - (Number.isFinite(aTime) ? aTime : 0);
-  });
-};
-
 export const markConversationAsRead = (conversations, conversationId) => {
   const targetConversationId = toComparableId(conversationId);
   if (!targetConversationId) return conversations;
@@ -185,7 +199,7 @@ export const upsertConversationById = (conversations, incomingConversation) => {
   );
 
   if (existingIndex === -1) {
-    return sortConversationsByUpdatedAt([
+    return sortConversationsByActivity([
       {
         ...incomingConversation,
         id:
@@ -207,7 +221,7 @@ export const upsertConversationById = (conversations, incomingConversation) => {
       getConversationId(nextConversations[existingIndex]),
   };
 
-  return sortConversationsByUpdatedAt(nextConversations);
+  return sortConversationsByActivity(nextConversations);
 };
 
 export const updateConversationPreview = (
@@ -232,6 +246,7 @@ export const updateConversationPreview = (
       message.content ||
       (message.attachments?.length > 0 ? "[Attachment]" : "");
     const senderId = getMessageSenderId(message);
+    const isDeleted = Boolean(message.deletedAt);
     const isSentByCurrentUser =
       currentUserId && senderId === toComparableId(currentUserId);
     const isSelectedConversation =
@@ -245,14 +260,18 @@ export const updateConversationPreview = (
         content,
         senderId,
         createdAt,
+        deletedAt: message.deletedAt || null,
+        deletedBy: message.deletedBy?._id || message.deletedBy?.id || message.deletedBy || null,
       },
-      updatedAt: createdAt,
+      lastActivityAt: createdAt,
       hasUnread:
-        isSentByCurrentUser || isSelectedConversation
+        isDeleted
+          ? conversation.hasUnread
+          : isSentByCurrentUser || isSelectedConversation
           ? false
           : Boolean(senderId) || conversation.hasUnread,
     };
   });
 
-  return sortConversationsByUpdatedAt(nextConversations);
+  return sortConversationsByActivity(nextConversations);
 };
