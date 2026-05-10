@@ -138,7 +138,7 @@ const PostCard = ({ post, onPostDeleted, onPostUpdated }) => {
 
   return (
     <article
-      className={`bg-white/90 rounded-2xl shadow-[0_2px_15px_-3px_rgba(0,0,0,0.07),0_10px_20px_-2px_rgba(0,0,0,0.04)] border border-slate-100 transition-opacity ${
+      className={`max-w-full bg-white/90 rounded-2xl shadow-[0_2px_15px_-3px_rgba(0,0,0,0.07),0_10px_20px_-2px_rgba(0,0,0,0.04)] border border-slate-100 transition-opacity ${
         isDeleting ? "opacity-50 pointer-events-none" : ""
       }`}
     >
@@ -211,7 +211,7 @@ const PostCard = ({ post, onPostDeleted, onPostUpdated }) => {
 
         {/* Content */}
         {post.content && (
-          <p className="text-slate-800 text-base leading-relaxed mb-4">
+          <p className="max-w-full whitespace-pre-wrap break-words text-slate-800 text-base leading-relaxed mb-4 [overflow-wrap:anywhere]">
             {renderContent()}
           </p>
         )}

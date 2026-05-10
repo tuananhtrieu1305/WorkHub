@@ -3,6 +3,7 @@ import { useAuth } from "../../context/AuthContext";
 import { createPost } from "../../api/postApi";
 import { searchUsers } from "../../api/userApi";
 import { EmojiPickerButton, appendEmojiToText } from "../../components/emoji";
+import SendIcon from "../../components/icons/SendIcon";
 import {
   formatFileSize,
   getAttachmentIcon,
@@ -452,7 +453,7 @@ const CreatePostBox = ({ onPostCreated }) => {
             <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
           )}
           Đăng bài
-          <span className="material-symbols-outlined text-base leading-none">send</span>
+          <SendIcon className="size-4 shrink-0" />
         </button>
       </div>
     </div>

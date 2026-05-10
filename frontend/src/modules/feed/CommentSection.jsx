@@ -10,6 +10,7 @@ import {
   likeComment,
 } from "../../api/postApi";
 import { EmojiPickerButton, appendEmojiToText } from "../../components/emoji";
+import SendIcon from "../../components/icons/SendIcon";
 import { useSocket } from "../../context/SocketContext";
 import ReactionPicker from "./ReactionPicker";
 import {
@@ -936,7 +937,7 @@ const CommentSection = ({ postId, onCommentCountChange }) => {
           {isReplySubmitting ? (
             <span className="size-4 rounded-full border-2 border-blue-200 border-t-blue-600 animate-spin" />
           ) : (
-            <span className="material-symbols-outlined text-xl leading-none">send</span>
+            <SendIcon className="size-5" />
           )}
         </button>
       </form>
@@ -1173,7 +1174,7 @@ const CommentSection = ({ postId, onCommentCountChange }) => {
               {isSubmitting ? (
                 <span className="size-4 rounded-full border-2 border-blue-200 border-t-blue-600 animate-spin" />
               ) : (
-                <span className="material-symbols-outlined text-xl leading-none">send</span>
+                <SendIcon className="size-5" />
               )}
             </button>
           </div>
