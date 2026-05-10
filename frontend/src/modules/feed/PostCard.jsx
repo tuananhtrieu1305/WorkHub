@@ -355,6 +355,7 @@ const PostCard = ({ post, onPostDeleted, onPostUpdated }) => {
       {showComments && (
         <CommentSection
           postId={post.id}
+          initialCommentsCount={commentsCount}
           onCommentCountChange={handleCommentCountChange}
         />
       )}

@@ -387,7 +387,7 @@ const CommentReactionDetailsModal = ({ comment, onClose }) => {
   );
 };
 
-const CommentSection = ({ postId, onCommentCountChange }) => {
+const CommentSection = ({ postId, initialCommentsCount = 0, onCommentCountChange }) => {
   const { user } = useAuth();
   const { socket } = useSocket();
   const [comments, setComments] = useState([]);
@@ -405,7 +405,7 @@ const CommentSection = ({ postId, onCommentCountChange }) => {
   const [submittingReplyTo, setSubmittingReplyTo] = useState(null);
   const [page, setPage] = useState(1);
   const [hasMore, setHasMore] = useState(false);
-  const [, setTotalCount] = useState(0);
+  const [, setTotalCount] = useState(initialCommentsCount);
   const commentInputRef = useRef(null);
   const commentImageInputRef = useRef(null);
   const commentCountChangeRef = useRef(onCommentCountChange);
@@ -437,10 +437,8 @@ const CommentSection = ({ postId, onCommentCountChange }) => {
       } else {
         setComments((prev) => [...prev, ...newComments]);
       }
-      setTotalCount(res.totalElements || 0);
       setHasMore(pageNum < (res.totalPages || 1));
       setPage(pageNum);
-      commentCountChangeRef.current?.(res.totalElements || 0);
     } catch (err) {
       console.error("Failed to fetch comments:", err);
     } finally {
