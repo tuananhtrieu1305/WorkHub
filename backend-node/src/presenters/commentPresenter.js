@@ -7,6 +7,33 @@ import {
   hasPostBody,
   serializePostAttachments,
 } from "./postPresenter.js";
+import {
+  getLikeReactionType,
+  getReactionTogglePlan,
+  isReactionTypeError,
+} from "../services/reactionService.js";
+import { getReactionDetailsForTarget } from "../services/reactionDetailsService.js";
+
+const getUserReactionType = (like) => (like ? getLikeReactionType(like) : null);
+
+let commentIoInstance = null;
+
+export const setCommentIo = (io) => {
+  commentIoInstance = io;
+};
+
+const buildPublicReactionPayload = ({ comment, reactionDetails }) => ({
+  commentId: comment._id,
+  postId: comment.postId,
+  likesCount: comment.likesCount,
+  reactionSummary: reactionDetails.reactionSummary,
+  reactions: reactionDetails.reactions,
+  likedBy: reactionDetails.reactions.map((reaction) => ({
+    ...reaction.user,
+    reactionType: reaction.reactionType,
+    reactedAt: reaction.reactedAt,
+  })),
+});
 
 // GET /comments/:id
 export const getCommentById = async (req, res) => {
@@ -16,22 +43,16 @@ export const getCommentById = async (req, res) => {
       return res.status(404).json({ message: "Comment not found" });
     }
 
-    const [author, existingLike] = await Promise.all([
+    const [author, repliesCount, existingLike, reactionDetails] = await Promise.all([
       User.findById(comment.authorId).select("_id fullName email avatar"),
+      Comment.countDocuments({ parentId: comment._id }),
       Like.findOne({
         targetType: "comment",
         targetId: comment._id,
         userId: req.user._id,
       }),
+      getReactionDetailsForTarget("comment", comment._id),
     ]);
-
-    // Get users who liked this comment
-    const likes = await Like.find({ targetType: "comment", targetId: comment._id });
-    const likedByUsers = await Promise.all(
-      likes.map(async (like) => {
-        return await User.findById(like.userId).select("_id fullName email avatar");
-      })
-    );
 
     res.status(200).json({
       id: comment._id,
@@ -42,7 +63,15 @@ export const getCommentById = async (req, res) => {
       attachments: serializePostAttachments(comment.attachments),
       likesCount: comment.likesCount,
       isLiked: !!existingLike,
-      likedBy: likedByUsers,
+      reactionType: getUserReactionType(existingLike),
+      reactionSummary: reactionDetails.reactionSummary,
+      reactions: reactionDetails.reactions,
+      likedBy: reactionDetails.reactions.map((reaction) => ({
+        ...reaction.user,
+        reactionType: reaction.reactionType,
+        reactedAt: reaction.reactedAt,
+      })),
+      repliesCount,
       createdAt: comment.createdAt,
       updatedAt: comment.updatedAt,
     });
@@ -175,13 +204,15 @@ export const getCommentReplies = async (req, res) => {
 
     const content = await Promise.all(
       replies.map(async (reply) => {
-        const [author, existingLike] = await Promise.all([
+        const [author, repliesCount, existingLike, reactionDetails] = await Promise.all([
           User.findById(reply.authorId).select("_id fullName email avatar"),
+          Comment.countDocuments({ parentId: reply._id }),
           Like.findOne({
             targetType: "comment",
             targetId: reply._id,
             userId: req.user._id,
           }),
+          getReactionDetailsForTarget("comment", reply._id),
         ]);
         return {
           id: reply._id,
@@ -192,7 +223,10 @@ export const getCommentReplies = async (req, res) => {
           attachments: serializePostAttachments(reply.attachments),
           likesCount: reply.likesCount,
           isLiked: !!existingLike,
-          repliesCount: 0,
+          reactionType: getUserReactionType(existingLike),
+          reactionSummary: reactionDetails.reactionSummary,
+          reactions: reactionDetails.reactions,
+          repliesCount,
           createdAt: reply.createdAt,
           updatedAt: reply.updatedAt,
         };
@@ -248,6 +282,9 @@ export const addCommentReply = async (req, res) => {
       attachments: serializePostAttachments(reply.attachments),
       likesCount: reply.likesCount,
       isLiked: false,
+      reactionType: null,
+      reactionSummary: [],
+      reactions: [],
       repliesCount: 0,
       createdAt: reply.createdAt,
       updatedAt: reply.updatedAt,
@@ -275,30 +312,56 @@ export const toggleCommentLike = async (req, res) => {
       userId: req.user._id,
     });
 
-    let liked;
+    const plan = getReactionTogglePlan({
+      existingReactionType: existingLike ? getLikeReactionType(existingLike) : null,
+      requestedReactionType: req.body?.reactionType,
+    });
 
-    if (existingLike) {
+    if (plan.action === "delete") {
       await Like.findByIdAndDelete(existingLike._id);
-      await Comment.findByIdAndUpdate(comment._id, { $inc: { likesCount: -1 } });
-      liked = false;
+    } else if (plan.action === "update") {
+      existingLike.reactionType = plan.reactionType;
+      await existingLike.save();
     } else {
       await Like.create({
         targetType: "comment",
         targetId: comment._id,
         userId: req.user._id,
+        reactionType: plan.reactionType,
       });
-      await Comment.findByIdAndUpdate(comment._id, { $inc: { likesCount: 1 } });
-      liked = true;
     }
 
-    const updatedComment = await Comment.findById(comment._id);
+    if (plan.countDelta !== 0) {
+      await Comment.findByIdAndUpdate(comment._id, {
+        $inc: { likesCount: plan.countDelta },
+      });
+    }
+
+    const [updatedComment, reactionDetails] = await Promise.all([
+      Comment.findById(comment._id),
+      getReactionDetailsForTarget("comment", comment._id),
+    ]);
+
+    const publicReactionPayload = buildPublicReactionPayload({
+      comment: updatedComment,
+      reactionDetails,
+    });
+
+    commentIoInstance?.emit("comment_reaction_updated", publicReactionPayload);
 
     res.status(200).json({
-      liked,
+      liked: plan.liked,
       likesCount: updatedComment.likesCount,
+      reactionType: plan.reactionType,
+      reactionSummary: publicReactionPayload.reactionSummary,
+      reactions: publicReactionPayload.reactions,
+      likedBy: publicReactionPayload.likedBy,
     });
   } catch (error) {
     console.error("ToggleCommentLike error:", error.message);
+    if (isReactionTypeError(error)) {
+      return res.status(400).json({ message: error.message });
+    }
     if (error.kind === "ObjectId") {
       return res.status(400).json({ message: "Invalid comment ID" });
     }

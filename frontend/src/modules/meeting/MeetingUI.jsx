@@ -9,6 +9,7 @@ export default function MeetingUI({ meeting }) {
     meetingElementRef.current.meeting = meeting;
     meetingElementRef.current.mode = "fill";
     meetingElementRef.current.showSetupScreen = false;
+    meetingElementRef.current.leaveOnUnmount = false;
   }, [meeting]);
 
   return (

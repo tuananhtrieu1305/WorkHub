@@ -1,11 +1,12 @@
 import { useAuth } from "../../context/AuthContext";
-import {
-  getAvatarReferrerPolicy,
-  getAvatarUrl,
-} from "../../utils/avatar";
 
 const API_URL = import.meta.env.VITE_NODE_API_URL || "http://localhost:5000";
 const quickReactions = ["👍", "❤️", "😂", "🎉"];
+
+const getAvatarUrl = (avatar) => {
+  if (!avatar) return null;
+  return avatar.startsWith("http") ? avatar : `${API_URL}${avatar}`;
+};
 
 const getFileUrl = (url) => {
   if (!url) return "#";
@@ -249,6 +250,40 @@ const ReplyQuote = ({ replyTo, isMine }) => {
   );
 };
 
+const callEventMeta = {
+  call_ended: { icon: "call_end", label: "Cuoc goi da ket thuc" },
+  call_missed: { icon: "phone_missed", label: "Cuoc goi nho" },
+  call_declined: { icon: "phone_disabled", label: "Cuoc goi da bi tu choi" },
+  call_cancelled: { icon: "call_end", label: "Cuoc goi da bi huy" },
+  call_failed: { icon: "error", label: "Cuoc goi that bai" },
+  call_busy: { icon: "phone_paused", label: "May ban" },
+};
+
+const formatDuration = (seconds) => {
+  if (!seconds) return "";
+  const minutes = Math.floor(seconds / 60);
+  const remainingSeconds = seconds % 60;
+  return `${minutes}:${String(remainingSeconds).padStart(2, "0")}`;
+};
+
+const CallSystemMessage = ({ message }) => {
+  const eventType = message.metadata?.eventType;
+  const meta = callEventMeta[eventType] || callEventMeta.call_failed;
+  const duration = formatDuration(message.metadata?.durationSeconds);
+
+  return (
+    <div className="flex justify-center">
+      <div className="inline-flex max-w-[80%] items-center gap-2 rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-600 shadow-sm">
+        <span className="material-symbols-outlined text-[16px] text-blue-500">
+          {meta.icon}
+        </span>
+        <span>{message.content || meta.label}</span>
+        {duration && <span className="text-slate-400">{duration}</span>}
+      </div>
+    </div>
+  );
+};
+
 const MessageBubble = ({
   message,
   showAvatar = true,
@@ -264,6 +299,10 @@ const MessageBubble = ({
   const senderInitial = senderName.charAt(0).toUpperCase();
   const reactionGroups = [...groupReactions(message.reactions || []).values()];
 
+  if (message.type === "system" && message.metadata?.eventType?.startsWith("call_")) {
+    return <CallSystemMessage message={message} />;
+  }
+
   const renderAvatar = (className = "") => {
     if (!showAvatar) {
       return <div className="w-9 shrink-0" />;
@@ -273,7 +312,6 @@ const MessageBubble = ({
       <img
         src={avatarUrl}
         alt={senderName}
-        referrerPolicy={getAvatarReferrerPolicy(avatarUrl)}
         className={`w-9 h-9 rounded-full object-cover shadow-sm shrink-0 ${className}`}
       />
     ) : (

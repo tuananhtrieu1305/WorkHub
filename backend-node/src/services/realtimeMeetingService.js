@@ -113,6 +113,27 @@ export class RealtimeMeetingService {
 
     return json.result || json.data;
   }
+
+  async kickAllParticipants({ meetingId }) {
+    const response = await fetch(
+      `${this.baseUrl}/meetings/${meetingId}/active-session/kick-all`,
+      {
+        method: "POST",
+        headers: this.headers,
+      },
+    );
+
+    if (response.status === 404) {
+      return null;
+    }
+
+    const json = await response.json().catch(() => ({}));
+    if (!response.ok || json.success === false) {
+      throw new ApiError(502, "Unable to end realtime meeting session");
+    }
+
+    return json.result || json.data;
+  }
 }
 
 export const setRealtimeMeetingServiceOverride = (override) => {

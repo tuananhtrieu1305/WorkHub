@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { useAuth } from "../../context/AuthContext";
 import {
   getComments,
+  getCommentById,
   createComment,
   deleteComment,
   getCommentReplies,
@@ -9,6 +10,24 @@ import {
   likeComment,
 } from "../../api/postApi";
 import { EmojiPickerButton, appendEmojiToText } from "../../components/emoji";
+import { useSocket } from "../../context/SocketContext";
+import ReactionPicker from "./ReactionPicker";
+import {
+  buildOptimisticReactionState,
+  mergeReactionResponse,
+} from "./reactionState";
+import {
+  getCommentReactionParticipants,
+  getCommentReactionSummary,
+  getCommentReactionTotal,
+} from "./reactionSummary";
+import {
+  buildCommentPayload,
+  buildReplyMention,
+  getCommentId,
+  splitLeadingReplyMention,
+  updateCommentEverywhere,
+} from "./commentThreadState";
 import {
   getAttachmentType,
   getAttachmentUrl,
@@ -20,16 +39,158 @@ import {
 
 const MAX_COMMENT_IMAGES = 4;
 
-const getCommentId = (comment) => comment.id || comment._id;
-
 const getImageAttachments = (attachments = []) =>
   attachments.filter((attachment) => getAttachmentType(attachment) === "image");
 
-const buildCommentFormData = (content, files = []) => {
-  const formData = new FormData();
-  formData.append("content", content.trim());
-  files.forEach((file) => formData.append("attachments", file));
-  return formData;
+const getComparableUserId = (user = {}) => {
+  const id = user?._id || user?.id || user;
+  return id?.toString?.() || "";
+};
+
+const getReactionEntryUserId = (reaction = {}) =>
+  getComparableUserId(reaction.user || reaction.userId);
+
+const toReactionSummaryPayload = (comment) =>
+  getCommentReactionSummary(comment, Number.MAX_SAFE_INTEGER).map(
+    ({ reactionType, count, latestReactionAt }) => ({
+      reactionType,
+      count,
+      latestReactionAt,
+    })
+  );
+
+const toReactionEntry = (participant) => ({
+  user: {
+    _id: participant.id,
+    id: participant.id,
+    fullName: participant.fullName,
+    email: participant.email,
+    avatar: participant.avatar,
+  },
+  reactionType: participant.reactionType,
+  reactedAt: participant.reactedAt,
+});
+
+const getReactionSummaryPayloadTotal = (summary = []) =>
+  summary.reduce((total, item) => total + (item.count || 0), 0);
+
+const isSameId = (left, right) =>
+  left != null && right != null && String(left) === String(right);
+
+const buildReactionSummaryMap = (comment) =>
+  new Map(
+    getCommentReactionSummary(comment, Number.MAX_SAFE_INTEGER).map((item) => [
+      item.reactionType,
+      {
+        reactionType: item.reactionType,
+        count: item.count,
+        latestReactionAt: item.latestReactionAt || item.reactedAt || "",
+      },
+    ])
+  );
+
+const pickReliableReactionSummaryPayload = ({
+  current,
+  response,
+  likesCount,
+}) => {
+  const currentSummary = toReactionSummaryPayload(current);
+  const responseSummary = toReactionSummaryPayload({
+    reactionSummary: Array.isArray(response?.reactionSummary)
+      ? response.reactionSummary
+      : [],
+    reactions: Array.isArray(response?.reactions) ? response.reactions : [],
+    likesCount,
+    reactionType: response?.reactionType,
+  });
+
+  if (responseSummary.length === 0) return current.reactionSummary;
+
+  const currentSummaryTotal = getReactionSummaryPayloadTotal(currentSummary);
+  const responseSummaryTotal = getReactionSummaryPayloadTotal(responseSummary);
+
+  if (
+    currentSummary.length > responseSummary.length &&
+    currentSummaryTotal === likesCount &&
+    responseSummaryTotal === likesCount
+  ) {
+    return currentSummary;
+  }
+
+  return responseSummary;
+};
+
+const toLikedByPayload = (reactions = []) =>
+  reactions.map((reaction) => ({
+    ...reaction.user,
+    reactionType: reaction.reactionType,
+    reactedAt: reaction.reactedAt,
+  }));
+
+const mergeRefreshedComment = (current, refreshedComment) => ({
+  ...current,
+  ...refreshedComment,
+  repliesCount: refreshedComment.repliesCount ?? current.repliesCount,
+});
+
+const buildOptimisticCommentReactionMetadata = ({
+  comment,
+  user,
+  previousLiked,
+  previousReactionType,
+  optimisticState,
+}) => {
+  const currentUserId = getComparableUserId(user);
+  const summaryByType = buildReactionSummaryMap(comment);
+  const currentReactions = getCommentReactionParticipants(comment).map(toReactionEntry);
+  const nextReactions = currentUserId
+    ? currentReactions.filter(
+        (reaction) => getReactionEntryUserId(reaction) !== currentUserId
+      )
+    : currentReactions;
+
+  if (previousLiked && previousReactionType) {
+    const previousSummary = summaryByType.get(previousReactionType);
+    if (previousSummary) {
+      previousSummary.count -= 1;
+      if (previousSummary.count <= 0) {
+        summaryByType.delete(previousReactionType);
+      } else {
+        summaryByType.set(previousReactionType, previousSummary);
+      }
+    }
+  }
+
+  if (currentUserId && optimisticState.isLiked) {
+    const reactedAt = new Date().toISOString();
+    const nextSummary = summaryByType.get(optimisticState.reactionType) || {
+      reactionType: optimisticState.reactionType,
+      count: 0,
+      latestReactionAt: "",
+    };
+    nextSummary.count += 1;
+    nextSummary.latestReactionAt = reactedAt;
+    summaryByType.set(optimisticState.reactionType, nextSummary);
+
+    nextReactions.unshift({
+      user: {
+        _id: user?._id || user?.id,
+        id: user?.id || user?._id,
+        fullName: user?.fullName || "Bạn",
+        email: user?.email || "",
+        avatar: user?.avatar || "",
+      },
+      reactionType: optimisticState.reactionType,
+      reactedAt,
+    });
+  }
+
+  return {
+    reactionSummary: Array.from(summaryByType.values()).filter(
+      (item) => item.count > 0
+    ),
+    reactions: nextReactions,
+  };
 };
 
 const CommentImageGrid = ({ attachments = [], isReply = false }) => {
@@ -85,8 +246,149 @@ const LocalImagePreviews = ({ files = [], onRemove }) => {
   );
 };
 
+const CommentReactionCluster = ({ comment, onOpen }) => {
+  const summary = getCommentReactionSummary(comment);
+  const total = getCommentReactionTotal(comment);
+
+  if (total <= 0 || summary.length === 0) return null;
+
+  return (
+    <button
+      type="button"
+      onClick={onOpen}
+      className="absolute -bottom-3 -right-2 inline-flex h-6 items-center gap-1 rounded-full border border-white/90 bg-white/95 px-1.5 shadow-[0_8px_18px_-10px_rgba(15,23,42,0.55)] ring-1 ring-slate-200/80 backdrop-blur transition-[background-color,transform,box-shadow] duration-150 hover:-translate-y-px hover:bg-white hover:shadow-[0_10px_22px_-12px_rgba(15,23,42,0.65)] active:translate-y-0"
+      aria-label={`Xem ${total} người đã bày tỏ cảm xúc`}
+    >
+      <span className="flex items-center -space-x-1 pr-0.5">
+        {summary.map((reaction, index) => (
+          <span
+            key={reaction.reactionType}
+            className="workhub-reaction-emoji inline-flex size-[18px] items-center justify-center rounded-full border border-white bg-white text-[14px] leading-none ring-1 ring-slate-100"
+            style={{ zIndex: summary.length - index }}
+            title={`${reaction.label}: ${reaction.count}`}
+          >
+            {reaction.emoji}
+          </span>
+        ))}
+      </span>
+      <span className="min-w-[0.65rem] text-center text-[11px] font-semibold leading-none text-slate-600">
+        {total}
+      </span>
+    </button>
+  );
+};
+
+const CommentReactionDetailsModal = ({ comment, onClose }) => {
+  const participants = getCommentReactionParticipants(comment);
+  const summary = getCommentReactionSummary(comment, Number.MAX_SAFE_INTEGER);
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/35 px-4 backdrop-blur-sm"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) onClose();
+      }}
+    >
+      <section
+        role="dialog"
+        aria-modal="true"
+        aria-label="Danh sách cảm xúc bình luận"
+        className="w-full max-w-md overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl shadow-slate-950/20"
+        onMouseDown={(event) => event.stopPropagation()}
+      >
+        <header className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
+          <div>
+            <h3 className="text-base font-bold text-slate-950">
+              Cảm xúc bình luận
+            </h3>
+            <p className="text-xs font-medium text-slate-500">
+              {getCommentReactionTotal(comment)} lượt reaction
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="inline-flex size-8 items-center justify-center rounded-full text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-800"
+            aria-label="Đóng bảng cảm xúc"
+          >
+            <span className="material-symbols-outlined text-[20px] leading-none">
+              close
+            </span>
+          </button>
+        </header>
+
+        {summary.length > 0 && (
+          <div className="flex flex-wrap gap-2 border-b border-slate-100 px-5 py-3">
+            {summary.map((reaction) => (
+              <span
+                key={reaction.reactionType}
+                className="inline-flex items-center gap-1.5 rounded-full bg-slate-100 px-2.5 py-1 text-xs font-bold text-slate-700"
+              >
+                <span className="workhub-reaction-emoji text-base leading-none">
+                  {reaction.emoji}
+                </span>
+                {reaction.count}
+              </span>
+            ))}
+          </div>
+        )}
+
+        <div className="max-h-[360px] overflow-y-auto">
+          {participants.length > 0 ? (
+            participants.map((participant) => {
+              const participantAvatar = getAvatarUrl(participant.avatar);
+              const initial = participant.fullName?.charAt(0)?.toUpperCase() || "?";
+
+              return (
+                <div
+                  key={`${participant.id}-${participant.reactionType}`}
+                  className="grid grid-cols-[2.25rem_1fr_auto] items-center gap-3 border-b border-slate-100 px-5 py-3 last:border-b-0"
+                >
+                  {participantAvatar ? (
+                    <img
+                      src={participantAvatar}
+                      alt={participant.fullName}
+                      referrerPolicy={getAvatarReferrerPolicy(participantAvatar)}
+                      className="size-9 rounded-full object-cover"
+                    />
+                  ) : (
+                    <div className="flex size-9 items-center justify-center rounded-full bg-slate-200 text-sm font-bold text-slate-700">
+                      {initial}
+                    </div>
+                  )}
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-bold text-slate-900">
+                      {participant.fullName}
+                    </p>
+                    {participant.email && (
+                      <p className="truncate text-xs text-slate-500">
+                        {participant.email}
+                      </p>
+                    )}
+                  </div>
+                  <div className="inline-flex items-center gap-2 rounded-full bg-slate-50 px-2.5 py-1 text-xs font-bold text-slate-700">
+                    <span className="workhub-reaction-emoji text-base leading-none">
+                      {participant.reactionEmoji}
+                    </span>
+                    {participant.reactionLabel}
+                  </div>
+                </div>
+              );
+            })
+          ) : (
+            <p className="px-5 py-6 text-center text-sm font-medium text-slate-500">
+              Chưa có dữ liệu người reaction.
+            </p>
+          )}
+        </div>
+      </section>
+    </div>
+  );
+};
+
 const CommentSection = ({ postId, onCommentCountChange }) => {
   const { user } = useAuth();
+  const { socket } = useSocket();
   const [comments, setComments] = useState([]);
   const [newComment, setNewComment] = useState("");
   const [commentImages, setCommentImages] = useState([]);
@@ -96,6 +398,7 @@ const CommentSection = ({ postId, onCommentCountChange }) => {
   const [repliesByComment, setRepliesByComment] = useState({});
   const [expandedReplies, setExpandedReplies] = useState({});
   const [loadingReplies, setLoadingReplies] = useState({});
+  const [reactionDetailsCommentId, setReactionDetailsCommentId] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submittingReplyTo, setSubmittingReplyTo] = useState(null);
@@ -104,15 +407,21 @@ const CommentSection = ({ postId, onCommentCountChange }) => {
   const [, setTotalCount] = useState(0);
   const commentInputRef = useRef(null);
   const commentImageInputRef = useRef(null);
+  const commentCountChangeRef = useRef(onCommentCountChange);
+  const replyInputRef = useRef(null);
   const replyImageInputRef = useRef(null);
 
   const userInitial = user?.fullName?.charAt(0)?.toUpperCase() || "U";
   const avatarUrl = getAvatarUrl(user?.avatar);
 
+  useEffect(() => {
+    commentCountChangeRef.current = onCommentCountChange;
+  }, [onCommentCountChange]);
+
   const adjustTotalCount = (delta) => {
     setTotalCount((prev) => {
       const next = Math.max(0, prev + delta);
-      onCommentCountChange?.(next);
+      commentCountChangeRef.current?.(next);
       return next;
     });
   };
@@ -130,13 +439,13 @@ const CommentSection = ({ postId, onCommentCountChange }) => {
       setTotalCount(res.totalElements || 0);
       setHasMore(pageNum < (res.totalPages || 1));
       setPage(pageNum);
-      onCommentCountChange?.(res.totalElements || 0);
+      commentCountChangeRef.current?.(res.totalElements || 0);
     } catch (err) {
       console.error("Failed to fetch comments:", err);
     } finally {
       setIsLoading(false);
     }
-  }, [postId, onCommentCountChange]);
+  }, [postId]);
 
   useEffect(() => {
     fetchComments(1, true);
@@ -167,31 +476,56 @@ const CommentSection = ({ postId, onCommentCountChange }) => {
     });
   };
 
-  const updateCommentItem = (commentId, parentId, updater) => {
-    if (parentId) {
-      setRepliesByComment((prev) => ({
-        ...prev,
-        [parentId]: (prev[parentId] || []).map((reply) =>
-          getCommentId(reply) === commentId ? updater(reply) : reply
-        ),
+  const updateCommentItem = useCallback((commentId, updater) => {
+    setComments(
+      (prev) =>
+        updateCommentEverywhere({
+          comments: prev,
+          commentId,
+          updater,
+        }).comments
+    );
+    setRepliesByComment(
+      (prev) =>
+        updateCommentEverywhere({
+          repliesByComment: prev,
+          commentId,
+          updater,
+        }).repliesByComment
+    );
+  }, []);
+
+  useEffect(() => {
+    if (!socket) return undefined;
+
+    const handleCommentReactionUpdated = (event = {}) => {
+      if (!isSameId(event.postId, postId) || !event.commentId) return;
+
+      updateCommentItem(event.commentId, (current) => ({
+        ...current,
+        likesCount: Number.isFinite(event.likesCount)
+          ? event.likesCount
+          : current.likesCount,
+        reactionSummary: Array.isArray(event.reactionSummary)
+          ? event.reactionSummary
+          : current.reactionSummary,
+        reactions: Array.isArray(event.reactions)
+          ? event.reactions
+          : current.reactions,
+        likedBy: Array.isArray(event.likedBy)
+          ? event.likedBy
+          : Array.isArray(event.reactions)
+          ? toLikedByPayload(event.reactions)
+          : current.likedBy,
       }));
-      return;
-    }
+    };
 
-    setComments((prev) =>
-      prev.map((comment) =>
-        getCommentId(comment) === commentId ? updater(comment) : comment
-      )
-    );
-  };
+    socket.on("comment_reaction_updated", handleCommentReactionUpdated);
 
-  const updateRootComment = (commentId, updater) => {
-    setComments((prev) =>
-      prev.map((comment) =>
-        getCommentId(comment) === commentId ? updater(comment) : comment
-      )
-    );
-  };
+    return () => {
+      socket.off("comment_reaction_updated", handleCommentReactionUpdated);
+    };
+  }, [postId, socket, updateCommentItem]);
 
   const loadReplies = async (commentId) => {
     if (loadingReplies[commentId]) return;
@@ -231,7 +565,7 @@ const CommentSection = ({ postId, onCommentCountChange }) => {
     try {
       const created = await createComment(
         postId,
-        buildCommentFormData(newComment, commentImages)
+        buildCommentPayload(newComment, commentImages)
       );
       setComments((prev) => [created, ...prev]);
       setNewComment("");
@@ -255,16 +589,17 @@ const CommentSection = ({ postId, onCommentCountChange }) => {
     try {
       const created = await createCommentReply(
         commentId,
-        buildCommentFormData(content, images)
+        buildCommentPayload(content, images)
       );
       setRepliesByComment((prev) => ({
         ...prev,
         [commentId]: [...(prev[commentId] || []), created],
       }));
       setExpandedReplies((prev) => ({ ...prev, [commentId]: true }));
+      setReplyingTo(null);
       setReplyDrafts((prev) => ({ ...prev, [commentId]: "" }));
       setReplyImages((prev) => ({ ...prev, [commentId]: [] }));
-      updateRootComment(commentId, (comment) => ({
+      updateCommentItem(commentId, (comment) => ({
         ...comment,
         repliesCount: (comment.repliesCount || 0) + 1,
       }));
@@ -288,34 +623,84 @@ const CommentSection = ({ postId, onCommentCountChange }) => {
     }));
   };
 
-  const handleLike = async (comment, parentId = null) => {
+  const handleReactionSelect = async (comment, nextReactionType) => {
     const commentId = getCommentId(comment);
     const previousLiked = !!comment.isLiked;
+    const previousReactionType = comment.reactionType || null;
     const previousCount = comment.likesCount || 0;
-    const optimisticLiked = !previousLiked;
-    const optimisticCount = Math.max(
-      0,
-      previousCount + (optimisticLiked ? 1 : -1)
-    );
+    const previousReactionSummary = comment.reactionSummary;
+    const previousReactions = comment.reactions;
+    const previousLikedBy = comment.likedBy;
+    const optimisticState = buildOptimisticReactionState({
+      isLiked: previousLiked,
+      reactionType: previousReactionType,
+      likesCount: previousCount,
+      nextReactionType,
+    });
+    const optimisticReactionMetadata = buildOptimisticCommentReactionMetadata({
+      comment,
+      user,
+      previousLiked,
+      previousReactionType:
+        previousReactionType || (previousLiked ? "like" : null),
+      optimisticState,
+    });
 
-    updateCommentItem(commentId, parentId, (current) => ({
+    updateCommentItem(commentId, (current) => ({
       ...current,
-      isLiked: optimisticLiked,
-      likesCount: optimisticCount,
+      isLiked: optimisticState.isLiked,
+      reactionType: optimisticState.reactionType,
+      likesCount: optimisticState.likesCount,
+      ...optimisticReactionMetadata,
     }));
 
     try {
-      const res = await likeComment(commentId);
-      updateCommentItem(commentId, parentId, (current) => ({
-        ...current,
-        isLiked: res.liked,
-        likesCount: res.likesCount,
+      const res = await likeComment(commentId, nextReactionType);
+      const nextState = mergeReactionResponse({
+        response: res,
+        requestedReactionType: nextReactionType,
+        optimisticState,
+      });
+      let refreshedComment = null;
+
+      try {
+        refreshedComment = await getCommentById(commentId);
+      } catch (refreshErr) {
+        console.warn("Failed to refresh comment reaction details:", refreshErr);
+      }
+
+      updateCommentItem(commentId, (current) => ({
+        ...(refreshedComment
+          ? mergeRefreshedComment(current, refreshedComment)
+          : {
+              ...current,
+              isLiked: nextState.isLiked,
+              reactionType: nextState.reactionType,
+              likesCount: nextState.likesCount,
+              reactionSummary: pickReliableReactionSummaryPayload({
+                current,
+                response: res,
+                likesCount: nextState.likesCount,
+              }),
+              reactions: Array.isArray(res?.reactions)
+                ? res.reactions
+                : current.reactions,
+              likedBy: Array.isArray(res?.likedBy)
+                ? res.likedBy
+                : Array.isArray(res?.reactions)
+                ? toLikedByPayload(res.reactions)
+                : current.likedBy,
+            }),
       }));
     } catch (err) {
-      updateCommentItem(commentId, parentId, (current) => ({
+      updateCommentItem(commentId, (current) => ({
         ...current,
         isLiked: previousLiked,
+        reactionType: previousReactionType,
         likesCount: previousCount,
+        reactionSummary: previousReactionSummary,
+        reactions: previousReactions,
+        likedBy: previousLikedBy,
       }));
       console.error("Failed to like comment:", err);
     }
@@ -331,10 +716,11 @@ const CommentSection = ({ postId, onCommentCountChange }) => {
           [parentId]: (prev[parentId] || []).filter(
             (reply) => getCommentId(reply) !== commentId
           ),
+          [commentId]: [],
         }));
-        updateRootComment(parentId, (rootComment) => ({
-          ...rootComment,
-          repliesCount: Math.max(0, (rootComment.repliesCount || 0) - 1),
+        updateCommentItem(parentId, (parentComment) => ({
+          ...parentComment,
+          repliesCount: Math.max(0, (parentComment.repliesCount || 0) - 1),
         }));
         adjustTotalCount(-1);
         return;
@@ -361,8 +747,26 @@ const CommentSection = ({ postId, onCommentCountChange }) => {
     return `${days} ngày trước`;
   };
 
-  const renderCommentActions = (comment, parentId = null) => {
+  const startReply = (comment) => {
     const commentId = getCommentId(comment);
+    const authorName = comment.author?.fullName || "";
+    const mention = buildReplyMention(authorName);
+
+    setReplyingTo((current) =>
+      current?.commentId === commentId ? null : { commentId, authorName }
+    );
+
+    if (mention) {
+      setReplyDrafts((prev) => ({
+        ...prev,
+        [commentId]: (prev[commentId] || "").trim() ? prev[commentId] : mention,
+      }));
+    }
+
+    requestAnimationFrame(() => replyInputRef.current?.focus());
+  };
+
+  const renderCommentActions = (comment, parentId = null) => {
     const isCommentAuthor = user?._id === comment.author?._id;
 
     return (
@@ -370,32 +774,25 @@ const CommentSection = ({ postId, onCommentCountChange }) => {
         <span className="text-xs text-slate-500 font-medium">
           {formatTime(comment.createdAt)}
         </span>
+        <ReactionPicker
+          variant="comment"
+          isActive={!!comment.isLiked}
+          reactionType={comment.reactionType}
+          count={comment.likesCount || 0}
+          onSelect={(nextReactionType) =>
+            handleReactionSelect(comment, nextReactionType)
+          }
+        />
         <button
           type="button"
-          onClick={() => handleLike(comment, parentId)}
-          className={`text-xs font-bold transition-colors ${
-            comment.isLiked
-              ? "text-blue-600"
-              : "text-slate-500 hover:text-blue-600"
-          }`}
+          onClick={() => {
+            startReply(comment);
+            requestAnimationFrame(() => commentInputRef.current?.blur());
+          }}
+          className="text-xs text-slate-500 hover:text-blue-600 font-bold transition-colors"
         >
-          {comment.isLiked ? "Đã thích" : "Thích"}
-          {(comment.likesCount || 0) > 0 && (
-            <span className="ml-1">({comment.likesCount})</span>
-          )}
+          Trả lời
         </button>
-        {!parentId && (
-          <button
-            type="button"
-            onClick={() => {
-              setReplyingTo((current) => (current === commentId ? null : commentId));
-              requestAnimationFrame(() => commentInputRef.current?.blur());
-            }}
-            className="text-xs text-slate-500 hover:text-blue-600 font-bold transition-colors"
-          >
-            Trả lời
-          </button>
-        )}
         {isCommentAuthor && (
           <button
             type="button"
@@ -409,19 +806,56 @@ const CommentSection = ({ postId, onCommentCountChange }) => {
     );
   };
 
-  const renderCommentBubble = (comment, { isReply = false } = {}) => (
-    <div className="bg-slate-100 rounded-2xl px-4 py-2.5 inline-block max-w-full border border-slate-200 shadow-sm">
-      <p className="text-sm font-bold text-slate-950">
-        {comment.author?.fullName || "Ẩn danh"}
+  const renderCommentContent = (comment, replyTargetName) => {
+    if (!comment.content) return null;
+
+    const leadingMention = splitLeadingReplyMention(
+      comment.content,
+      replyTargetName
+    );
+
+    return (
+      <p className="text-sm text-slate-800 mt-0.5 break-words">
+        {leadingMention ? (
+          <>
+            <strong className="font-bold text-slate-950">
+              {leadingMention.mention}
+            </strong>
+            {leadingMention.rest}
+          </>
+        ) : (
+          comment.content
+        )}
       </p>
-      {comment.content && (
-        <p className="text-sm text-slate-800 mt-0.5 break-words">
-          {comment.content}
+    );
+  };
+
+  const renderCommentBubble = (
+    comment,
+    { isReply = false, replyTargetName = "" } = {}
+  ) => {
+    const hasReactionCluster =
+      getCommentReactionTotal(comment) > 0 &&
+      getCommentReactionSummary(comment).length > 0;
+
+    return (
+      <div
+        className={`relative inline-block max-w-full rounded-2xl border border-slate-200 bg-slate-100 px-4 pt-2.5 shadow-sm ${
+          hasReactionCluster ? "mb-3 pb-4 pr-5" : "pb-2.5"
+        }`}
+      >
+        <p className="text-sm font-bold text-slate-950">
+          {comment.author?.fullName || "Ẩn danh"}
         </p>
-      )}
-      <CommentImageGrid attachments={comment.attachments} isReply={isReply} />
-    </div>
-  );
+        {renderCommentContent(comment, replyTargetName)}
+        <CommentImageGrid attachments={comment.attachments} isReply={isReply} />
+        <CommentReactionCluster
+          comment={comment}
+          onOpen={() => setReactionDetailsCommentId(getCommentId(comment))}
+        />
+      </div>
+    );
+  };
 
   const renderReplyForm = (commentId) => {
     const images = replyImages[commentId] || [];
@@ -431,11 +865,24 @@ const CommentSection = ({ postId, onCommentCountChange }) => {
     return (
       <form
         onSubmit={(event) => handleReplySubmit(event, commentId)}
-        className="mt-2 flex gap-2"
+        className="flex gap-2"
       >
+        {avatarUrl ? (
+          <img
+            src={avatarUrl}
+            alt={user?.fullName}
+            referrerPolicy={getAvatarReferrerPolicy(avatarUrl)}
+            className="size-7 rounded-full object-cover shrink-0 mt-1"
+          />
+        ) : (
+          <div className="size-7 rounded-full bg-blue-600 text-white flex items-center justify-center text-[11px] font-bold shrink-0 mt-1">
+            {userInitial}
+          </div>
+        )}
         <div className="flex-1 min-w-0">
           <div className="relative">
             <input
+              ref={replyInputRef}
               type="text"
               value={draft}
               onChange={(event) =>
@@ -496,65 +943,178 @@ const CommentSection = ({ postId, onCommentCountChange }) => {
     );
   };
 
-  const renderReplies = (comment) => {
-    const commentId = getCommentId(comment);
-    const replies = repliesByComment[commentId] || [];
+  const renderThreadConnectorRow = (
+    children,
+    { className = "", depth = 0, key, isFirst = false, isLast = false } = {}
+  ) => {
+    const branchOffsetClass =
+      depth > 0
+        ? "before:-left-[34px] before:w-7 after:-left-[34px]"
+        : "before:-left-10 before:w-[34px] after:-left-10";
+    const branchRiseClass = isFirst
+      ? depth > 0
+        ? "before:-top-14 before:h-[76px]"
+        : "before:-top-16 before:h-[84px]"
+      : "before:top-0.5 before:h-[18px]";
 
     return (
-      <>
-        {(comment.repliesCount || 0) > 0 && (
-          <button
-            type="button"
-            onClick={() => handleToggleReplies(commentId)}
-            className="mt-2 ml-1 inline-flex items-center gap-1 text-xs font-bold text-blue-600 transition-colors hover:text-blue-700"
-          >
-            {loadingReplies[commentId] ? (
-              <span className="size-3 rounded-full border-2 border-blue-200 border-t-blue-600 animate-spin" />
-            ) : (
-              <span className="material-symbols-outlined text-base leading-none">
-                subdirectory_arrow_right
-              </span>
-            )}
-            {expandedReplies[commentId] ? "Ẩn phản hồi" : `Xem ${comment.repliesCount} phản hồi`}
-          </button>
-        )}
-
-        {replyingTo === commentId && renderReplyForm(commentId)}
-
-        {expandedReplies[commentId] && replies.length > 0 && (
-          <div className="mt-3 flex flex-col gap-3 border-l-2 border-slate-200 pl-4">
-            {replies.map((reply) => {
-              const replyId = getCommentId(reply);
-              const replyAvatar = getAvatarUrl(reply.author?.avatar);
-
-              return (
-                <div key={replyId} className="flex gap-2 group">
-                  {replyAvatar ? (
-                    <img
-                      src={replyAvatar}
-                      alt={reply.author?.fullName}
-                      referrerPolicy={getAvatarReferrerPolicy(replyAvatar)}
-                      className="size-7 rounded-full object-cover shrink-0 mt-0.5"
-                    />
-                  ) : (
-                    <div className="size-7 rounded-full bg-slate-300 text-slate-700 flex items-center justify-center text-[11px] font-bold shrink-0 mt-0.5">
-                      {reply.author?.fullName?.charAt(0) || "?"}
-                    </div>
-                  )}
-                  <div className="min-w-0 flex-1">
-                    {renderCommentBubble(reply, { isReply: true })}
-                    {renderCommentActions(reply, commentId)}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </>
+      <div
+        key={key}
+        className={`relative before:absolute before:rounded-bl-2xl before:border-b-2 before:border-l-2 before:border-slate-300/70 ${
+          isLast
+            ? ""
+            : "after:absolute after:top-5 after:bottom-[-0.625rem] after:border-l-2 after:border-slate-300/70"
+        } ${branchOffsetClass} ${branchRiseClass} ${className}`}
+      >
+        {children}
+      </div>
     );
   };
 
+  const renderReplies = (comment, depth = 0) => {
+    const commentId = getCommentId(comment);
+    const replies = repliesByComment[commentId] || [];
+    const repliesCount = comment.repliesCount || 0;
+    const isReplyingHere = replyingTo?.commentId === commentId;
+    const isExpanded = !!expandedReplies[commentId];
+    const isLoadingReplies = !!loadingReplies[commentId];
+    const hasThreadContent =
+      repliesCount > 0 ||
+      isReplyingHere ||
+      (isExpanded && replies.length > 0);
+
+    if (!hasThreadContent) return null;
+
+    const threadRows = [];
+
+    if (repliesCount > 0 && !isExpanded) {
+      threadRows.push({
+        key: `${commentId}-view-replies`,
+        node: (
+          <button
+            type="button"
+            onClick={() => handleToggleReplies(commentId)}
+            className="inline-flex min-h-5 items-center gap-1 rounded-full pr-2 text-xs font-bold text-slate-500 transition-colors hover:text-blue-600"
+          >
+            {isLoadingReplies && (
+              <span className="size-3 rounded-full border-2 border-blue-200 border-t-blue-600 animate-spin" />
+            )}
+            {isLoadingReplies
+              ? "Đang tải phản hồi"
+              : repliesCount === 1
+              ? "Xem 1 phản hồi"
+              : `Xem ${repliesCount} phản hồi`}
+          </button>
+        ),
+      });
+    }
+
+    if (isReplyingHere) {
+      threadRows.push({
+        key: `${commentId}-reply-form`,
+        className: "pr-1",
+        node: renderReplyForm(commentId),
+      });
+    }
+
+    if (isExpanded) {
+      replies.forEach((reply) => {
+        const replyId = getCommentId(reply);
+        threadRows.push({
+          key: replyId,
+          className: "pr-1",
+          node: renderCommentNode(reply, {
+            parentId: commentId,
+            depth: depth + 1,
+            replyTargetName: comment.author?.fullName || "",
+          }),
+        });
+      });
+    }
+
+    if (threadRows.length === 0) return null;
+
+    return (
+      <div className="relative ml-3 mt-2 flex flex-col gap-2">
+        {threadRows.map((row, index) =>
+          renderThreadConnectorRow(row.node, {
+            key: row.key,
+            className: row.className,
+            depth,
+            isFirst: index === 0,
+            isLast: index === threadRows.length - 1,
+          })
+        )}
+      </div>
+    );
+  };
+
+  const renderCommentNode = (
+    comment,
+    { parentId = null, depth = 0, replyTargetName = "" } = {}
+  ) => {
+    const commentAvatar = getAvatarUrl(comment.author?.avatar);
+    const avatarColumnClassName =
+      depth > 0
+        ? "relative z-10 flex w-7 shrink-0 justify-center"
+        : "relative z-10 flex w-8 shrink-0 justify-center";
+    const avatarClassName =
+      depth > 0
+        ? "size-7 rounded-full object-cover shrink-0 mt-0.5"
+        : "size-8 rounded-full object-cover shrink-0 mt-0.5";
+    const fallbackClassName =
+      depth > 0
+        ? "size-7 rounded-full bg-slate-300 text-slate-700 flex items-center justify-center text-[11px] font-bold shrink-0 mt-0.5"
+        : "size-8 rounded-full bg-slate-300 text-slate-700 flex items-center justify-center text-xs font-bold shrink-0 mt-0.5";
+
+    return (
+      <div className={`flex ${depth > 0 ? "gap-2" : "gap-3"} group`}>
+        <div className={avatarColumnClassName}>
+          {commentAvatar ? (
+            <img
+              src={commentAvatar}
+              alt={comment.author?.fullName}
+              referrerPolicy={getAvatarReferrerPolicy(commentAvatar)}
+              className={avatarClassName}
+            />
+          ) : (
+            <div className={fallbackClassName}>
+              {comment.author?.fullName?.charAt(0) || "?"}
+            </div>
+          )}
+        </div>
+        <div className="flex-1 min-w-0">
+          {renderCommentBubble(comment, {
+            isReply: depth > 0,
+            replyTargetName,
+          })}
+          {renderCommentActions(comment, parentId)}
+          {renderReplies(comment, depth)}
+        </div>
+      </div>
+    );
+  };
+
+  const findCommentById = (commentId) => {
+    const rootComment = comments.find(
+      (comment) => getCommentId(comment) === commentId
+    );
+    if (rootComment) return rootComment;
+
+    for (const replies of Object.values(repliesByComment)) {
+      const reply = replies.find((item) => getCommentId(item) === commentId);
+      if (reply) return reply;
+    }
+
+    return null;
+  };
+
+  const activeReactionComment = reactionDetailsCommentId
+    ? findCommentById(reactionDetailsCommentId)
+    : null;
+
   return (
+    <>
     <div className="border-t border-slate-100 bg-slate-50/40">
       {/* Add comment form */}
       <form onSubmit={handleSubmit} className="flex gap-3 px-5 py-4">
@@ -638,32 +1198,11 @@ const CommentSection = ({ postId, onCommentCountChange }) => {
           </p>
         ) : (
           <div className="flex flex-col gap-3">
-            {comments.map((comment) => {
-              const cAvatar = getAvatarUrl(comment.author?.avatar);
-              const cId = getCommentId(comment);
-
-              return (
-                <div key={cId} className="flex gap-3 group">
-                  {cAvatar ? (
-                    <img
-                      src={cAvatar}
-                      alt={comment.author?.fullName}
-                      referrerPolicy={getAvatarReferrerPolicy(cAvatar)}
-                      className="size-8 rounded-full object-cover shrink-0 mt-0.5"
-                    />
-                  ) : (
-                    <div className="size-8 rounded-full bg-slate-300 text-slate-700 flex items-center justify-center text-xs font-bold shrink-0 mt-0.5">
-                      {comment.author?.fullName?.charAt(0) || "?"}
-                    </div>
-                  )}
-                  <div className="flex-1 min-w-0">
-                    {renderCommentBubble(comment)}
-                    {renderCommentActions(comment)}
-                    {renderReplies(comment)}
-                  </div>
-                </div>
-              );
-            })}
+            {comments.map((comment) => (
+              <div key={getCommentId(comment)}>
+                {renderCommentNode(comment)}
+              </div>
+            ))}
 
             {/* Load more */}
             {hasMore && (
@@ -687,6 +1226,13 @@ const CommentSection = ({ postId, onCommentCountChange }) => {
         )}
       </div>
     </div>
+    {activeReactionComment && (
+      <CommentReactionDetailsModal
+        comment={activeReactionComment}
+        onClose={() => setReactionDetailsCommentId(null)}
+      />
+    )}
+    </>
   );
 };
 

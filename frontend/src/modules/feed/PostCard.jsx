@@ -1,7 +1,13 @@
-import { useState } from "react";
+import { useCallback, useState } from "react";
 import { useAuth } from "../../context/AuthContext";
 import { likePost, deletePost } from "../../api/postApi";
 import CommentSection from "./CommentSection";
+import ReactionPicker from "./ReactionPicker";
+import {
+  buildReactionStateFromPost,
+  buildOptimisticReactionState,
+  mergeReactionResponse,
+} from "./reactionState";
 import {
   formatFileSize,
   getAttachmentDownloadUrl,
@@ -19,18 +25,18 @@ const API_URL = import.meta.env.VITE_NODE_API_URL || "http://localhost:5000";
 
 const PostCard = ({ post, onPostDeleted, onPostUpdated }) => {
   const { user } = useAuth();
-  const [liked, setLiked] = useState(post.isLiked || false);
-  const [likesCount, setLikesCount] = useState(post.likesCount || 0);
+  const [timeReference] = useState(() => Date.now());
   const [showComments, setShowComments] = useState(false);
   const [commentsCount, setCommentsCount] = useState(post.commentsCount || 0);
   const [showMenu, setShowMenu] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
 
   const isAuthor = user?._id === post.author?._id;
+  const reactionState = buildReactionStateFromPost(post);
 
   const formatTime = (dateStr) => {
     if (!dateStr) return "";
-    const diff = Date.now() - new Date(dateStr).getTime();
+    const diff = timeReference - new Date(dateStr).getTime();
     const mins = Math.floor(diff / 60000);
     if (mins < 1) return "Vừa xong";
     if (mins < 60) return `${mins} phút trước`;
@@ -47,19 +53,43 @@ const PostCard = ({ post, onPostDeleted, onPostUpdated }) => {
   const getPostAttachmentDownloadUrl = (attachment) =>
     getAttachmentDownloadUrl(attachment, API_URL);
 
-  const handleLike = async () => {
-    try {
-      const prevLiked = liked;
-      const prevCount = likesCount;
-      setLiked(!liked);
-      setLikesCount(liked ? likesCount - 1 : likesCount + 1);
+  const handleReactionSelect = async (nextReactionType) => {
+    const previousState = buildReactionStateFromPost(post);
+    const optimisticState = buildOptimisticReactionState({
+      isLiked: previousState.isLiked,
+      reactionType: previousState.reactionType,
+      likesCount: previousState.likesCount,
+      nextReactionType,
+    });
 
-      const res = await likePost(post.id);
-      setLiked(res.liked);
-      setLikesCount(res.likesCount);
+    onPostUpdated?.({
+      ...post,
+      isLiked: optimisticState.isLiked,
+      reactionType: optimisticState.reactionType,
+      likesCount: optimisticState.likesCount,
+    });
+
+    try {
+      const res = await likePost(post.id, nextReactionType);
+      const nextState = mergeReactionResponse({
+        response: res,
+        requestedReactionType: nextReactionType,
+        optimisticState,
+      });
+
+      onPostUpdated?.({
+        ...post,
+        isLiked: nextState.isLiked,
+        reactionType: nextState.reactionType,
+        likesCount: nextState.likesCount,
+      });
     } catch {
-      setLiked(!liked);
-      setLikesCount(likesCount);
+      onPostUpdated?.({
+        ...post,
+        isLiked: previousState.isLiked,
+        reactionType: previousState.reactionType,
+        likesCount: previousState.likesCount,
+      });
     }
   };
 
@@ -74,6 +104,10 @@ const PostCard = ({ post, onPostDeleted, onPostUpdated }) => {
       setIsDeleting(false);
     }
   };
+
+  const handleCommentCountChange = useCallback((count) => {
+    setCommentsCount(count);
+  }, []);
 
   const authorAvatar = getAvatarUrl(post.author?.avatar);
   const authorPosition = post.author?.position || "";
@@ -288,31 +322,12 @@ const PostCard = ({ post, onPostDeleted, onPostUpdated }) => {
 
       {/* Action bar */}
       <div className="px-5 py-3 border-t border-slate-100 flex items-center gap-6 bg-slate-50/50 rounded-b-2xl">
-        <button
-          onClick={handleLike}
-          className={`group flex items-center gap-1.5 transition-colors text-sm font-bold ${
-            liked
-              ? "text-blue-600"
-              : "text-slate-500 hover:text-blue-600"
-          }`}
-        >
-          <span
-            className={`inline-flex size-8 items-center justify-center rounded-full transition-colors ${
-              liked
-                ? "bg-blue-50 text-blue-500"
-                : "text-slate-500 group-hover:bg-blue-50 group-hover:text-blue-600"
-            }`}
-          >
-            <span
-              className={`material-symbols-outlined text-[20px] leading-none ${
-                liked ? "icon-fill" : ""
-              }`}
-            >
-              thumb_up
-            </span>
-          </span>
-          <span>{likesCount}</span>
-        </button>
+        <ReactionPicker
+          isActive={reactionState.isLiked}
+          reactionType={reactionState.reactionType}
+          count={reactionState.likesCount}
+          onSelect={handleReactionSelect}
+        />
 
         <button
           onClick={() => setShowComments(!showComments)}
@@ -340,7 +355,7 @@ const PostCard = ({ post, onPostDeleted, onPostUpdated }) => {
       {showComments && (
         <CommentSection
           postId={post.id}
-          onCommentCountChange={(count) => setCommentsCount(count)}
+          onCommentCountChange={handleCommentCountChange}
         />
       )}
     </article>

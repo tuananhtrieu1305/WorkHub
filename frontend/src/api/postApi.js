@@ -25,8 +25,9 @@ export const deletePost = async (postId) => {
   return data;
 };
 
-export const likePost = async (postId) => {
-  const { data } = await axiosClient.post(`/posts/${postId}/likes`);
+export const likePost = async (postId, reactionType) => {
+  const payload = reactionType ? { reactionType } : undefined;
+  const { data } = await axiosClient.post(`/posts/${postId}/likes`, payload);
   return data;
 };
 
@@ -40,8 +41,31 @@ export const getComments = async (postId, params = {}) => {
   return data;
 };
 
+export const getCommentById = async (commentId) => {
+  const { data } = await axiosClient.get(`/comments/${commentId}`);
+  return data;
+};
+
+const normalizeCommentPayload = (payload) => {
+  if (typeof FormData === "undefined" || !(payload instanceof FormData)) {
+    return payload;
+  }
+
+  const attachments = payload.getAll("attachments").filter(Boolean);
+  if (attachments.length > 0) {
+    return payload;
+  }
+
+  return {
+    content: payload.get("content") || "",
+  };
+};
+
 export const createComment = async (postId, payload) => {
-  const { data } = await axiosClient.post(`/posts/${postId}/comments`, payload);
+  const { data } = await axiosClient.post(
+    `/posts/${postId}/comments`,
+    normalizeCommentPayload(payload)
+  );
   return data;
 };
 
@@ -51,12 +75,16 @@ export const getCommentReplies = async (commentId, params = {}) => {
 };
 
 export const createCommentReply = async (commentId, payload) => {
-  const { data } = await axiosClient.post(`/comments/${commentId}/replies`, payload);
+  const { data } = await axiosClient.post(
+    `/comments/${commentId}/replies`,
+    normalizeCommentPayload(payload)
+  );
   return data;
 };
 
-export const likeComment = async (commentId) => {
-  const { data } = await axiosClient.post(`/comments/${commentId}/likes`);
+export const likeComment = async (commentId, reactionType) => {
+  const payload = reactionType ? { reactionType } : undefined;
+  const { data } = await axiosClient.post(`/comments/${commentId}/likes`, payload);
   return data;
 };
 

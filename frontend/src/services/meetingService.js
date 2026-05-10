@@ -24,7 +24,22 @@ export const joinMeeting = async (meetingId) => {
   return data;
 };
 
+export const markMeetingJoined = async (meetingId) => {
+  const { data } = await api.post(`/meetings/${meetingId}/joined`);
+  return data;
+};
+
 export const endMeeting = async (meetingId) => {
   const { data } = await api.patch(`/meetings/${meetingId}/end`);
+  return data;
+};
+
+export const heartbeatMeeting = async (meetingId) => {
+  const { data } = await api.post(`/meetings/${meetingId}/heartbeat`);
+  return data;
+};
+
+export const leaveMeeting = async (meetingId) => {
+  const { data } = await api.post(`/meetings/${meetingId}/leave`);
   return data;
 };

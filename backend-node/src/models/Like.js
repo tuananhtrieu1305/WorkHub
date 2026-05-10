@@ -1,4 +1,8 @@
 import mongoose from "mongoose";
+import {
+  DEFAULT_REACTION_TYPE,
+  REACTION_TYPES,
+} from "../services/reactionService.js";
 
 const likeSchema = new mongoose.Schema(
   {
@@ -14,6 +18,12 @@ const likeSchema = new mongoose.Schema(
     userId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
+      required: true,
+    },
+    reactionType: {
+      type: String,
+      enum: REACTION_TYPES,
+      default: DEFAULT_REACTION_TYPE,
       required: true,
     },
   },

@@ -8,6 +8,12 @@ import {
   attachmentUploadsDir,
   legacyAttachmentUploadsDir,
 } from "../config/uploadPaths.js";
+import {
+  getLikeReactionType,
+  getReactionTogglePlan,
+  isReactionTypeError,
+} from "../services/reactionService.js";
+import { getReactionDetailsForTarget } from "../services/reactionDetailsService.js";
 
 const getAttachmentType = (mimeType = "") => {
   if (mimeType.startsWith("image/")) return "image";
@@ -54,6 +60,8 @@ export const serializePostAttachments = (attachments = []) =>
         buildAttachmentDownloadUrl(storedFileName, plain.fileName || storedFileName),
     };
   });
+
+const getUserReactionType = (like) => (like ? getLikeReactionType(like) : null);
 
 const findPostAttachmentPath = (storedFileName) => {
   const candidates = [
@@ -114,6 +122,7 @@ export const getPosts = async (req, res) => {
           likesCount: post.likesCount,
           commentsCount: post.commentsCount,
           isLiked: !!existingLike,
+          reactionType: getUserReactionType(existingLike),
           createdAt: post.createdAt,
           updatedAt: post.updatedAt,
         };
@@ -219,6 +228,7 @@ export const getPostById = async (req, res) => {
       likesCount: post.likesCount,
       commentsCount: post.commentsCount,
       isLiked: !!existingLike,
+      reactionType: getUserReactionType(existingLike),
       createdAt: post.createdAt,
       updatedAt: post.updatedAt,
     });
@@ -372,7 +382,7 @@ export const getPostComments = async (req, res) => {
 
     const content = await Promise.all(
       comments.map(async (comment) => {
-        const [author, repliesCount, existingLike] = await Promise.all([
+        const [author, repliesCount, existingLike, reactionDetails] = await Promise.all([
           User.findById(comment.authorId).select("_id fullName email avatar"),
           Comment.countDocuments({ parentId: comment._id }),
           Like.findOne({
@@ -380,6 +390,7 @@ export const getPostComments = async (req, res) => {
             targetId: comment._id,
             userId: req.user._id,
           }),
+          getReactionDetailsForTarget("comment", comment._id),
         ]);
         return {
           id: comment._id,
@@ -390,6 +401,9 @@ export const getPostComments = async (req, res) => {
           attachments: serializePostAttachments(comment.attachments),
           likesCount: comment.likesCount,
           isLiked: !!existingLike,
+          reactionType: getUserReactionType(existingLike),
+          reactionSummary: reactionDetails.reactionSummary,
+          reactions: reactionDetails.reactions,
           repliesCount,
           createdAt: comment.createdAt,
           updatedAt: comment.updatedAt,
@@ -457,6 +471,9 @@ export const addPostComment = async (req, res) => {
       attachments: serializePostAttachments(comment.attachments),
       likesCount: comment.likesCount,
       isLiked: false,
+      reactionType: null,
+      reactionSummary: [],
+      reactions: [],
       repliesCount: 0,
       createdAt: comment.createdAt,
       updatedAt: comment.updatedAt,
@@ -498,7 +515,12 @@ export const getPostLikes = async (req, res) => {
         const user = await User.findById(like.userId).select(
           "_id fullName email avatar"
         );
-        return user;
+        return user
+          ? {
+              ...user.toObject(),
+              reactionType: getLikeReactionType(like),
+            }
+          : null;
       })
     );
 
@@ -526,32 +548,43 @@ export const togglePostLike = async (req, res) => {
       userId: req.user._id,
     });
 
-    let liked;
+    const plan = getReactionTogglePlan({
+      existingReactionType: existingLike ? getLikeReactionType(existingLike) : null,
+      requestedReactionType: req.body?.reactionType,
+    });
 
-    if (existingLike) {
-      // Unlike
+    if (plan.action === "delete") {
       await Like.findByIdAndDelete(existingLike._id);
-      await Post.findByIdAndUpdate(post._id, { $inc: { likesCount: -1 } });
-      liked = false;
+    } else if (plan.action === "update") {
+      existingLike.reactionType = plan.reactionType;
+      await existingLike.save();
     } else {
-      // Like
       await Like.create({
         targetType: "post",
         targetId: post._id,
         userId: req.user._id,
+        reactionType: plan.reactionType,
       });
-      await Post.findByIdAndUpdate(post._id, { $inc: { likesCount: 1 } });
-      liked = true;
+    }
+
+    if (plan.countDelta !== 0) {
+      await Post.findByIdAndUpdate(post._id, {
+        $inc: { likesCount: plan.countDelta },
+      });
     }
 
     const updatedPost = await Post.findById(post._id);
 
     res.status(200).json({
-      liked,
+      liked: plan.liked,
       likesCount: updatedPost.likesCount,
+      reactionType: plan.reactionType,
     });
   } catch (error) {
     console.error("TogglePostLike error:", error.message);
+    if (isReactionTypeError(error)) {
+      return res.status(400).json({ message: error.message });
+    }
     if (error.kind === "ObjectId") {
       return res.status(400).json({ message: "Invalid post ID" });
     }

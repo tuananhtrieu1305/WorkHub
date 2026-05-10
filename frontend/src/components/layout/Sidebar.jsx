@@ -5,8 +5,10 @@ const navItems = [
     label: "Bảng tin",
     path: "/",
     icon: "home",
-    activeClass: "bg-blue-600 text-white shadow-lg shadow-blue-500/30",
-    textClass: "text-blue-600",
+    color: "#1d4ed8",
+    activeBg: "#dbeafe",
+    activeBorder: "#93c5fd",
+    activeShadow: "rgba(37, 99, 235, 0.24)",
     hoverBg: "#eff6ff",
     iconFill: true,
   },
@@ -14,8 +16,10 @@ const navItems = [
     label: "Tin nhắn",
     path: "/messages",
     icon: "chat",
-    activeClass: "bg-emerald-600 text-white shadow-lg shadow-emerald-500/30",
-    textClass: "text-emerald-600",
+    color: "#047857",
+    activeBg: "#d1fae5",
+    activeBorder: "#34d399",
+    activeShadow: "rgba(4, 120, 87, 0.24)",
     hoverBg: "#ecfdf5",
     iconFill: false,
   },
@@ -23,8 +27,10 @@ const navItems = [
     label: "Cuộc gọi",
     path: "/meetings",
     icon: "call",
-    activeClass: "bg-amber-500 text-white shadow-lg shadow-amber-500/30",
-    textClass: "text-amber-500",
+    color: "#ea580c",
+    activeBg: "#ffedd5",
+    activeBorder: "#fb923c",
+    activeShadow: "rgba(234, 88, 12, 0.24)",
     hoverBg: "#fffbeb",
     iconFill: false,
   },
@@ -32,8 +38,10 @@ const navItems = [
     label: "Công việc",
     path: "/tasks",
     icon: "task_alt",
-    activeClass: "bg-purple-600 text-white shadow-lg shadow-purple-500/30",
-    textClass: "text-purple-600",
+    color: "#7e22ce",
+    activeBg: "#f3e8ff",
+    activeBorder: "#c084fc",
+    activeShadow: "rgba(126, 34, 206, 0.24)",
     hoverBg: "#faf5ff",
     iconFill: false,
   },
@@ -41,8 +49,10 @@ const navItems = [
     label: "Lịch",
     path: "/calendar",
     icon: "calendar_today",
-    activeClass: "bg-pink-500 text-white shadow-lg shadow-pink-500/30",
-    textClass: "text-pink-500",
+    color: "#db2777",
+    activeBg: "#fce7f3",
+    activeBorder: "#f9a8d4",
+    activeShadow: "rgba(219, 39, 119, 0.24)",
     hoverBg: "#fdf2f8",
     iconFill: false,
   },
@@ -50,8 +60,10 @@ const navItems = [
     label: "Tài liệu",
     path: "/docs",
     icon: "description",
-    activeClass: "bg-cyan-600 text-white shadow-lg shadow-cyan-500/30",
-    textClass: "text-cyan-600",
+    color: "#0e7490",
+    activeBg: "#cffafe",
+    activeBorder: "#67e8f9",
+    activeShadow: "rgba(14, 116, 144, 0.24)",
     hoverBg: "#ecfeff",
     iconFill: false,
   },
@@ -59,8 +71,10 @@ const navItems = [
     label: "Nhóm",
     path: "/departments",
     icon: "groups",
-    activeClass: "bg-indigo-500 text-white shadow-lg shadow-indigo-500/30",
-    textClass: "text-indigo-500",
+    color: "#4f46e5",
+    activeBg: "#e0e7ff",
+    activeBorder: "#a5b4fc",
+    activeShadow: "rgba(79, 70, 229, 0.24)",
     hoverBg: "#eef2ff",
     iconFill: false,
   },
@@ -99,12 +113,18 @@ const Sidebar = () => {
                 key={item.path}
                 to={item.path}
                 end={item.path === "/"}
-                className={`sidebar-nav-link group flex w-14 min-h-[3.75rem] flex-col items-center justify-center gap-1 rounded-2xl px-1 py-2 text-center transition-[background-color,box-shadow,color] duration-300 ${
+                className={`sidebar-nav-link group flex w-14 min-h-[3.75rem] flex-col items-center justify-center gap-1 rounded-2xl px-1 py-2 text-center transition-all duration-300 hover:scale-105 ${
                   active
-                    ? item.activeClass
-                    : `glass-panel shadow-sm hover:shadow-md ${item.textClass}`
+                    ? "sidebar-nav-link--active"
+                    : "glass-panel shadow-sm hover:shadow-md"
                 }`}
-                style={active ? undefined : { "--sidebar-hover-bg": item.hoverBg }}
+                style={{
+                  "--sidebar-color": item.color,
+                  "--sidebar-hover-bg": item.hoverBg,
+                  "--sidebar-active-bg": item.activeBg,
+                  "--sidebar-active-border": item.activeBorder,
+                  "--sidebar-active-shadow": item.activeShadow,
+                }}
                 title={item.label}
               >
                 <span

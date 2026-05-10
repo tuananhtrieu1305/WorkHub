@@ -7,8 +7,11 @@ import { getRealtimeMeetingService } from "../services/realtimeMeetingService.js
 const DEFAULT_PAGE = 1;
 const DEFAULT_LIMIT = 20;
 const MAX_LIMIT = 100;
+const MEETING_HEARTBEAT_STALE_MS = 30000;
+const MEETING_RECONCILE_INTERVAL_MS = 10000;
 
 let meetingIo = null;
+let meetingReconcileInterval = null;
 
 export const setMeetingIo = (io) => {
   meetingIo = io;
@@ -125,7 +128,9 @@ const buildStoredParticipant = ({ user, participant, role }) => ({
   cloudflareParticipantId: getProviderParticipantId(participant),
   role,
   tokenIssuedAt: new Date(),
-  joinedAt: new Date(),
+  joinedAt: null,
+  leftAt: null,
+  lastHeartbeatAt: null,
 });
 
 const findStoredParticipant = (meeting, user) => {
@@ -156,10 +161,43 @@ const touchExistingParticipantTokenIssue = async ({ meeting, user, role }) => {
       $set: {
         "participants.$.role": role,
         "participants.$.tokenIssuedAt": new Date(),
-        "participants.$.joinedAt": new Date(),
+        "participants.$.joinedAt": null,
+        "participants.$.leftAt": null,
+        "participants.$.lastHeartbeatAt": null,
       },
     },
   );
+};
+
+const getLiveMeetingParticipants = (meeting, now = new Date()) =>
+  (meeting.participants || []).filter((participant) => {
+    if (!participant.joinedAt || participant.leftAt) return false;
+    if (!participant.lastHeartbeatAt) return false;
+    return (
+      now.getTime() - new Date(participant.lastHeartbeatAt).getTime() <=
+      MEETING_HEARTBEAT_STALE_MS
+    );
+  });
+
+const hasJoinedMeetingParticipant = (meeting) =>
+  (meeting.participants || []).some((participant) => participant.joinedAt);
+
+const endMeetingDocument = async (meeting) => {
+  if (!isActiveMeeting(meeting)) return meeting;
+
+  const updated = await Meeting.findByIdAndUpdate(
+    meeting._id,
+    {
+      $set: {
+        status: "ended",
+        endedAt: new Date(),
+      },
+    },
+    { new: true },
+  );
+
+  emitMeetingEvent("meeting_ended", updated || meeting);
+  return updated || meeting;
 };
 
 const removeStaleActivePeer = async ({ realtimeService, meeting, user }) => {
@@ -355,6 +393,38 @@ export const joinMeeting = async (req, res) => {
   });
 };
 
+export const markMeetingJoined = async (req, res) => {
+  const meeting = await loadMeetingForUser(req.params.id, req.user);
+  if (!isActiveMeeting(meeting)) {
+    throw new ApiError(409, "Meeting is not active");
+  }
+
+  const now = new Date();
+  const updated = await Meeting.findOneAndUpdate(
+    { _id: meeting._id, "participants.userId": req.user._id },
+    {
+      $set: {
+        "participants.$.joinedAt": now,
+        "participants.$.lastHeartbeatAt": now,
+        "participants.$.leftAt": null,
+      },
+    },
+    { new: true },
+  );
+
+  if (!updated) {
+    throw new ApiError(409, "Meeting participant has not been issued a token");
+  }
+
+  await logMeetingActivity({
+    req,
+    action: "meeting.joined",
+    meeting: updated,
+  });
+
+  return res.status(200).json({ meeting: serializeMeeting(updated) });
+};
+
 export const getMeeting = async (req, res) => {
   const meeting = await loadMeetingForUser(req.params.id, req.user);
   return res.status(200).json({ meeting: serializeMeeting(meeting) });
@@ -387,23 +457,101 @@ export const endMeeting = async (req, res) => {
     throw new ApiError(403, "You do not have permission to end this meeting");
   }
 
-  const updated = await Meeting.findByIdAndUpdate(
-    meeting._id,
-    {
-      $set: {
-        status: "ended",
-        endedAt: new Date(),
-      },
-    },
-    { new: true },
-  );
+  const updated = await endMeetingDocument(meeting);
 
   await logMeetingActivity({
     req,
     action: "meeting.ended",
     meeting: updated || meeting,
   });
-  emitMeetingEvent("meeting_ended", updated || meeting);
 
   return res.status(200).json({ meeting: serializeMeeting(updated || meeting) });
+};
+
+export const heartbeatMeeting = async (req, res) => {
+  const meeting = await loadMeetingForUser(req.params.id, req.user);
+  if (!isActiveMeeting(meeting)) {
+    return res.status(200).json({ meeting: serializeMeeting(meeting) });
+  }
+
+  const now = new Date();
+  const updated = await Meeting.findOneAndUpdate(
+    { _id: meeting._id, "participants.userId": req.user._id },
+    {
+      $set: {
+        "participants.$.lastHeartbeatAt": now,
+        "participants.$.leftAt": null,
+      },
+    },
+    { new: true },
+  );
+
+  return res.status(200).json({ meeting: serializeMeeting(updated || meeting) });
+};
+
+export const leaveMeeting = async (req, res) => {
+  const meeting = await loadMeetingForUser(req.params.id, req.user);
+  if (!isActiveMeeting(meeting)) {
+    return res.status(200).json({ meeting: serializeMeeting(meeting) });
+  }
+
+  const storedParticipant = findStoredParticipant(meeting, req.user);
+  if (!storedParticipant?.joinedAt) {
+    return res.status(200).json({ meeting: serializeMeeting(meeting) });
+  }
+
+  const now = new Date();
+  const updated = await Meeting.findOneAndUpdate(
+    { _id: meeting._id, "participants.userId": req.user._id },
+    {
+      $set: {
+        "participants.$.leftAt": now,
+        "participants.$.lastHeartbeatAt": now,
+      },
+    },
+    { new: true },
+  );
+
+  const meetingAfterLeave = updated || meeting;
+  const liveParticipants = getLiveMeetingParticipants(meetingAfterLeave, now);
+  if (liveParticipants.length === 0) {
+    const ended = await endMeetingDocument(meetingAfterLeave);
+    return res.status(200).json({ meeting: serializeMeeting(ended) });
+  }
+
+  return res.status(200).json({ meeting: serializeMeeting(meetingAfterLeave) });
+};
+
+export const reconcileStaleMeetings = async () => {
+  const now = new Date();
+  const meetings = await Meeting.find({
+    $or: buildActiveMeetingConditions(),
+  })
+    .sort({ updatedAt: 1 })
+    .limit(100);
+
+  for (const meeting of meetings) {
+    const participants = meeting.participants || [];
+    if (!participants.length) {
+      await endMeetingDocument(meeting);
+      continue;
+    }
+
+    if (
+      hasJoinedMeetingParticipant(meeting) &&
+      getLiveMeetingParticipants(meeting, now).length === 0
+    ) {
+      await endMeetingDocument(meeting);
+    }
+  }
+};
+
+export const startMeetingReconciler = () => {
+  if (meetingReconcileInterval) return;
+  meetingReconcileInterval = setInterval(() => {
+    reconcileStaleMeetings().catch((error) => {
+      console.error("Meeting reconciler error:", error.message);
+    });
+  }, MEETING_RECONCILE_INTERVAL_MS);
+  meetingReconcileInterval.unref?.();
 };

@@ -46,15 +46,13 @@ const commentSchema = new mongoose.Schema(
   }
 );
 
-commentSchema.pre("validate", function validateCommentBody(next) {
+commentSchema.pre("validate", function validateCommentBody() {
   const hasContent = typeof this.content === "string" && this.content.trim().length > 0;
   const hasAttachments = Array.isArray(this.attachments) && this.attachments.length > 0;
 
   if (!hasContent && !hasAttachments) {
     this.invalidate("content", "Comment content or attachment is required");
   }
-
-  next();
 });
 
 commentSchema.index({ postId: 1, createdAt: -1 });

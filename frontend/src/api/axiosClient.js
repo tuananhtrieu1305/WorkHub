@@ -53,7 +53,15 @@ export const clearTokens = () => {
 axiosClient.interceptors.request.use(
   (config) => {
     if (typeof FormData !== "undefined" && config.data instanceof FormData) {
-      config.headers?.setContentType?.(undefined);
+      if (typeof config.headers?.setContentType === "function") {
+        config.headers.setContentType(undefined);
+      } else if (typeof config.headers?.delete === "function") {
+        config.headers.delete("Content-Type");
+        config.headers.delete("content-type");
+      } else if (config.headers) {
+        delete config.headers["Content-Type"];
+        delete config.headers["content-type"];
+      }
     }
 
     const token = accessToken || localStorage.getItem("workhub_token");

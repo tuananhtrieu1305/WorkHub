@@ -21,6 +21,10 @@ const messageSchema = new mongoose.Schema(
       type: String,
       default: "",
     },
+    metadata: {
+      type: mongoose.Schema.Types.Mixed,
+      default: {},
+    },
     attachments: [
       {
         fileName: String,
