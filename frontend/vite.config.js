@@ -8,6 +8,7 @@ export default defineConfig({
   envDir: "..",
   server: {
     host: true, // <--- DÒNG QUAN TRỌNG NHẤT: Cho phép truy cập từ bên ngoài
+    allowedHosts: ["workhubb.site"],
     port: 5173, // Đảm bảo chạy đúng port này
     watch: {
       usePolling: true, // Bắt buộc khi chạy trên máy ảo/Docker để hot-reload hoạt động
