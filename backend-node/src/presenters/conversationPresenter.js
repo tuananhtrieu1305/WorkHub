@@ -10,6 +10,11 @@ import {
   getUniqueParticipantIds,
   hasMinimumGroupParticipantCount,
 } from "../utils/conversationRules.js";
+import {
+  buildR2AttachmentKey,
+  buildR2PublicUrl,
+  getR2StorageService,
+} from "../services/r2StorageService.js";
 
 // Helper: get io instance
 let ioInstance = null;
@@ -20,7 +25,7 @@ export const setIo = (io) => {
 // Helper: check if user is participant
 const isParticipant = (conversation, userId) => {
   return conversation.participants.some(
-    (p) => p.userId.toString() === userId.toString()
+    (p) => p.userId.toString() === userId.toString(),
   );
 };
 
@@ -60,7 +65,7 @@ const formatReplyMessage = async (replyTo) => {
   if (!replyMessage) return null;
 
   const sender = await User.findById(replyMessage.senderId).select(
-    "_id fullName avatar activityStatus activityStatusExpiresAt"
+    "_id fullName avatar activityStatus activityStatusExpiresAt",
   );
   const deletedBy = replyMessage.deletedBy
     ? await User.findById(replyMessage.deletedBy).select(
@@ -84,7 +89,7 @@ const formatReplyMessage = async (replyTo) => {
 
 const formatMessage = async (message) => {
   const sender = await User.findById(message.senderId).select(
-    "_id fullName avatar activityStatus activityStatusExpiresAt"
+    "_id fullName avatar activityStatus activityStatusExpiresAt",
   );
   const deletedBy = message.deletedBy
     ? await User.findById(message.deletedBy).select(
@@ -178,7 +183,9 @@ const getConversationUnreadState = async (conversation, userId) => {
     return { hasUnread: false, lastMessageId: latestMessageId };
   }
 
-  const lastReadMessageId = toComparableId(currentParticipant.lastReadMessageId);
+  const lastReadMessageId = toComparableId(
+    currentParticipant.lastReadMessageId,
+  );
   if (lastReadMessageId === latestMessageId) {
     return { hasUnread: false, lastMessageId: latestMessageId };
   }
@@ -187,9 +194,8 @@ const getConversationUnreadState = async (conversation, userId) => {
     return { hasUnread: true, lastMessageId: latestMessageId };
   }
 
-  const lastReadMessage = await Message.findById(lastReadMessageId).select(
-    "createdAt",
-  );
+  const lastReadMessage =
+    await Message.findById(lastReadMessageId).select("createdAt");
 
   return {
     hasUnread:
@@ -204,7 +210,10 @@ const markConversationRead = async (conversation, userId, messageId) => {
   const currentParticipant = getCurrentParticipant(conversation, userId);
   if (!currentParticipant) return;
 
-  if (toComparableId(currentParticipant.lastReadMessageId) === toComparableId(messageId)) {
+  if (
+    toComparableId(currentParticipant.lastReadMessageId) ===
+    toComparableId(messageId)
+  ) {
     return;
   }
 
@@ -240,7 +249,15 @@ export const getConversations = async (req, res) => {
       ),
     );
 
-    res.status(200).json({ content, totalElements, totalPages, currentPage: pageNum, pageSize });
+    res
+      .status(200)
+      .json({
+        content,
+        totalElements,
+        totalPages,
+        currentPage: pageNum,
+        pageSize,
+      });
   } catch (error) {
     console.error("GetConversations error:", error.message);
     res.status(500).json({ message: "Server error, please try again" });
@@ -253,10 +270,16 @@ export const createConversation = async (req, res) => {
     const { type, name, participantIds } = req.body;
 
     if (!type || !["private", "group"].includes(type)) {
-      return res.status(400).json({ message: "type must be 'private' or 'group'" });
+      return res
+        .status(400)
+        .json({ message: "type must be 'private' or 'group'" });
     }
 
-    if (!participantIds || !Array.isArray(participantIds) || participantIds.length === 0) {
+    if (
+      !participantIds ||
+      !Array.isArray(participantIds) ||
+      participantIds.length === 0
+    ) {
       return res.status(400).json({ message: "participantIds is required" });
     }
 
@@ -269,7 +292,11 @@ export const createConversation = async (req, res) => {
 
     if (type === "private") {
       if (allParticipantIds.length !== 2) {
-        return res.status(400).json({ message: "Private conversation requires exactly 2 participants" });
+        return res
+          .status(400)
+          .json({
+            message: "Private conversation requires exactly 2 participants",
+          });
       }
 
       // Check for existing private conversation between these two users
@@ -303,7 +330,9 @@ export const createConversation = async (req, res) => {
       "_id fullName email",
     );
     if (users.length !== allParticipantIds.length) {
-      return res.status(400).json({ message: "One or more participant IDs are invalid" });
+      return res
+        .status(400)
+        .json({ message: "One or more participant IDs are invalid" });
     }
     const fallbackGroupName = users
       .map((user) => user.fullName || user.email)
@@ -318,7 +347,8 @@ export const createConversation = async (req, res) => {
 
     const conversation = await Conversation.create({
       type,
-      name: type === "group" ? groupName || fallbackGroupName || "Nhóm mới" : "",
+      name:
+        type === "group" ? groupName || fallbackGroupName || "Nhóm mới" : "",
       participants,
       createdBy: req.user._id,
     });
@@ -347,7 +377,9 @@ export const getConversationById = async (req, res) => {
     }
 
     if (!isParticipant(conversation, req.user._id)) {
-      return res.status(403).json({ message: "You are not a participant of this conversation" });
+      return res
+        .status(403)
+        .json({ message: "You are not a participant of this conversation" });
     }
 
     res.status(200).json(
@@ -375,7 +407,9 @@ export const updateConversation = async (req, res) => {
     }
 
     if (!isParticipant(conversation, req.user._id)) {
-      return res.status(403).json({ message: "You are not a participant of this conversation" });
+      return res
+        .status(403)
+        .json({ message: "You are not a participant of this conversation" });
     }
 
     const { name, avatar } = req.body;
@@ -385,9 +419,11 @@ export const updateConversation = async (req, res) => {
 
     await conversation.save();
 
-    res.status(200).json(
-      await formatConversation(conversation, { currentUserId: req.user._id }),
-    );
+    res
+      .status(200)
+      .json(
+        await formatConversation(conversation, { currentUserId: req.user._id }),
+      );
   } catch (error) {
     console.error("UpdateConversation error:", error.message);
     if (error.kind === "ObjectId") {
@@ -406,7 +442,9 @@ export const deleteConversation = async (req, res) => {
     }
 
     if (!isParticipant(conversation, req.user._id)) {
-      return res.status(403).json({ message: "You are not a participant of this conversation" });
+      return res
+        .status(403)
+        .json({ message: "You are not a participant of this conversation" });
     }
 
     // Delete all messages
@@ -433,11 +471,15 @@ export const addConversationMember = async (req, res) => {
     }
 
     if (conversation.type !== "group") {
-      return res.status(400).json({ message: "Cannot add members to private conversations" });
+      return res
+        .status(400)
+        .json({ message: "Cannot add members to private conversations" });
     }
 
     if (!isParticipant(conversation, req.user._id)) {
-      return res.status(403).json({ message: "You are not a participant of this conversation" });
+      return res
+        .status(403)
+        .json({ message: "You are not a participant of this conversation" });
     }
 
     const { userId } = req.body;
@@ -457,7 +499,9 @@ export const addConversationMember = async (req, res) => {
     conversation.participants.push({ userId, joinedAt: new Date() });
     await conversation.save();
 
-    res.status(200).json({ message: "Member added to conversation successfully" });
+    res
+      .status(200)
+      .json({ message: "Member added to conversation successfully" });
   } catch (error) {
     console.error("AddConversationMember error:", error.message);
     if (error.kind === "ObjectId") {
@@ -476,21 +520,27 @@ export const removeConversationMember = async (req, res) => {
     }
 
     if (conversation.type !== "group") {
-      return res.status(400).json({ message: "Cannot remove members from private conversations" });
+      return res
+        .status(400)
+        .json({ message: "Cannot remove members from private conversations" });
     }
 
     if (!isParticipant(conversation, req.user._id)) {
-      return res.status(403).json({ message: "You are not a participant of this conversation" });
+      return res
+        .status(403)
+        .json({ message: "You are not a participant of this conversation" });
     }
 
     const { userId } = req.params;
 
     const participantIndex = conversation.participants.findIndex(
-      (p) => p.userId.toString() === userId.toString()
+      (p) => p.userId.toString() === userId.toString(),
     );
 
     if (participantIndex === -1) {
-      return res.status(404).json({ message: "User is not a participant of this conversation" });
+      return res
+        .status(404)
+        .json({ message: "User is not a participant of this conversation" });
     }
 
     conversation.participants.splice(participantIndex, 1);
@@ -515,7 +565,9 @@ export const getMessages = async (req, res) => {
     }
 
     if (!isParticipant(conversation, req.user._id)) {
-      return res.status(403).json({ message: "You are not a participant of this conversation" });
+      return res
+        .status(403)
+        .json({ message: "You are not a participant of this conversation" });
     }
 
     const { before, limit = 30 } = req.query;
@@ -558,12 +610,16 @@ export const markConversationAsRead = async (req, res) => {
     }
 
     if (!isParticipant(conversation, req.user._id)) {
-      return res.status(403).json({ message: "You are not a participant of this conversation" });
+      return res
+        .status(403)
+        .json({ message: "You are not a participant of this conversation" });
     }
 
     const latestMessage =
       (conversation.lastMessage?.messageId &&
-        (await Message.findById(conversation.lastMessage.messageId).select("_id"))) ||
+        (await Message.findById(conversation.lastMessage.messageId).select(
+          "_id",
+        ))) ||
       (await Message.findOne({ conversationId: conversation._id })
         .sort({ createdAt: -1 })
         .select("_id"));
@@ -597,16 +653,35 @@ export const uploadConversationAttachment = async (req, res) => {
     }
 
     if (!isParticipant(conversation, req.user._id)) {
-      return res.status(403).json({ message: "You are not a participant of this conversation" });
+      return res
+        .status(403)
+        .json({ message: "You are not a participant of this conversation" });
     }
 
     if (!req.file) {
       return res.status(400).json({ message: "Attachment file is required" });
     }
 
+    // Upload to R2
+    const storage = getR2StorageService();
+    const storageKey = buildR2AttachmentKey(
+      "conversations",
+      req.file.originalname,
+    );
+
+    await storage.putObject({
+      key: storageKey,
+      body: req.file.buffer,
+      contentType: req.file.mimetype,
+      contentLength: req.file.size,
+    });
+
+    // Build R2 URL
+    const r2Url = buildR2PublicUrl(storageKey);
+
     res.status(201).json({
       fileName: req.file.originalname,
-      fileUrl: `/uploads/attachments/${req.file.filename}`,
+      fileUrl: r2Url,
       fileSize: req.file.size,
       mimeType: req.file.mimetype,
     });
@@ -628,18 +703,26 @@ export const sendMessage = async (req, res) => {
     }
 
     if (!isParticipant(conversation, req.user._id)) {
-      return res.status(403).json({ message: "You are not a participant of this conversation" });
+      return res
+        .status(403)
+        .json({ message: "You are not a participant of this conversation" });
     }
 
-    const { type, content, attachments, mentions, replyTo, metadata } = req.body;
+    const { type, content, attachments, mentions, replyTo, metadata } =
+      req.body;
 
     if (!content && (!attachments || attachments.length === 0)) {
-      return res.status(400).json({ message: "Message content or attachments required" });
+      return res
+        .status(400)
+        .json({ message: "Message content or attachments required" });
     }
 
     if (replyTo) {
       const replyMsg = await Message.findById(replyTo);
-      if (!replyMsg || replyMsg.conversationId.toString() !== conversation._id.toString()) {
+      if (
+        !replyMsg ||
+        replyMsg.conversationId.toString() !== conversation._id.toString()
+      ) {
         return res.status(400).json({ message: "Invalid replyTo message" });
       }
     }
@@ -676,7 +759,10 @@ export const sendMessage = async (req, res) => {
       joinParticipantSocketsToConversationRoom(ioInstance, conversation);
       ioInstance
         .to(getConversationRealtimeRoomNames(conversation))
-        .emit("new_message", { ...messageData, conversation: conversationData });
+        .emit("new_message", {
+          ...messageData,
+          conversation: conversationData,
+        });
     }
 
     res.status(201).json(messageData);
@@ -698,16 +784,23 @@ export const updateMessage = async (req, res) => {
     }
 
     if (!isParticipant(conversation, req.user._id)) {
-      return res.status(403).json({ message: "You are not a participant of this conversation" });
+      return res
+        .status(403)
+        .json({ message: "You are not a participant of this conversation" });
     }
 
     const message = await Message.findById(req.params.messageId);
-    if (!message || message.conversationId.toString() !== conversation._id.toString()) {
+    if (
+      !message ||
+      message.conversationId.toString() !== conversation._id.toString()
+    ) {
       return res.status(404).json({ message: "Message not found" });
     }
 
     if (message.senderId.toString() !== req.user._id.toString()) {
-      return res.status(403).json({ message: "Only the sender can edit this message" });
+      return res
+        .status(403)
+        .json({ message: "Only the sender can edit this message" });
     }
 
     if (message.deletedAt) {
@@ -725,7 +818,9 @@ export const updateMessage = async (req, res) => {
     const messageData = await formatMessage(message);
 
     if (ioInstance) {
-      ioInstance.to(`conversation:${conversation._id}`).emit("message_updated", messageData);
+      ioInstance
+        .to(`conversation:${conversation._id}`)
+        .emit("message_updated", messageData);
     }
 
     res.status(200).json(messageData);
@@ -747,16 +842,23 @@ export const deleteMessage = async (req, res) => {
     }
 
     if (!isParticipant(conversation, req.user._id)) {
-      return res.status(403).json({ message: "You are not a participant of this conversation" });
+      return res
+        .status(403)
+        .json({ message: "You are not a participant of this conversation" });
     }
 
     const message = await Message.findById(req.params.messageId);
-    if (!message || message.conversationId.toString() !== conversation._id.toString()) {
+    if (
+      !message ||
+      message.conversationId.toString() !== conversation._id.toString()
+    ) {
       return res.status(404).json({ message: "Message not found" });
     }
 
     if (message.senderId.toString() !== req.user._id.toString()) {
-      return res.status(403).json({ message: "Only the sender can delete this message" });
+      return res
+        .status(403)
+        .json({ message: "Only the sender can delete this message" });
     }
 
     message.deletedAt = message.deletedAt || new Date();
@@ -776,7 +878,9 @@ export const deleteMessage = async (req, res) => {
 
     if (isLastMessage) {
       conversation.lastMessage = {
-        ...(conversation.lastMessage?.toObject?.() || conversation.lastMessage || {}),
+        ...(conversation.lastMessage?.toObject?.() ||
+          conversation.lastMessage ||
+          {}),
         messageId: message._id,
         content: "",
         senderId: message.senderId,
@@ -802,7 +906,9 @@ export const deleteMessage = async (req, res) => {
         });
     }
 
-    res.status(200).json({ message: messageData, conversation: conversationData });
+    res
+      .status(200)
+      .json({ message: messageData, conversation: conversationData });
   } catch (error) {
     console.error("DeleteMessage error:", error.message);
     if (error.kind === "ObjectId") {
@@ -821,11 +927,16 @@ export const addReaction = async (req, res) => {
     }
 
     if (!isParticipant(conversation, req.user._id)) {
-      return res.status(403).json({ message: "You are not a participant of this conversation" });
+      return res
+        .status(403)
+        .json({ message: "You are not a participant of this conversation" });
     }
 
     const message = await Message.findById(req.params.messageId);
-    if (!message || message.conversationId.toString() !== conversation._id.toString()) {
+    if (
+      !message ||
+      message.conversationId.toString() !== conversation._id.toString()
+    ) {
       return res.status(404).json({ message: "Message not found" });
     }
 
@@ -837,11 +948,14 @@ export const addReaction = async (req, res) => {
     // Check if user already has this reaction
     const existingIndex = message.reactions.findIndex(
       (r) =>
-        r.userId.toString() === req.user._id.toString() && r.reaction === reaction
+        r.userId.toString() === req.user._id.toString() &&
+        r.reaction === reaction,
     );
 
     if (existingIndex !== -1) {
-      return res.status(400).json({ message: "You have already reacted with this emoji" });
+      return res
+        .status(400)
+        .json({ message: "You have already reacted with this emoji" });
     }
 
     message.reactions.push({
@@ -879,11 +993,16 @@ export const removeReaction = async (req, res) => {
     }
 
     if (!isParticipant(conversation, req.user._id)) {
-      return res.status(403).json({ message: "You are not a participant of this conversation" });
+      return res
+        .status(403)
+        .json({ message: "You are not a participant of this conversation" });
     }
 
     const message = await Message.findById(req.params.messageId);
-    if (!message || message.conversationId.toString() !== conversation._id.toString()) {
+    if (
+      !message ||
+      message.conversationId.toString() !== conversation._id.toString()
+    ) {
       return res.status(404).json({ message: "Message not found" });
     }
 
@@ -894,7 +1013,8 @@ export const removeReaction = async (req, res) => {
 
     const reactionIndex = message.reactions.findIndex(
       (r) =>
-        r.userId.toString() === req.user._id.toString() && r.reaction === reaction
+        r.userId.toString() === req.user._id.toString() &&
+        r.reaction === reaction,
     );
 
     if (reactionIndex === -1) {
@@ -905,12 +1025,14 @@ export const removeReaction = async (req, res) => {
     await message.save();
 
     if (ioInstance) {
-      ioInstance.to(`conversation:${conversation._id}`).emit("reaction_removed", {
-        messageId: message._id,
-        conversationId: conversation._id,
-        userId: req.user._id,
-        reaction,
-      });
+      ioInstance
+        .to(`conversation:${conversation._id}`)
+        .emit("reaction_removed", {
+          messageId: message._id,
+          conversationId: conversation._id,
+          userId: req.user._id,
+          reaction,
+        });
     }
 
     res.status(204).send();

@@ -4,6 +4,7 @@ import Like from "../models/Like.js";
 import User from "../models/User.js";
 import fs from "fs";
 import path from "path";
+import { pipeline } from "stream/promises";
 import {
   attachmentUploadsDir,
   legacyAttachmentUploadsDir,
@@ -14,6 +15,11 @@ import {
   isReactionTypeError,
 } from "../services/reactionService.js";
 import { getReactionDetailsForTarget } from "../services/reactionDetailsService.js";
+import {
+  buildR2AttachmentKey,
+  buildR2PublicUrl,
+  getR2StorageService,
+} from "../services/r2StorageService.js";
 
 const getAttachmentType = (mimeType = "") => {
   if (mimeType.startsWith("image/")) return "image";
@@ -21,11 +27,47 @@ const getAttachmentType = (mimeType = "") => {
   return "file";
 };
 
-const buildAttachmentDownloadUrl = (storedFileName, fileName = storedFileName) => {
+const buildAttachmentDownloadUrl = (
+  storedFileName,
+  fileName = storedFileName,
+) => {
   if (!storedFileName) return "";
   const encodedStoredName = encodeURIComponent(storedFileName);
   const encodedFileName = encodeURIComponent(fileName || storedFileName);
   return `/api/posts/attachments/${encodedStoredName}/download?name=${encodedFileName}`;
+};
+
+// Upload attachments to R2 and build attachment objects
+export const uploadPostAttachments = async (files = []) => {
+  if (!files || files.length === 0) return [];
+
+  const storage = getR2StorageService();
+  const attachments = [];
+
+  for (const file of files) {
+    const storageKey = buildR2AttachmentKey("posts", file.originalname);
+
+    await storage.putObject({
+      key: storageKey,
+      body: file.buffer,
+      contentType: file.mimetype,
+      contentLength: file.size,
+    });
+
+    const r2Url = buildR2PublicUrl(storageKey);
+
+    attachments.push({
+      fileName: file.originalname,
+      storedFileName: storageKey,
+      fileUrl: r2Url,
+      downloadUrl: buildAttachmentDownloadUrl(storageKey, file.originalname),
+      fileSize: file.size,
+      mimeType: file.mimetype,
+      fileType: getAttachmentType(file.mimetype),
+    });
+  }
+
+  return attachments;
 };
 
 export const buildPostAttachments = (files = []) =>
@@ -47,17 +89,29 @@ export const hasPostBody = (content, attachments = []) => {
 export const serializePostAttachments = (attachments = []) =>
   attachments.map((attachment) => {
     const plain =
-      typeof attachment?.toObject === "function" ? attachment.toObject() : attachment;
+      typeof attachment?.toObject === "function"
+        ? attachment.toObject()
+        : attachment;
     const storedFileName =
       plain.storedFileName || path.basename(plain.fileUrl || "");
+
+    // For R2 URLs, downloadUrl should be the fileUrl itself or a redirect
+    // For local URLs, downloadUrl should be the API download endpoint
+    const isR2Url =
+      plain.fileUrl && plain.fileUrl.includes("r2.cloudflarestorage.com");
+    const downloadUrl = isR2Url
+      ? plain.fileUrl
+      : plain.downloadUrl ||
+        buildAttachmentDownloadUrl(
+          storedFileName,
+          plain.fileName || storedFileName,
+        );
 
     return {
       ...plain,
       storedFileName,
       fileType: plain.fileType || getAttachmentType(plain.mimeType || ""),
-      downloadUrl:
-        plain.downloadUrl ||
-        buildAttachmentDownloadUrl(storedFileName, plain.fileName || storedFileName),
+      downloadUrl,
     };
   });
 
@@ -107,7 +161,9 @@ export const getPosts = async (req, res) => {
     const content = await Promise.all(
       posts.map(async (post) => {
         const [author, existingLike] = await Promise.all([
-          User.findById(post.authorId).select("_id fullName email avatar position"),
+          User.findById(post.authorId).select(
+            "_id fullName email avatar position",
+          ),
           Like.findOne({ targetType: "post", targetId: post._id, userId }),
         ]);
         return {
@@ -126,10 +182,18 @@ export const getPosts = async (req, res) => {
           createdAt: post.createdAt,
           updatedAt: post.updatedAt,
         };
-      })
+      }),
     );
 
-    res.status(200).json({ content, totalElements, totalPages, currentPage: pageNum, pageSize });
+    res
+      .status(200)
+      .json({
+        content,
+        totalElements,
+        totalPages,
+        currentPage: pageNum,
+        pageSize,
+      });
   } catch (error) {
     console.error("GetPosts error:", error.message);
     res.status(500).json({ message: "Server error, please try again" });
@@ -141,13 +205,15 @@ export const createPost = async (req, res) => {
   try {
     const { type, content, mentions, tags, targetAudience } = req.body;
 
-    // Process uploaded attachments
-    const attachments = buildPostAttachments(req.files || []);
+    // Upload attachments to R2
+    const attachments = await uploadPostAttachments(req.files || []);
     const postContent =
       typeof content === "string" && content.trim().length > 0 ? content : "";
 
     if (!hasPostBody(postContent, attachments)) {
-      return res.status(400).json({ message: "Post content or attachment is required" });
+      return res
+        .status(400)
+        .json({ message: "Post content or attachment is required" });
     }
 
     // Parse targetAudience if it's a string (from multipart form)
@@ -163,12 +229,20 @@ export const createPost = async (req, res) => {
     // Parse mentions and tags if they are strings
     let parsedMentions = mentions;
     if (typeof mentions === "string") {
-      try { parsedMentions = JSON.parse(mentions); } catch { parsedMentions = []; }
+      try {
+        parsedMentions = JSON.parse(mentions);
+      } catch {
+        parsedMentions = [];
+      }
     }
 
     let parsedTags = tags;
     if (typeof tags === "string") {
-      try { parsedTags = JSON.parse(tags); } catch { parsedTags = []; }
+      try {
+        parsedTags = JSON.parse(tags);
+      } catch {
+        parsedTags = [];
+      }
     }
 
     const post = await Post.create({
@@ -181,7 +255,9 @@ export const createPost = async (req, res) => {
       attachments,
     });
 
-    const author = await User.findById(req.user._id).select("_id fullName email avatar");
+    const author = await User.findById(req.user._id).select(
+      "_id fullName email avatar",
+    );
 
     res.status(201).json({
       id: post._id,
@@ -213,7 +289,11 @@ export const getPostById = async (req, res) => {
 
     const [author, existingLike] = await Promise.all([
       User.findById(post.authorId).select("_id fullName email avatar position"),
-      Like.findOne({ targetType: "post", targetId: post._id, userId: req.user._id }),
+      Like.findOne({
+        targetType: "post",
+        targetId: post._id,
+        userId: req.user._id,
+      }),
     ]);
 
     res.status(200).json({
@@ -254,7 +334,9 @@ export const updatePost = async (req, res) => {
       post.authorId.toString() !== req.user._id.toString() &&
       req.user.role !== "admin"
     ) {
-      return res.status(403).json({ message: "Not authorized to update this post" });
+      return res
+        .status(403)
+        .json({ message: "Not authorized to update this post" });
     }
 
     const { content, mentions, tags, targetAudience } = req.body;
@@ -266,7 +348,9 @@ export const updatePost = async (req, res) => {
 
     await post.save();
 
-    const author = await User.findById(post.authorId).select("_id fullName email avatar");
+    const author = await User.findById(post.authorId).select(
+      "_id fullName email avatar",
+    );
 
     res.status(200).json({
       id: post._id,
@@ -303,7 +387,9 @@ export const deletePost = async (req, res) => {
       post.authorId.toString() !== req.user._id.toString() &&
       req.user.role !== "admin"
     ) {
-      return res.status(403).json({ message: "Not authorized to delete this post" });
+      return res
+        .status(403)
+        .json({ message: "Not authorized to delete this post" });
     }
 
     // Delete related comments and likes
@@ -332,24 +418,48 @@ export const deletePost = async (req, res) => {
 };
 
 // GET /posts/attachments/:filename/download
-export const downloadPostAttachment = (req, res) => {
+export const downloadPostAttachment = async (req, res) => {
   try {
     const storedFileName = path.basename(req.params.filename || "");
     if (!storedFileName) {
-      return res.status(400).json({ message: "Attachment filename is required" });
+      return res
+        .status(400)
+        .json({ message: "Attachment filename is required" });
     }
 
     const requestedName =
       typeof req.query.name === "string" && req.query.name.trim()
         ? path.basename(req.query.name)
         : storedFileName;
-    const filePath = findPostAttachmentPath(storedFileName);
 
-    if (!filePath) {
-      return res.status(404).json({ message: "Attachment not found" });
+    // Check if it's an R2 key (contains /)
+    if (storedFileName.includes("/")) {
+      // It's an R2 key, get it from R2
+      const storage = getR2StorageService();
+      try {
+        const object = await storage.getObjectStream({ key: storedFileName });
+        res.setHeader(
+          "Content-Type",
+          object.contentType || "application/octet-stream",
+        );
+        res.setHeader("Content-Length", object.contentLength || 0);
+        res.setHeader(
+          "Content-Disposition",
+          `attachment; filename="${requestedName}"`,
+        );
+        await pipeline(object.body, res);
+      } catch (error) {
+        console.error("Error getting object from R2:", error);
+        return res.status(404).json({ message: "Attachment not found" });
+      }
+    } else {
+      // It's a local file
+      const filePath = findPostAttachmentPath(storedFileName);
+      if (!filePath) {
+        return res.status(404).json({ message: "Attachment not found" });
+      }
+      return res.download(filePath, requestedName);
     }
-
-    return res.download(filePath, requestedName);
   } catch (error) {
     console.error("DownloadPostAttachment error:", error.message);
     return res.status(500).json({ message: "Server error, please try again" });
@@ -382,16 +492,17 @@ export const getPostComments = async (req, res) => {
 
     const content = await Promise.all(
       comments.map(async (comment) => {
-        const [author, repliesCount, existingLike, reactionDetails] = await Promise.all([
-          User.findById(comment.authorId).select("_id fullName email avatar"),
-          Comment.countDocuments({ parentId: comment._id }),
-          Like.findOne({
-            targetType: "comment",
-            targetId: comment._id,
-            userId: req.user._id,
-          }),
-          getReactionDetailsForTarget("comment", comment._id),
-        ]);
+        const [author, repliesCount, existingLike, reactionDetails] =
+          await Promise.all([
+            User.findById(comment.authorId).select("_id fullName email avatar"),
+            Comment.countDocuments({ parentId: comment._id }),
+            Like.findOne({
+              targetType: "comment",
+              targetId: comment._id,
+              userId: req.user._id,
+            }),
+            getReactionDetailsForTarget("comment", comment._id),
+          ]);
         return {
           id: comment._id,
           postId: comment.postId,
@@ -408,10 +519,18 @@ export const getPostComments = async (req, res) => {
           createdAt: comment.createdAt,
           updatedAt: comment.updatedAt,
         };
-      })
+      }),
     );
 
-    res.status(200).json({ content, totalElements, totalPages, currentPage: pageNum, pageSize });
+    res
+      .status(200)
+      .json({
+        content,
+        totalElements,
+        totalPages,
+        currentPage: pageNum,
+        pageSize,
+      });
   } catch (error) {
     console.error("GetPostComments error:", error.message);
     if (error.kind === "ObjectId") {
@@ -430,12 +549,14 @@ export const addPostComment = async (req, res) => {
     }
 
     const { content, parentId } = req.body;
-    const attachments = buildPostAttachments(req.files || []);
+    const attachments = await uploadPostAttachments(req.files || []);
     const commentContent =
       typeof content === "string" && content.trim().length > 0 ? content : "";
 
     if (!hasPostBody(commentContent, attachments)) {
-      return res.status(400).json({ message: "Comment content or image is required" });
+      return res
+        .status(400)
+        .json({ message: "Comment content or image is required" });
     }
 
     // If parentId, verify parent comment exists and belongs to same post
@@ -445,7 +566,9 @@ export const addPostComment = async (req, res) => {
         return res.status(404).json({ message: "Parent comment not found" });
       }
       if (parentComment.postId.toString() !== post._id.toString()) {
-        return res.status(400).json({ message: "Parent comment does not belong to this post" });
+        return res
+          .status(400)
+          .json({ message: "Parent comment does not belong to this post" });
       }
     }
 
@@ -460,7 +583,9 @@ export const addPostComment = async (req, res) => {
     // Increment comments count on post
     await Post.findByIdAndUpdate(post._id, { $inc: { commentsCount: 1 } });
 
-    const author = await User.findById(req.user._id).select("_id fullName email avatar");
+    const author = await User.findById(req.user._id).select(
+      "_id fullName email avatar",
+    );
 
     res.status(201).json({
       id: comment._id,
@@ -513,7 +638,7 @@ export const getPostLikes = async (req, res) => {
     const content = await Promise.all(
       likes.map(async (like) => {
         const user = await User.findById(like.userId).select(
-          "_id fullName email avatar"
+          "_id fullName email avatar",
         );
         return user
           ? {
@@ -521,10 +646,18 @@ export const getPostLikes = async (req, res) => {
               reactionType: getLikeReactionType(like),
             }
           : null;
-      })
+      }),
     );
 
-    res.status(200).json({ content, totalElements, totalPages, currentPage: pageNum, pageSize });
+    res
+      .status(200)
+      .json({
+        content,
+        totalElements,
+        totalPages,
+        currentPage: pageNum,
+        pageSize,
+      });
   } catch (error) {
     console.error("GetPostLikes error:", error.message);
     if (error.kind === "ObjectId") {
@@ -549,7 +682,9 @@ export const togglePostLike = async (req, res) => {
     });
 
     const plan = getReactionTogglePlan({
-      existingReactionType: existingLike ? getLikeReactionType(existingLike) : null,
+      existingReactionType: existingLike
+        ? getLikeReactionType(existingLike)
+        : null,
       requestedReactionType: req.body?.reactionType,
     });
 

@@ -12,6 +12,11 @@ import {
   getPresenceFields,
   normalizeActivityStatus,
 } from "../services/presenceService.js";
+import {
+  buildR2AvatarKey,
+  buildR2PublicUrl,
+  getR2StorageService,
+} from "../services/r2StorageService.js";
 
 let ioInstance = null;
 const activityStatusExpiryTimers = new Map();
@@ -72,7 +77,9 @@ const scheduleActivityStatusExpiry = (user) => {
       const currentUser = await User.findById(user._id);
       if (!currentUser?.activityStatusExpiresAt) return;
 
-      const currentExpiry = new Date(currentUser.activityStatusExpiresAt).getTime();
+      const currentExpiry = new Date(
+        currentUser.activityStatusExpiresAt,
+      ).getTime();
       if (currentExpiry > Date.now()) {
         scheduleActivityStatusExpiry(currentUser);
         return;
@@ -514,7 +521,10 @@ export const updateActivityStatus = async (req, res) => {
     user.activityStatus = activityStatus;
     if (activityStatus === "online") {
       user.activityStatusExpiresAt = null;
-    } else if (Number.isFinite(Number(expiresInMinutes)) && Number(expiresInMinutes) > 0) {
+    } else if (
+      Number.isFinite(Number(expiresInMinutes)) &&
+      Number(expiresInMinutes) > 0
+    ) {
       user.activityStatusExpiresAt = new Date(
         Date.now() + Number(expiresInMinutes) * 60 * 1000,
       );
@@ -561,9 +571,24 @@ export const updateAvatar = async (req, res) => {
       return res.status(404).json({ message: "User not found" });
     }
 
-    // Build avatar URL (assuming files are served from /uploads/ path)
-    const avatarUrl = `/uploads/${req.file.filename}`;
-    user.avatar = avatarUrl;
+    // Upload to R2
+    const storage = getR2StorageService();
+    const filename = req.file.originalname;
+    const storageKey = buildR2AvatarKey(req.user._id.toString(), filename);
+
+    await storage.putObject({
+      key: storageKey,
+      body: req.file.buffer,
+      contentType: req.file.mimetype,
+      contentLength: req.file.size,
+      metadata: {
+        userId: req.user._id.toString(),
+      },
+    });
+
+    // Build R2 URL
+    const r2Url = buildR2PublicUrl(storageKey);
+    user.avatar = r2Url;
 
     await user.save();
 
@@ -613,11 +638,11 @@ export const updatePreferences = async (req, res) => {
           ...(language && { language }),
         },
       },
-      { 
+      {
         upsert: true, // Create if not exists
         new: true,
         runValidators: true,
-      }
+      },
     );
 
     res.status(200).json({ message: "Preferences updated successfully" });

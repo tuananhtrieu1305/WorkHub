@@ -50,6 +50,41 @@ export const buildR2ObjectKey = ({ documentId, versionId }) => {
   return `documents/${documentId}/versions/${versionId}/object`;
 };
 
+export const buildR2AvatarKey = (userId, filename) => {
+  if (!userId) {
+    throw new Error("userId is required to build avatar R2 key");
+  }
+
+  const timestamp = Date.now();
+  return `avatars/${userId}/${timestamp}-${filename}`;
+};
+
+export const buildR2AttachmentKey = (type, filename) => {
+  if (!type) {
+    throw new Error("type is required to build attachment R2 key");
+  }
+
+  const timestamp = Date.now();
+  return `attachments/${type}/${timestamp}-${filename}`;
+};
+
+export const buildR2PublicUrl = (storageKey, env = process.env) => {
+  if (!storageKey) {
+    throw new Error("storageKey is required to build R2 public URL");
+  }
+
+  const accountId = env.R2_ACCOUNT_ID;
+  const bucketName = env.R2_BUCKET_NAME;
+
+  if (!accountId || !bucketName) {
+    throw new Error(
+      "R2_ACCOUNT_ID and R2_BUCKET_NAME environment variables are required",
+    );
+  }
+
+  return `https://${accountId}.r2.cloudflarestorage.com/${bucketName}/${storageKey}`;
+};
+
 export const createR2StorageService = ({ client, bucketName }) => {
   if (!client) {
     throw new Error("R2 storage service requires an S3-compatible client");

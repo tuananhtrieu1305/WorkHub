@@ -28,26 +28,18 @@ const generateSlug = (filename) => {
     .substring(0, 20);
 };
 
-// --- Avatar upload (5MB, images only) ---
-const avatarStorage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    cb(null, ensureUploadDir(uploadsDir));
-  },
-  filename: (req, file, cb) => {
-    const ext = path.extname(file.originalname);
-    const slug = generateSlug(file.originalname);
-    cb(null, `${slug}-${Date.now()}${ext}`);
-  },
-});
-
+// --- Avatar upload (5MB, images only) - Using memory storage for R2 upload ---
 const upload = multer({
-  storage: avatarStorage,
+  storage: multer.memoryStorage(),
   limits: { fileSize: 5 * 1024 * 1024 },
   fileFilter: (req, file, cb) => {
     if (imageMimes.includes(file.mimetype)) {
       cb(null, true);
     } else {
-      cb(new Error("Only image files (JPEG, PNG, GIF, WebP) are allowed"), false);
+      cb(
+        new Error("Only image files (JPEG, PNG, GIF, WebP) are allowed"),
+        false,
+      );
     }
   },
 });
@@ -65,9 +57,15 @@ const documentStorage = multer.diskStorage({
 });
 
 const videoMimes = [
-  "video/mp4", "video/mpeg", "video/webm", "video/ogg",
-  "video/avi", "video/quicktime", "video/x-msvideo",
-  "video/x-matroska", "video/x-flv",
+  "video/mp4",
+  "video/mpeg",
+  "video/webm",
+  "video/ogg",
+  "video/avi",
+  "video/quicktime",
+  "video/x-msvideo",
+  "video/x-matroska",
+  "video/x-flv",
 ];
 
 export const uploadDocument = multer({
@@ -82,18 +80,9 @@ export const uploadDocument = multer({
   },
 });
 
-// --- Attachment upload for posts (20MB, images + videos + documents) ---
-const attachmentStorage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    cb(null, ensureUploadDir(attachmentUploadsDir));
-  },
-  filename: (req, file, cb) => {
-    const ext = path.extname(file.originalname);
-    const slug = generateSlug(file.originalname);
-    cb(null, `${slug}-${Date.now()}${ext}`);
-  },
-});
+// --- Attachment upload for posts (20MB, images + videos + documents) - Using memory storage for R2 upload ---
 
+// --- Attachment upload for posts (20MB, images + videos + documents) - Using memory storage for R2 upload ---
 export const postAttachmentFileFilter = (req, file, cb) => {
   cb(null, true);
 };
@@ -103,17 +92,20 @@ export const commentImageFileFilter = (req, file, cb) => {
     cb(null, true);
     return;
   }
-  cb(new Error("Only image comments (JPEG, PNG, GIF, WebP) are allowed"), false);
+  cb(
+    new Error("Only image comments (JPEG, PNG, GIF, WebP) are allowed"),
+    false,
+  );
 };
 
 export const uploadAttachment = multer({
-  storage: attachmentStorage,
+  storage: multer.memoryStorage(),
   limits: { fileSize: POST_ATTACHMENT_FILE_SIZE_LIMIT },
   fileFilter: postAttachmentFileFilter,
 });
 
 export const uploadCommentImages = multer({
-  storage: attachmentStorage,
+  storage: multer.memoryStorage(),
   limits: {
     fileSize: COMMENT_IMAGE_FILE_SIZE_LIMIT,
     files: 4,
