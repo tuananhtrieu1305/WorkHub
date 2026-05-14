@@ -4,6 +4,7 @@ import { forgotPassword } from "../../api/authApi";
 import workHubLogo from "../../assets/WorkHub_logo_blue_background.png";
 import InteractiveBackground from "./InteractiveBackground";
 import AuthFormBackground from "./AuthFormBackground";
+import "../../styles/auth/index.css";
 
 const ForgotPasswordPage = () => {
   const [email, setEmail] = useState("");

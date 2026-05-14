@@ -4,6 +4,7 @@ import { useAuth } from "../../context/AuthContext";
 import workHubLogo from "../../assets/WorkHub_logo_blue_background.png";
 import InteractiveBackground from "./InteractiveBackground";
 import AuthFormBackground from "./AuthFormBackground";
+import "../../styles/auth/index.css";
 
 const RegisterPage = () => {
   const [username, setUsername] = useState("");
