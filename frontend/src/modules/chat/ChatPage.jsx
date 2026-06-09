@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { App } from "antd";
 import { useNavigate, useParams } from "react-router-dom";
 import {
   addMessageReaction,
@@ -11,6 +12,7 @@ import {
   sendMessage as sendConversationMessage,
   uploadConversationAttachment,
   updateMessage as updateConversationMessage,
+  updateMessagePin,
 } from "../../api/conversationApi";
 import { useAuth } from "../../context/AuthContext";
 import ConversationList from "./ConversationList";
@@ -34,6 +36,39 @@ import { useCall } from "../call/callContextValue";
 const toComparableId = (value) => {
   if (value == null) return "";
   return String(value);
+};
+
+const getMessageCopyText = (message) => {
+  const parts = [];
+  if (message?.content) {
+    parts.push(message.content);
+  }
+
+  (message?.attachments || []).forEach((attachment) => {
+    const attachmentLabel = [attachment.fileName, attachment.fileUrl]
+      .filter(Boolean)
+      .join(" - ");
+    if (attachmentLabel) parts.push(attachmentLabel);
+  });
+
+  return parts.join("\n").trim();
+};
+
+const writeTextToClipboard = async (text) => {
+  if (navigator.clipboard?.writeText) {
+    await navigator.clipboard.writeText(text);
+    return;
+  }
+
+  const textarea = document.createElement("textarea");
+  textarea.value = text;
+  textarea.setAttribute("readonly", "");
+  textarea.style.position = "fixed";
+  textarea.style.opacity = "0";
+  document.body.appendChild(textarea);
+  textarea.select();
+  document.execCommand("copy");
+  document.body.removeChild(textarea);
 };
 
 const getConversationId = (conversation) => {
@@ -82,6 +117,7 @@ const mergeConversationUpdate = (
 
 const ChatPage = () => {
   const { user } = useAuth();
+  const { message: toast } = App.useApp();
   const { conversationId } = useParams();
   const navigate = useNavigate();
   const { socket, isAuthenticated } = useSocket();
@@ -234,6 +270,13 @@ const ChatPage = () => {
     const handleMessageUpdated = (message) => {
       if (isSelectedConversationEvent(message.conversationId)) {
         setMessages((prev) => upsertMessageById(prev, message));
+      }
+      if (message.conversation) {
+        setConversations((prev) =>
+          mergeConversationUpdate(prev, message.conversation, {
+            preserveUnread: true,
+          })
+        );
       }
     };
 
@@ -524,13 +567,56 @@ const ChatPage = () => {
     []
   );
 
+  const handleCopyMessage = useCallback(
+    async (message) => {
+      const text = getMessageCopyText(message);
+      if (!text) {
+        toast.warning("Tin nhắn không có nội dung để sao chép");
+        return;
+      }
+
+      try {
+        await writeTextToClipboard(text);
+        toast.success("Đã sao chép tin nhắn");
+      } catch (err) {
+        console.error("Failed to copy message:", err);
+        toast.error("Không thể sao chép tin nhắn");
+      }
+    },
+    [toast]
+  );
+
+  const handleTogglePinMessage = useCallback(
+    async (message) => {
+      if (!selectedConversationId || !message?.id) return;
+
+      const nextPinnedState = !message.isPinned;
+      try {
+        const updatedMessage = await updateMessagePin(
+          selectedConversationId,
+          message.id,
+          nextPinnedState
+        );
+        setMessages((prev) => upsertMessageById(prev, updatedMessage));
+        toast.success(
+          nextPinnedState ? "Đã ghim tin nhắn" : "Đã bỏ ghim tin nhắn"
+        );
+      } catch (err) {
+        console.error("Failed to pin message:", err);
+        toast.error("Không thể cập nhật ghim tin nhắn");
+      }
+    },
+    [selectedConversationId, toast]
+  );
+
   const handleToggleReaction = useCallback(
     async (message, reaction) => {
       if (!selectedConversationId || !message?.id) return;
 
       const hasReaction = (message.reactions || []).some(
         (item) =>
-          toComparableId(item.userId) === toComparableId(user?._id) &&
+          toComparableId(item.userId) ===
+            toComparableId(user?._id || user?.id) &&
           item.reaction === reaction
       );
 
@@ -540,7 +626,7 @@ const ChatPage = () => {
           setMessages((prev) =>
             removeReactionFromMessages(prev, {
               messageId: message.id,
-              userId: user?._id,
+              userId: user?._id || user?.id,
               reaction,
             })
           );
@@ -549,7 +635,7 @@ const ChatPage = () => {
           setMessages((prev) =>
             addReactionToMessages(prev, {
               messageId: message.id,
-              userId: user?._id,
+              userId: user?._id || user?.id,
               reaction,
             })
           );
@@ -558,7 +644,7 @@ const ChatPage = () => {
         console.error("Failed to toggle reaction:", err);
       }
     },
-    [selectedConversationId, user?._id]
+    [selectedConversationId, user?._id, user?.id]
   );
 
   const handleCreateConversation = async (newConv) => {
@@ -619,6 +705,8 @@ const ChatPage = () => {
           onReplyMessage={handleReplyMessage}
           onEditMessage={handleEditMessage}
           onDeleteMessage={handleDeleteMessage}
+          onCopyMessage={handleCopyMessage}
+          onTogglePinMessage={handleTogglePinMessage}
           onToggleReaction={handleToggleReaction}
           onCancelDraft={handleCancelDraft}
           onStartCall={startCall}

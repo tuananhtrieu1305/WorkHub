@@ -1,3 +1,4 @@
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import MessageBubble from "./MessageBubble";
 import ChatInput from "./ChatInput";
 import { App } from "antd";
@@ -7,12 +8,31 @@ import {
   getEffectiveActivityStatus,
 } from "./activityStatus";
 import ActivityStatusIcon from "./ActivityStatusIcon";
+import { buildMessageTimeline } from "./messageTimeline";
 
 const API_URL = import.meta.env.VITE_NODE_API_URL || "http://localhost:5000";
 
 const getAvatarUrl = (avatar) => {
   if (!avatar) return null;
   return avatar.startsWith("http") ? avatar : `${API_URL}${avatar}`;
+};
+
+const getComparableId = (value) => {
+  if (value == null) return "";
+  if (typeof value === "object") {
+    return String(value._id || value.id || "");
+  }
+  return String(value);
+};
+
+const getMessageSenderId = (message) =>
+  getComparableId(message?.sender?._id || message?.sender?.id || message?.sender);
+
+const getDraftPreviewText = (message) => {
+  if (!message) return "...";
+  if (message.content) return message.content;
+  if (message.attachments?.length) return "Tệp đính kèm";
+  return "...";
 };
 
 const ActivityStatusBadge = ({ meta }) => (
@@ -23,6 +43,13 @@ const ActivityStatusBadge = ({ meta }) => (
   </span>
 );
 
+const messageSpacingClassNames = {
+  "after-separator": "mt-2",
+  tight: "mt-0.5",
+  relaxed: "mt-2",
+  default: "mt-3",
+};
+
 const ChatWindow = ({
   conversation,
   messages = [],
@@ -32,6 +59,8 @@ const ChatWindow = ({
   onReplyMessage,
   onEditMessage,
   onDeleteMessage,
+  onCopyMessage,
+  onTogglePinMessage,
   onToggleReaction,
   onCancelDraft,
   onStartCall,
@@ -45,6 +74,90 @@ const ChatWindow = ({
 }) => {
   const { user } = useAuth();
   const { message } = App.useApp();
+  const messagesPaneRef = useRef(null);
+  const messageNodeRefs = useRef(new Map());
+  const highlightTimeoutRef = useRef(null);
+  const [highlightedMessageId, setHighlightedMessageId] = useState("");
+  const conversationId = conversation?.id || conversation?._id;
+  const latestMessage = messages[messages.length - 1];
+  const latestMessageKey =
+    latestMessage?.id || latestMessage?._id || latestMessage?.createdAt || "";
+  const currentUserId = getComparableId(user?._id || user?.id);
+
+  useLayoutEffect(() => {
+    if (!conversationId || isLoadingMessages || messages.length === 0) return;
+
+    const pane = messagesPaneRef.current;
+    if (!pane) return;
+
+    const scrollToBottom = () => {
+      pane.scrollTop = pane.scrollHeight;
+    };
+
+    scrollToBottom();
+
+    if (typeof window === "undefined") return;
+
+    const frameId = window.requestAnimationFrame(scrollToBottom);
+    const timeoutId = window.setTimeout(scrollToBottom, 0);
+
+    return () => {
+      window.cancelAnimationFrame(frameId);
+      window.clearTimeout(timeoutId);
+    };
+  }, [conversationId, isLoadingMessages, latestMessageKey, messages.length]);
+
+  useEffect(() => {
+    return () => {
+      if (highlightTimeoutRef.current) {
+        window.clearTimeout(highlightTimeoutRef.current);
+      }
+    };
+  }, []);
+
+  const registerMessageNode = useCallback((messageId, node) => {
+    const normalizedMessageId = getComparableId(messageId);
+    if (!normalizedMessageId) return;
+
+    if (node) {
+      messageNodeRefs.current.set(normalizedMessageId, node);
+      return;
+    }
+
+    messageNodeRefs.current.delete(normalizedMessageId);
+  }, []);
+
+  const handleJumpToMessage = useCallback(
+    (targetMessage) => {
+      const targetMessageId = getComparableId(
+        targetMessage?.id || targetMessage?._id,
+      );
+      if (!targetMessageId) return;
+
+      const targetNode = messageNodeRefs.current.get(targetMessageId);
+      if (!targetNode) {
+        message.warning("Tin nhắn được trả lời chưa có trong danh sách hiện tại");
+        return;
+      }
+
+      targetNode.scrollIntoView({
+        behavior: "smooth",
+        block: "center",
+      });
+      setHighlightedMessageId(targetMessageId);
+
+      if (highlightTimeoutRef.current) {
+        window.clearTimeout(highlightTimeoutRef.current);
+      }
+
+      highlightTimeoutRef.current = window.setTimeout(() => {
+        setHighlightedMessageId((currentId) =>
+          currentId === targetMessageId ? "" : currentId,
+        );
+      }, 1800);
+    },
+    [message],
+  );
 
   // Empty state - no conversation selected
   if (!conversation) {
@@ -91,7 +204,7 @@ const ChatWindow = ({
   const shouldShowActivityStatus = isPrivate && activityStatusMeta.label;
 
   const participantCount = conversation.participants?.length || 0;
-  const conversationId = conversation.id || conversation._id;
+  const timelineItems = buildMessageTimeline(messages);
   const calleeUserId = otherParticipant?._id || otherParticipant?.id;
   const isCalleeAvailableForCall = !["offline", "invisible"].includes(
     effectiveActivityStatus,
@@ -110,6 +223,29 @@ const ChatWindow = ({
       callee: otherParticipant,
     });
   };
+  const activeDraftMessage = editingMessage || replyToMessage;
+  const replySenderId = getMessageSenderId(replyToMessage);
+  const isReplyingToSelf =
+    !editingMessage &&
+    Boolean(replySenderId) &&
+    Boolean(currentUserId) &&
+    replySenderId === currentUserId;
+  const draftPreview = activeDraftMessage
+    ? {
+        id:
+          activeDraftMessage.id ||
+          activeDraftMessage._id ||
+          `${editingMessage ? "edit" : "reply"}-draft`,
+        icon: editingMessage ? "edit" : "reply",
+        title: editingMessage
+          ? "Đang chỉnh sửa tin nhắn"
+          : isReplyingToSelf
+            ? "Đang trả lời chính mình"
+            : `Đang trả lời ${replyToMessage?.sender?.fullName || "tin nhắn"}`,
+        text: getDraftPreviewText(activeDraftMessage),
+        variant: editingMessage ? "edit" : "reply",
+      }
+    : null;
 
   return (
     <main className="flex h-full min-w-0 flex-1 flex-col overflow-hidden rounded-xl border border-slate-200 bg-slate-50 shadow-sm md:rounded-2xl">
@@ -210,7 +346,10 @@ const ChatWindow = ({
       </div>
 
       {/* Messages Area */}
-      <div className="chat-messages-pane chat-messages-scroll flex flex-1 flex-col space-y-4 overflow-y-auto px-4 py-6 sm:px-6">
+      <div
+        ref={messagesPaneRef}
+        className="chat-messages-pane chat-messages-scroll flex flex-1 flex-col overflow-y-auto px-4 py-6 sm:px-6"
+      >
         {isLoadingMessages ? (
           <div className="flex-1 flex flex-col items-center justify-center text-center">
             <div className="route-loading-spinner mb-3" />
@@ -234,31 +373,51 @@ const ChatWindow = ({
           </div>
         ) : (
           <>
-            {/* Date separator - example */}
-            <div className="flex items-center justify-center my-2">
-              <div className="rounded-full border border-slate-200 bg-white px-4 py-1.5 text-xs font-semibold text-slate-600 shadow-sm">
-                Hôm nay
-              </div>
-            </div>
+            {timelineItems.map((item) => {
+              if (item.type === "separator") {
+                return (
+                  <div
+                    key={item.id}
+                    className="chat-time-separator my-4 flex items-center justify-center"
+                  >
+                    <div className="chat-time-separator-label rounded-full border border-slate-200 bg-white/95 px-4 py-1.5 text-xs font-semibold text-slate-600 shadow-sm shadow-slate-900/5 backdrop-blur">
+                      {item.label}
+                    </div>
+                  </div>
+                );
+              }
 
-            {/* Messages */}
-            {messages.map((msg, idx) => {
-              const prevMsg = idx > 0 ? messages[idx - 1] : null;
-              const showAvatar =
-                !prevMsg ||
-                prevMsg.sender?._id !== msg.sender?._id ||
-                new Date(msg.createdAt) - new Date(prevMsg.createdAt) > 300000;
+              const itemMessageId = getComparableId(
+                item.message?.id || item.message?._id,
+              );
 
               return (
-                <MessageBubble
-                  key={msg.id || idx}
-                  message={msg}
-                  showAvatar={showAvatar}
-                  onReply={onReplyMessage}
-                  onEdit={onEditMessage}
-                  onDelete={onDeleteMessage}
-                  onToggleReaction={onToggleReaction}
-                />
+                <div
+                  key={item.id}
+                  ref={(node) => registerMessageNode(itemMessageId, node)}
+                  data-message-id={itemMessageId}
+                  className={
+                    messageSpacingClassNames[item.spacing] ||
+                    messageSpacingClassNames.default
+                  }
+                >
+                  <MessageBubble
+                    message={item.message}
+                    showAvatar={item.showAvatar}
+                    showSenderHeader={item.showSenderHeader}
+                    timestampLabel={item.timestampLabel}
+                    isTightGroup={item.spacing === "tight"}
+                    hasTightNext={item.hasTightNext}
+                    isHighlighted={highlightedMessageId === itemMessageId}
+                    onReply={onReplyMessage}
+                    onEdit={onEditMessage}
+                    onDelete={onDeleteMessage}
+                    onCopy={onCopyMessage}
+                    onTogglePin={onTogglePinMessage}
+                    onToggleReaction={onToggleReaction}
+                    onJumpToMessage={handleJumpToMessage}
+                  />
+                </div>
               );
             })}
           </>
@@ -280,38 +439,14 @@ const ChatWindow = ({
       )}
 
       {/* Chat Input */}
-      {(replyToMessage || editingMessage) && (
-        <div className="border-t border-slate-200 bg-white px-4 py-2 sm:px-6">
-          <div className="flex items-start justify-between gap-3 rounded-xl border border-blue-200 bg-blue-50 px-3 py-2">
-            <div className="min-w-0">
-              <p className="text-xs font-bold text-blue-600">
-                {editingMessage
-                  ? "Đang sửa tin nhắn"
-                  : `Trả lời ${replyToMessage?.sender?.fullName || "tin nhắn"}`}
-              </p>
-              <p className="truncate text-xs font-medium text-slate-600">
-                {(editingMessage || replyToMessage)?.content || "..."}
-              </p>
-            </div>
-            <button
-              type="button"
-              onClick={onCancelDraft}
-              className="rounded p-1 text-slate-500 hover:bg-white hover:text-slate-900"
-              title="Hủy"
-            >
-              <span className="material-symbols-outlined text-[18px]">close</span>
-            </button>
-          </div>
-        </div>
-      )}
       <ChatInput
-        key={editingMessage?.id || replyToMessage?.id || "new-message"}
         onSend={onSendMessage}
         onUploadAttachment={onUploadAttachment}
         onTypingChange={onTypingChange}
         onCancelDraft={onCancelDraft}
         initialContent={editingMessage?.content || ""}
         mode={editingMessage ? "edit" : replyToMessage ? "reply" : "send"}
+        draftPreview={draftPreview}
         disabled={isSending}
         placeholder={`Trả lời ${isPrivate ? displayName : `# ${displayName}`}...`}
       />

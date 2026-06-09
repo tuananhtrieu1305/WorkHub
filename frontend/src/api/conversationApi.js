@@ -63,6 +63,14 @@ export const deleteMessage = async (conversationId, messageId) => {
   return data;
 };
 
+export const updateMessagePin = async (conversationId, messageId, isPinned) => {
+  const { data } = await axiosClient.patch(
+    `/conversations/${conversationId}/messages/${messageId}/pin`,
+    { isPinned }
+  );
+  return data;
+};
+
 export const addMessageReaction = async (conversationId, messageId, reaction) => {
   const { data } = await axiosClient.post(
     `/conversations/${conversationId}/messages/${messageId}/reactions`,

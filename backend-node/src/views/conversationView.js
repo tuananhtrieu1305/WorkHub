@@ -13,6 +13,7 @@ import {
   sendMessage,
   updateMessage,
   deleteMessage,
+  updateMessagePin,
   addReaction,
   removeReaction,
 } from "../presenters/conversationPresenter.js";
@@ -34,6 +35,7 @@ router.post("/:id/attachments", protect, uploadAttachment.single("file"), upload
 router.post("/:id/messages", protect, sendMessage);
 router.put("/:id/messages/:messageId", protect, updateMessage);
 router.delete("/:id/messages/:messageId", protect, deleteMessage);
+router.patch("/:id/messages/:messageId/pin", protect, updateMessagePin);
 router.post("/:id/messages/:messageId/reactions", protect, addReaction);
 router.delete("/:id/messages/:messageId/reactions", protect, removeReaction);
 

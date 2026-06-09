@@ -15,6 +15,7 @@ import {
   buildR2PublicUrl,
   getR2StorageService,
 } from "../services/r2StorageService.js";
+import { normalizePinnedState } from "../utils/messageActionPolicy.js";
 
 // Helper: get io instance
 let ioInstance = null;
@@ -72,6 +73,11 @@ const formatReplyMessage = async (replyTo) => {
         "_id fullName avatar activityStatus activityStatusExpiresAt",
       )
     : null;
+  const pinnedBy = replyMessage.pinnedBy
+    ? await User.findById(replyMessage.pinnedBy).select(
+        "_id fullName avatar activityStatus activityStatusExpiresAt",
+      )
+    : null;
   const isDeleted = Boolean(replyMessage.deletedAt);
 
   return {
@@ -81,6 +87,10 @@ const formatReplyMessage = async (replyTo) => {
     content: isDeleted ? "" : replyMessage.content,
     metadata: isDeleted ? {} : replyMessage.metadata || {},
     attachments: isDeleted ? [] : replyMessage.attachments,
+    editedAt: replyMessage.editedAt,
+    isPinned: isDeleted ? false : Boolean(replyMessage.isPinned),
+    pinnedAt: isDeleted ? null : replyMessage.pinnedAt,
+    pinnedBy: isDeleted ? null : formatConversationUser(pinnedBy),
     deletedAt: replyMessage.deletedAt,
     deletedBy: formatConversationUser(deletedBy),
     createdAt: replyMessage.createdAt,
@@ -93,6 +103,11 @@ const formatMessage = async (message) => {
   );
   const deletedBy = message.deletedBy
     ? await User.findById(message.deletedBy).select(
+        "_id fullName avatar activityStatus activityStatusExpiresAt",
+      )
+    : null;
+  const pinnedBy = message.pinnedBy
+    ? await User.findById(message.pinnedBy).select(
         "_id fullName avatar activityStatus activityStatusExpiresAt",
       )
     : null;
@@ -109,6 +124,10 @@ const formatMessage = async (message) => {
     mentions: isDeleted ? [] : message.mentions,
     replyTo: await formatReplyMessage(message.replyTo),
     reactions: isDeleted ? [] : message.reactions,
+    editedAt: message.editedAt,
+    isPinned: isDeleted ? false : Boolean(message.isPinned),
+    pinnedAt: isDeleted ? null : message.pinnedAt,
+    pinnedBy: isDeleted ? null : formatConversationUser(pinnedBy),
     deletedAt: message.deletedAt,
     deletedBy: formatConversationUser(deletedBy),
     createdAt: message.createdAt,
@@ -808,19 +827,41 @@ export const updateMessage = async (req, res) => {
     }
 
     const { content } = req.body;
-    if (!content) {
+    const nextContent = typeof content === "string" ? content.trim() : "";
+    if (!nextContent) {
       return res.status(400).json({ message: "Message content is required" });
     }
 
-    message.content = content;
+    message.content = nextContent;
+    message.editedAt = new Date();
     await message.save();
 
-    const messageData = await formatMessage(message);
+    const isLastMessage =
+      toComparableId(conversation.lastMessage?.messageId) ===
+      toComparableId(message._id);
+
+    if (isLastMessage) {
+      conversation.lastMessage = {
+        ...(conversation.lastMessage?.toObject?.() ||
+          conversation.lastMessage ||
+          {}),
+        content: nextContent,
+      };
+      await conversation.save();
+    }
+
+    const [messageData, conversationData] = await Promise.all([
+      formatMessage(message),
+      formatConversation(conversation, { currentUserId: req.user._id }),
+    ]);
 
     if (ioInstance) {
       ioInstance
-        .to(`conversation:${conversation._id}`)
-        .emit("message_updated", messageData);
+        .to(getConversationRealtimeRoomNames(conversation))
+        .emit("message_updated", {
+          ...messageData,
+          conversation: conversationData,
+        });
     }
 
     res.status(200).json(messageData);
@@ -863,6 +904,9 @@ export const deleteMessage = async (req, res) => {
 
     message.deletedAt = message.deletedAt || new Date();
     message.deletedBy = req.user._id;
+    message.isPinned = false;
+    message.pinnedBy = null;
+    message.pinnedAt = null;
     await message.save();
 
     const messageData = await formatMessage(message);
@@ -911,6 +955,59 @@ export const deleteMessage = async (req, res) => {
       .json({ message: messageData, conversation: conversationData });
   } catch (error) {
     console.error("DeleteMessage error:", error.message);
+    if (error.kind === "ObjectId") {
+      return res.status(400).json({ message: "Invalid ID" });
+    }
+    res.status(500).json({ message: "Server error, please try again" });
+  }
+};
+
+// PATCH /conversations/:id/messages/:messageId/pin
+export const updateMessagePin = async (req, res) => {
+  try {
+    const conversation = await Conversation.findById(req.params.id);
+    if (!conversation) {
+      return res.status(404).json({ message: "Conversation not found" });
+    }
+
+    if (!isParticipant(conversation, req.user._id)) {
+      return res
+        .status(403)
+        .json({ message: "You are not a participant of this conversation" });
+    }
+
+    const message = await Message.findById(req.params.messageId);
+    if (
+      !message ||
+      message.conversationId.toString() !== conversation._id.toString()
+    ) {
+      return res.status(404).json({ message: "Message not found" });
+    }
+
+    if (message.deletedAt) {
+      return res.status(400).json({ message: "Cannot pin a deleted message" });
+    }
+
+    const isPinned = normalizePinnedState(req.body?.isPinned);
+    message.isPinned = isPinned;
+    message.pinnedBy = isPinned ? req.user._id : null;
+    message.pinnedAt = isPinned ? new Date() : null;
+    await message.save();
+
+    const messageData = await formatMessage(message);
+
+    if (ioInstance) {
+      ioInstance
+        .to(getConversationRealtimeRoomNames(conversation))
+        .emit("message_updated", messageData);
+    }
+
+    res.status(200).json(messageData);
+  } catch (error) {
+    console.error("UpdateMessagePin error:", error.message);
+    if (error.message === "isPinned must be a boolean") {
+      return res.status(400).json({ message: error.message });
+    }
     if (error.kind === "ObjectId") {
       return res.status(400).json({ message: "Invalid ID" });
     }

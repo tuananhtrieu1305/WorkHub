@@ -1,7 +1,13 @@
+import { useCallback, useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
+import { EmojiPickerButton } from "../../components/emoji";
 import { useAuth } from "../../context/AuthContext";
+import {
+  formatMessageTimestamp,
+  getHoverTimestampPlacement,
+} from "./messageTimeline";
 
 const API_URL = import.meta.env.VITE_NODE_API_URL || "http://localhost:5000";
-const quickReactions = ["👍", "❤️", "😂", "🎉"];
 
 const getAvatarUrl = (avatar) => {
   if (!avatar) return null;
@@ -21,13 +27,70 @@ const getComparableId = (value) => {
   return String(value);
 };
 
-const formatTime = (dateStr) => {
-  if (!dateStr) return "";
-  const date = new Date(dateStr);
-  return date.toLocaleTimeString("vi-VN", {
-    hour: "2-digit",
-    minute: "2-digit",
-  });
+const getUserId = (value) => getComparableId(value?._id || value?.id || value);
+
+const getMessageId = (message) => getComparableId(message?.id || message?._id);
+
+const clamp = (value, min, max) => Math.min(Math.max(value, min), max);
+
+const getMessagePreviewText = (message) => {
+  if (!message) return "...";
+  if (message.deletedAt) return "Tin nhắn đã được thu hồi";
+  if (message.content) return message.content.replace(/\s+/g, " ").trim();
+  const firstAttachment = message.attachments?.[0];
+  if (firstAttachment?.mimeType?.startsWith("image/")) return "Ảnh";
+  if (firstAttachment?.mimeType?.startsWith("video/")) return "Video";
+  if (firstAttachment?.fileName) return firstAttachment.fileName;
+  if (message.attachments?.length) return "Tệp đính kèm";
+  return "...";
+};
+
+const getReplyPreviewAttachment = (message) => {
+  if (message?.deletedAt) return null;
+  return (
+    message?.attachments?.find(
+      (attachment) =>
+        attachment.mimeType?.startsWith("image/") ||
+        attachment.mimeType?.startsWith("video/"),
+    ) ||
+    message?.attachments?.[0] ||
+    null
+  );
+};
+
+const getReplyParticipantName = (
+  participant,
+  fallback,
+  currentUserId,
+  { selfLabel = "Bạn" } = {},
+) => {
+  const participantId = getUserId(participant);
+  if (participantId && participantId === currentUserId) return selfLabel;
+  return participant?.fullName || fallback;
+};
+
+const getMenuItems = ({ isMine, isDeleted, isPinned }) => {
+  if (isDeleted) return [];
+
+  const pinItem = {
+    key: isPinned ? "unpin" : "pin",
+    icon: "push_pin",
+    label: isPinned ? "Bỏ ghim tin nhắn" : "Ghim tin nhắn",
+  };
+
+  if (!isMine) {
+    return [
+      { key: "copy", icon: "content_copy", label: "Sao chép tin nhắn" },
+      pinItem,
+    ];
+  }
+
+  return [
+    { key: "copy", icon: "content_copy", label: "Sao chép tin nhắn" },
+    { key: "edit", icon: "edit", label: "Chỉnh sửa tin nhắn" },
+    pinItem,
+    { key: "recall", icon: "delete", label: "Thu hồi tin nhắn", danger: true },
+  ];
 };
 
 const groupReactions = (reactions = []) => {
@@ -222,33 +285,91 @@ const MessageAttachments = ({ attachments = [], isMine }) => {
   );
 };
 
-const ReplyQuote = ({ replyTo, isMine }) => {
+const ReplyMediaThumbnail = ({ attachment }) => {
+  if (!attachment) return null;
+
+  const fileName = attachment.fileName || "Tệp đính kèm";
+  const fileUrl = getFileUrl(attachment.fileUrl);
+  const isImage = attachment.mimeType?.startsWith("image/");
+  const isVideo = attachment.mimeType?.startsWith("video/");
+
+  if (isImage) {
+    return (
+      <span className="chat-reply-preview-media" aria-hidden="true">
+        <img src={fileUrl} alt="" loading="lazy" />
+      </span>
+    );
+  }
+
+  if (isVideo) {
+    return (
+      <span className="chat-reply-preview-media" aria-hidden="true">
+        <video src={fileUrl} muted playsInline preload="metadata" />
+        <span className="chat-reply-preview-play material-symbols-outlined">
+          play_arrow
+        </span>
+      </span>
+    );
+  }
+
+  return (
+    <span
+      className="chat-reply-preview-media chat-reply-preview-file"
+      aria-hidden="true"
+      title={fileName}
+    >
+      <span className="material-symbols-outlined">attach_file</span>
+    </span>
+  );
+};
+
+const ReplyQuote = ({
+  message,
+  replyTo,
+  isMine,
+  currentUserId,
+  onJumpToMessage,
+}) => {
   if (!replyTo) return null;
 
-  const senderName = replyTo.sender?.fullName || "Tin nhắn";
+  const replyToId = getMessageId(replyTo);
+  const actorName = getReplyParticipantName(
+    message.sender,
+    "Người dùng",
+    currentUserId,
+  );
+  const targetName = getReplyParticipantName(
+    replyTo.sender,
+    "tin nhắn",
+    currentUserId,
+    { selfLabel: "bạn" },
+  );
+  const previewText = getMessagePreviewText(replyTo);
+  const previewAttachment = getReplyPreviewAttachment(replyTo);
+  const canJump = Boolean(replyToId && onJumpToMessage);
 
   return (
     <div
-      className={`border-l-[3px] p-2 rounded-t-lg mb-0 text-sm ${
-        isMine
-          ? "bg-blue-500/20 border-white/50 text-blue-50"
-          : "bg-white border-blue-300 text-slate-600"
+      className={`chat-reply-context ${
+        isMine ? "chat-reply-context-mine" : "chat-reply-context-other"
       }`}
     >
-      <span
-        className={`font-bold text-xs block mb-0.5 ${
-          isMine ? "text-white" : "text-blue-600"
-        }`}
+      <div className="chat-reply-context-title">
+        <span className="material-symbols-outlined">reply</span>
+        <span>{actorName} đã trả lời {targetName}</span>
+      </div>
+      <button
+        type="button"
+        className="chat-reply-preview-button"
+        onClick={() => onJumpToMessage?.(replyTo)}
+        disabled={!canJump}
+        title={canJump ? "Đi đến tin nhắn được trả lời" : previewText}
       >
-        Trả lời {senderName}
-      </span>
-      <span
-        className={`text-xs line-clamp-1 ${
-          isMine ? "text-blue-100" : "text-slate-500"
-        }`}
-      >
-        {replyTo.content || "..."}
-      </span>
+        <ReplyMediaThumbnail attachment={previewAttachment} />
+        <span className="chat-reply-preview-text" title={previewText}>
+          {previewText}
+        </span>
+      </button>
     </div>
   );
 };
@@ -290,18 +411,44 @@ const CallSystemMessage = ({ message }) => {
 const MessageBubble = ({
   message,
   showAvatar = true,
+  showSenderHeader = true,
+  timestampLabel = "",
+  isTightGroup = false,
+  hasTightNext = false,
+  isHighlighted = false,
   onReply,
   onEdit,
   onDelete,
+  onCopy,
+  onTogglePin,
   onToggleReaction,
+  onJumpToMessage,
 }) => {
   const { user } = useAuth();
-  const isMine = getComparableId(message.sender?._id || message.sender?.id) === getComparableId(user?._id || user?.id);
+  const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const [menuLayout, setMenuLayout] = useState({
+    placement: "bottom",
+    style: undefined,
+  });
+  const menuRootRef = useRef(null);
+  const menuButtonRef = useRef(null);
+  const menuPopoverRef = useRef(null);
+  const stackRef = useRef(null);
+  const bubbleRef = useRef(null);
+  const [hoverTimePosition, setHoverTimePosition] = useState(null);
+  const currentUserId = getComparableId(user?._id || user?.id);
+  const isMine =
+    getUserId(message.sender) === currentUserId;
   const senderName = message.sender?.fullName || "Người dùng";
   const avatarUrl = getAvatarUrl(message.sender?.avatar);
   const senderInitial = senderName.charAt(0).toUpperCase();
   const reactionGroups = [...groupReactions(message.reactions || []).values()];
   const isDeleted = Boolean(message.deletedAt);
+  const menuItems = getMenuItems({
+    isMine,
+    isDeleted,
+    isPinned: message.isPinned,
+  });
   const deletedById = getComparableId(message.deletedBy || message.sender?._id);
   const deletedByName =
     deletedById === getComparableId(user?._id || user?.id)
@@ -311,6 +458,138 @@ const MessageBubble = ({
     deletedById === getComparableId(user?._id || user?.id)
       ? "Bạn đã gỡ tin nhắn này"
       : `${deletedByName} đã gỡ tin nhắn này`;
+  const bubbleClassName = [
+    "chat-message-bubble",
+    isMine ? "chat-message-bubble-mine" : "chat-message-bubble-other",
+    isDeleted ? "chat-message-bubble-deleted" : "",
+    !isDeleted && showAvatar ? "chat-message-bubble-avatar-anchor" : "",
+    !isDeleted && isTightGroup ? "chat-message-bubble-linked-before" : "",
+    !isDeleted && hasTightNext ? "chat-message-bubble-linked-after" : "",
+    !isDeleted && message.replyTo ? "chat-message-bubble-with-reply" : "",
+    !isDeleted && isHighlighted ? "chat-message-bubble-highlighted" : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
+  const messageTimestamp =
+    timestampLabel || formatMessageTimestamp(message.createdAt);
+  const hoverTimestampPlacement = getHoverTimestampPlacement(isMine);
+  const shouldShowSenderHeader = showSenderHeader && !message.replyTo;
+
+  const updateHoverTimePosition = useCallback(() => {
+    if (!messageTimestamp || !bubbleRef.current) {
+      setHoverTimePosition(null);
+      return;
+    }
+
+    const rect = bubbleRef.current.getBoundingClientRect();
+    setHoverTimePosition({
+      anchorX:
+        hoverTimestampPlacement === "right" ? rect.right + 12 : rect.left - 12,
+      placement: hoverTimestampPlacement,
+      top: rect.top + rect.height / 2,
+    });
+  }, [hoverTimestampPlacement, messageTimestamp]);
+
+  const hideHoverTime = useCallback(() => {
+    setHoverTimePosition(null);
+  }, []);
+
+  const getMenuLayout = useCallback(() => {
+    if (!menuButtonRef.current || typeof window === "undefined") {
+      return { placement: "bottom", style: undefined };
+    }
+
+    const margin = 12;
+    const gap = 8;
+    const buttonRect = menuButtonRef.current.getBoundingClientRect();
+    const width = Math.min(224, window.innerWidth - margin * 2);
+    const menuHeight =
+      menuPopoverRef.current?.offsetHeight ||
+      Math.min(56 + menuItems.length * 40, window.innerHeight - margin * 2);
+    const spaceBelow = window.innerHeight - margin - buttonRect.bottom - gap;
+    const spaceAbove = buttonRect.top - margin - gap;
+    const placement =
+      spaceBelow >= menuHeight || spaceBelow >= spaceAbove ? "bottom" : "top";
+    const maxHeight = Math.max(
+      0,
+      placement === "bottom" ? spaceBelow : spaceAbove
+    );
+    const preferredLeft = isMine ? buttonRect.right - width : buttonRect.left;
+    const left = clamp(
+      preferredLeft,
+      margin,
+      window.innerWidth - width - margin
+    );
+
+    return {
+      placement,
+      style: {
+        left,
+        width,
+        maxHeight,
+        ...(placement === "bottom"
+          ? { top: buttonRect.bottom + gap }
+          : { bottom: window.innerHeight - buttonRect.top + gap }),
+      },
+    };
+  }, [isMine, menuItems.length]);
+
+  const updateMenuLayout = useCallback(() => {
+    setMenuLayout(getMenuLayout());
+  }, [getMenuLayout]);
+
+  useEffect(() => {
+    if (!isMenuOpen) return undefined;
+
+    const handlePointerDown = (event) => {
+      if (
+        !menuRootRef.current?.contains(event.target) &&
+        !menuPopoverRef.current?.contains(event.target)
+      ) {
+        setIsMenuOpen(false);
+      }
+    };
+
+    const handleKeyDown = (event) => {
+      if (event.key === "Escape") {
+        setIsMenuOpen(false);
+      }
+    };
+
+    document.addEventListener("mousedown", handlePointerDown, true);
+    document.addEventListener("keydown", handleKeyDown);
+
+    return () => {
+      document.removeEventListener("mousedown", handlePointerDown, true);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [isMenuOpen]);
+
+  useEffect(() => {
+    if (!isMenuOpen) return undefined;
+
+    const frameId = window.requestAnimationFrame(updateMenuLayout);
+    window.addEventListener("resize", updateMenuLayout);
+    window.addEventListener("scroll", updateMenuLayout, true);
+
+    return () => {
+      window.cancelAnimationFrame(frameId);
+      window.removeEventListener("resize", updateMenuLayout);
+      window.removeEventListener("scroll", updateMenuLayout, true);
+    };
+  }, [isMenuOpen, updateMenuLayout]);
+
+  useEffect(() => {
+    if (!hoverTimePosition) return undefined;
+
+    window.addEventListener("resize", updateHoverTimePosition);
+    window.addEventListener("scroll", hideHoverTime, true);
+
+    return () => {
+      window.removeEventListener("resize", updateHoverTimePosition);
+      window.removeEventListener("scroll", hideHoverTime, true);
+    };
+  }, [hideHoverTime, hoverTimePosition, updateHoverTimePosition]);
 
   if (message.type === "system" && message.metadata?.eventType?.startsWith("call_")) {
     return <CallSystemMessage message={message} />;
@@ -318,90 +597,172 @@ const MessageBubble = ({
 
   const renderAvatar = (className = "") => {
     if (!showAvatar) {
-      return <div className="w-9 shrink-0" />;
+      return <div className="chat-message-avatar-slot" aria-hidden="true" />;
     }
 
     return avatarUrl ? (
-      <img
-        src={avatarUrl}
-        alt={senderName}
-        className={`w-9 h-9 rounded-full object-cover shadow-sm shrink-0 ${className}`}
-      />
+      <div className="chat-message-avatar-slot">
+        <img
+          src={avatarUrl}
+          alt={senderName}
+          className={`chat-message-avatar w-9 h-9 rounded-full object-cover shadow-sm ${className}`}
+        />
+      </div>
     ) : (
-      <div
-        className={`w-9 h-9 rounded-full bg-slate-200 text-slate-600 flex items-center justify-center text-sm font-bold shadow-sm shrink-0 ${className}`}
-      >
-        {senderInitial}
+      <div className="chat-message-avatar-slot">
+        <div
+          className={`chat-message-avatar flex w-9 h-9 items-center justify-center rounded-full bg-slate-200 text-sm font-bold text-slate-600 shadow-sm ${className}`}
+        >
+          {senderInitial}
+        </div>
       </div>
     );
   };
 
-  const renderActions = (side) => (
+  const handleMenuAction = (action) => {
+    setIsMenuOpen(false);
+
+    if (action === "copy") {
+      onCopy?.(message);
+      return;
+    }
+    if (action === "edit") {
+      onEdit?.(message);
+      return;
+    }
+    if (action === "recall") {
+      onDelete?.(message);
+      return;
+    }
+    if (action === "pin" || action === "unpin") {
+      onTogglePin?.(message);
+    }
+  };
+
+  const renderActions = () => (
     <div
-      className={`chat-message-actions absolute top-1/2 -translate-y-1/2 flex gap-1 ${
-        side === "left" ? "-left-28" : "-right-28"
+      className={`chat-message-actions ${
+        isMine ? "chat-message-actions-mine" : "chat-message-actions-other"
+      } flex items-center gap-1 rounded-full border border-slate-200 bg-white/95 p-1 shadow-lg shadow-slate-900/10 backdrop-blur ${
+        isMenuOpen ? "is-open" : ""
       }`}
     >
-      {quickReactions.slice(0, 2).map((reaction) => (
-        <button
-          key={reaction}
-          type="button"
-          onClick={() => onToggleReaction?.(message, reaction)}
-          className="w-7 h-7 rounded-full bg-white shadow-sm border border-slate-200 flex items-center justify-center text-[13px] hover:bg-blue-50 transition-colors"
-          title={`Reaction ${reaction}`}
-        >
-          {reaction}
-        </button>
-      ))}
+      <EmojiPickerButton
+        align={isMine ? "right" : "left"}
+        buttonClassName="chat-message-action-button chat-message-emoji-action"
+        label="React cảm xúc"
+        onEmojiSelect={(emoji) => onToggleReaction?.(message, emoji)}
+        placement="bottom"
+        popoverMode="fixed"
+        popoverClassName="chat-message-emoji-popover"
+      />
       <button
         type="button"
         onClick={() => onReply?.(message)}
-        className="w-7 h-7 rounded-full bg-white shadow-sm border border-slate-200 flex items-center justify-center text-slate-400 hover:text-blue-600 transition-colors"
+        className="chat-message-action-button text-slate-500 hover:bg-blue-50 hover:text-blue-700"
         title="Trả lời"
+        aria-label="Trả lời tin nhắn"
       >
-        <span className="material-symbols-outlined text-[14px]">reply</span>
+        <span className="material-symbols-outlined text-[18px]">reply</span>
       </button>
-      {isMine && (
-        <>
-          <button
-            type="button"
-            onClick={() => onEdit?.(message)}
-            className="w-7 h-7 rounded-full bg-white shadow-sm border border-slate-200 flex items-center justify-center text-slate-400 hover:text-blue-600 transition-colors"
-            title="Sửa tin nhắn"
+      <span ref={menuRootRef} className="relative inline-flex">
+        <button
+          ref={menuButtonRef}
+          type="button"
+          onClick={() => {
+            if (!isMenuOpen) {
+              setMenuLayout(getMenuLayout());
+            }
+            setIsMenuOpen((open) => !open);
+          }}
+          className="chat-message-action-button text-slate-500 hover:bg-slate-100 hover:text-slate-900"
+          title="Hành động khác"
+          aria-label="Hành động khác"
+          aria-expanded={isMenuOpen}
+        >
+          <span className="material-symbols-outlined text-[18px]">
+            more_horiz
+          </span>
+        </button>
+        {isMenuOpen && typeof document !== "undefined" && createPortal(
+          <span
+            ref={menuPopoverRef}
+            className="chat-message-more-menu-portal"
+            data-placement={menuLayout.placement}
+            style={menuLayout.style}
           >
-            <span className="material-symbols-outlined text-[14px]">edit</span>
-          </button>
-          <button
-            type="button"
-            onClick={() => onDelete?.(message)}
-            className="w-7 h-7 rounded-full bg-white shadow-sm border border-slate-200 flex items-center justify-center text-slate-400 hover:text-red-600 transition-colors"
-            title="Gỡ tin nhắn"
-          >
-            <span className="material-symbols-outlined text-[14px]">delete</span>
-          </button>
-        </>
-      )}
+            {menuItems.map((item) => (
+              <button
+                key={item.key}
+                type="button"
+                onClick={() => handleMenuAction(item.key)}
+                className={`flex w-full items-center gap-2 px-3 py-2 text-sm font-semibold transition-colors ${
+                  item.danger
+                    ? "text-red-600 hover:bg-red-50"
+                    : "text-slate-700 hover:bg-slate-50"
+                }`}
+              >
+                <span className="material-symbols-outlined text-[18px]">
+                  {item.icon}
+                </span>
+                <span>{item.label}</span>
+              </button>
+            ))}
+          </span>,
+          document.body,
+        )}
+      </span>
     </div>
   );
 
-  const renderReactions = (alignClass) =>
+  const renderHoverTimestamp = () => {
+    if (
+      !hoverTimePosition ||
+      !messageTimestamp ||
+      typeof document === "undefined"
+    ) {
+      return null;
+    }
+
+    return createPortal(
+      <span
+        className={`chat-message-hover-time-portal chat-message-hover-time-${hoverTimePosition.placement}`}
+        style={{
+          left: hoverTimePosition.anchorX,
+          top: hoverTimePosition.top,
+        }}
+      >
+        {messageTimestamp}
+      </span>,
+      document.body,
+    );
+  };
+
+  const renderReactions = () =>
     reactionGroups.length > 0 && (
-      <div className={`flex flex-wrap gap-1 mt-0.5 ${alignClass}`}>
+      <div
+        className={`chat-message-reaction-corner absolute -bottom-2 flex max-w-[92%] flex-wrap gap-1 ${
+          isMine ? "right-2 justify-end" : "left-2"
+        }`}
+      >
         {reactionGroups.map((group) => {
-          const isActive = group.userIds.includes(getComparableId(user?._id));
+          const isActive = group.userIds.includes(
+            getComparableId(user?._id || user?.id)
+          );
           return (
             <button
               key={group.reaction}
               type="button"
               onClick={() => onToggleReaction?.(message, group.reaction)}
-              className={`inline-flex items-center gap-1 px-2 py-0.5 border rounded-full text-xs transition-colors ${
+              className={`inline-flex h-6 items-center gap-1 rounded-full border px-1.5 text-xs shadow-sm transition-colors ${
                 isActive
-                  ? "bg-blue-50 border-blue-200 text-blue-700"
-                  : "bg-white border-slate-200 hover:bg-slate-50"
+                  ? "border-blue-200 bg-blue-50 text-blue-700"
+                  : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
               }`}
+              title={`${group.reaction} (${group.count})`}
             >
-              <span>{group.reaction}</span>
-              <span>{group.count}</span>
+              <span className="text-[13px] leading-none">{group.reaction}</span>
+              {group.count > 1 && <span>{group.count}</span>}
             </button>
           );
         })}
@@ -410,91 +771,154 @@ const MessageBubble = ({
 
   if (isMine) {
     return (
-      <div className="chat-message-group flex items-start gap-3 justify-end group">
-      <div className="flex max-w-[82%] flex-col items-end gap-1 sm:max-w-[70%]">
-        {showAvatar && (
+      <>
+        <div
+          className={`chat-message-group flex items-end gap-2.5 justify-end group ${
+            isTightGroup ? "chat-message-group-tight" : ""
+          }`}
+          onPointerLeave={() => {
+            hideHoverTime();
+          }}
+        >
+        <div className="flex max-w-[82%] flex-col items-end gap-1 sm:max-w-[70%]">
+        {shouldShowSenderHeader && (
           <div className="flex items-baseline gap-2">
-              <span className="text-xs font-semibold text-slate-500">
-                {formatTime(message.createdAt)}
-              </span>
               <span className="text-sm font-bold text-slate-900">Bạn</span>
             </div>
           )}
-          <div className="relative">
-            {!isDeleted && <ReplyQuote replyTo={message.replyTo} isMine />}
+          <div
+            ref={stackRef}
+            className={`chat-message-stack relative ${
+              reactionGroups.length ? "pb-4" : ""
+            }`}
+          >
+            {!isDeleted && (
+              <ReplyQuote
+                message={message}
+                replyTo={message.replyTo}
+                isMine
+                currentUserId={currentUserId}
+                onJumpToMessage={onJumpToMessage}
+              />
+            )}
             <div
-              className={`ml-auto w-fit px-4 py-2.5 text-[15px] font-medium leading-relaxed shadow-sm transition-shadow ${
+              ref={bubbleRef}
+              className={`${bubbleClassName} ml-auto w-fit px-4 py-2.5 text-[15px] font-medium leading-relaxed transition-colors ${
                 isDeleted
-                  ? "rounded-2xl rounded-tr-sm border border-slate-200 bg-slate-100 text-slate-500 italic shadow-none"
-                  : `bg-blue-600 text-white shadow-blue-900/20 group-hover:shadow-md ${
-                      message.replyTo
-                        ? "rounded-b-2xl rounded-tr-sm"
-                        : "rounded-2xl rounded-tr-sm"
-                    }`
+                  ? "rounded-2xl border border-slate-200 bg-slate-100 text-slate-500 italic shadow-none"
+                  : "rounded-2xl bg-blue-600 text-white"
               }`}
+              onPointerLeave={hideHoverTime}
+              onPointerMove={updateHoverTimePosition}
             >
               {isDeleted ? (
                 <span>{deletedMessageText}</span>
               ) : (
                 <>
+                  {message.isPinned && (
+                    <span className="mb-1.5 inline-flex items-center gap-1 rounded-full bg-white/15 px-2 py-0.5 text-[11px] font-bold text-blue-50">
+                      <span className="material-symbols-outlined text-[13px]">
+                        push_pin
+                      </span>
+                      Đã ghim
+                    </span>
+                  )}
                   <MessageText content={message.content} />
                   <MessageAttachments
                     attachments={message.attachments || []}
                     isMine
                   />
+                  {message.editedAt && (
+                    <span className="mt-1 block text-[11px] font-semibold text-blue-100">
+                      Đã chỉnh sửa
+                    </span>
+                  )}
                 </>
               )}
             </div>
-            {!isDeleted && renderActions("left")}
+            {!isDeleted && renderActions()}
+            {!isDeleted && renderReactions()}
           </div>
-          {!isDeleted && renderReactions("justify-end")}
         </div>
-        {renderAvatar("mt-1")}
-      </div>
+        {renderAvatar()}
+        </div>
+        {renderHoverTimestamp()}
+      </>
     );
   }
 
   return (
-    <div className="chat-message-group flex items-start gap-3 group">
-      {renderAvatar("mt-1 cursor-pointer")}
-      <div className="flex max-w-[82%] flex-col items-start gap-1 sm:max-w-[70%]">
-        {showAvatar && (
+    <>
+      <div
+        className={`chat-message-group flex items-end gap-2.5 group ${
+          isTightGroup ? "chat-message-group-tight" : ""
+        }`}
+        onPointerLeave={() => {
+          hideHoverTime();
+        }}
+      >
+        {renderAvatar("cursor-pointer")}
+        <div className="flex max-w-[82%] flex-col items-start gap-1 sm:max-w-[70%]">
+        {shouldShowSenderHeader && (
           <div className="flex items-baseline gap-2">
             <span className="text-sm font-bold text-slate-900 cursor-pointer hover:underline">
               {senderName}
             </span>
-            <span className="text-xs font-semibold text-slate-500">
-              {formatTime(message.createdAt)}
-            </span>
           </div>
         )}
-        <div className="relative">
-          {!isDeleted && <ReplyQuote replyTo={message.replyTo} />}
+        <div
+          ref={stackRef}
+          className={`chat-message-stack relative ${
+            reactionGroups.length ? "pb-4" : ""
+          }`}
+        >
+          {!isDeleted && (
+            <ReplyQuote
+              message={message}
+              replyTo={message.replyTo}
+              currentUserId={currentUserId}
+              onJumpToMessage={onJumpToMessage}
+            />
+          )}
           <div
-            className={`w-fit border px-4 py-2.5 text-[15px] font-medium leading-relaxed shadow-sm transition-shadow ${
+            ref={bubbleRef}
+            className={`${bubbleClassName} w-fit border px-4 py-2.5 text-[15px] font-medium leading-relaxed transition-colors ${
               isDeleted
-                ? "rounded-2xl rounded-tl-sm border-slate-200 bg-slate-100 text-slate-500 italic shadow-none"
-                : `border-slate-300 bg-white text-slate-900 group-hover:shadow-md ${
-                    message.replyTo
-                      ? "rounded-b-2xl rounded-tl-sm"
-                      : "rounded-2xl rounded-tl-sm"
-                  }`
+                ? "rounded-2xl border-slate-200 bg-slate-100 text-slate-500 italic shadow-none"
+                : "rounded-2xl border-slate-300 bg-white text-slate-900"
             }`}
+            onPointerLeave={hideHoverTime}
+            onPointerMove={updateHoverTimePosition}
           >
             {isDeleted ? (
               <span>{deletedMessageText}</span>
             ) : (
               <>
+                {message.isPinned && (
+                  <span className="mb-1.5 inline-flex items-center gap-1 rounded-full bg-blue-50 px-2 py-0.5 text-[11px] font-bold text-blue-700">
+                    <span className="material-symbols-outlined text-[13px]">
+                      push_pin
+                    </span>
+                    Đã ghim
+                  </span>
+                )}
                 <MessageText content={message.content} />
                 <MessageAttachments attachments={message.attachments || []} />
+                {message.editedAt && (
+                  <span className="mt-1 block text-[11px] font-semibold text-slate-500">
+                    Đã chỉnh sửa
+                  </span>
+                )}
               </>
             )}
           </div>
-          {!isDeleted && renderActions("right")}
+          {!isDeleted && renderActions()}
+          {!isDeleted && renderReactions()}
         </div>
-        {!isDeleted && renderReactions("")}
       </div>
-    </div>
+      </div>
+      {renderHoverTimestamp()}
+    </>
   );
 };
 

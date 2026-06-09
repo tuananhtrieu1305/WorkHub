@@ -61,6 +61,23 @@ const messageSchema = new mongoose.Schema(
         },
       },
     ],
+    editedAt: {
+      type: Date,
+      default: null,
+    },
+    isPinned: {
+      type: Boolean,
+      default: false,
+    },
+    pinnedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      default: null,
+    },
+    pinnedAt: {
+      type: Date,
+      default: null,
+    },
     deletedAt: {
       type: Date,
       default: null,
@@ -77,6 +94,7 @@ const messageSchema = new mongoose.Schema(
 );
 
 messageSchema.index({ conversationId: 1, createdAt: -1 });
+messageSchema.index({ conversationId: 1, isPinned: -1, pinnedAt: -1 });
 
 const Message = mongoose.model("Message", messageSchema);
 export default Message;

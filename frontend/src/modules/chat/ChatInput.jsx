@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { EmojiPickerButton } from "../../components/emoji";
 import { applyComposerFormat } from "./chatComposerUtils";
 
@@ -40,6 +40,7 @@ const ChatInput = ({
   onCancelDraft,
   initialContent = "",
   mode = "send",
+  draftPreview = null,
   placeholder = "Nhập tin nhắn...",
   disabled = false,
 }) => {
@@ -48,8 +49,16 @@ const ChatInput = ({
   const [attachments, setAttachments] = useState([]);
   const [isUploading, setIsUploading] = useState(false);
   const [attachmentError, setAttachmentError] = useState("");
+  const [renderedDraftPreview, setRenderedDraftPreview] =
+    useState(draftPreview);
+  const [isDraftExiting, setIsDraftExiting] = useState(false);
   const textareaRef = useRef(null);
   const fileInputRef = useRef(null);
+  const draftIdentityRef = useRef(
+    draftPreview
+      ? `${draftPreview.variant}-${draftPreview.id}`
+      : `mode-${mode}`
+  );
 
   const focusSelection = (selectionStart, selectionEnd) => {
     queueMicrotask(() => {
@@ -142,11 +151,98 @@ const ChatInput = ({
   };
 
   const canAttach = Boolean(onUploadAttachment) && mode !== "edit";
+  const visibleDraftPreview = renderedDraftPreview;
+
+  useEffect(() => {
+    const nextDraftIdentity = draftPreview
+      ? `${draftPreview.variant}-${draftPreview.id}`
+      : `mode-${mode}`;
+
+    if (draftIdentityRef.current !== nextDraftIdentity) {
+      draftIdentityRef.current = nextDraftIdentity;
+      setContent(mode === "edit" ? initialContent : "");
+      setAttachments([]);
+      setAttachmentError("");
+      onTypingChange?.(false);
+    }
+  }, [draftPreview, initialContent, mode, onTypingChange]);
+
+  useEffect(() => {
+    if (draftPreview) {
+      setRenderedDraftPreview(draftPreview);
+      setIsDraftExiting(false);
+      return undefined;
+    }
+
+    if (!renderedDraftPreview) return undefined;
+
+    setIsDraftExiting(true);
+    const timeoutId = window.setTimeout(() => {
+      setRenderedDraftPreview(null);
+      setIsDraftExiting(false);
+    }, 180);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [draftPreview, renderedDraftPreview]);
 
   return (
-    <div className="border-t border-slate-200 bg-white px-3 pb-3 pt-3 sm:px-6 sm:pb-4">
+    <div
+      className={`bg-white px-3 pb-3 pt-3 sm:px-6 sm:pb-4 ${
+        visibleDraftPreview
+          ? "chat-composer-draft-shell"
+          : "border-t border-slate-200"
+      }`}
+    >
       <div className="flex flex-col overflow-visible rounded-2xl border border-slate-300 bg-white shadow-sm transition-all focus-within:border-blue-600 focus-within:ring-2 focus-within:ring-blue-600/20">
-        <div className="flex items-center justify-between gap-2 overflow-x-auto rounded-t-2xl border-b border-slate-200 bg-slate-50 px-3 py-2">
+        {visibleDraftPreview && (
+          <div
+            className={`chat-draft-toast-slot ${
+              isDraftExiting ? "is-exiting" : "is-entering"
+            }`}
+          >
+            <div className="chat-draft-toast-slot-inner">
+              <div className="px-3 pt-3">
+                <div
+                  key={visibleDraftPreview.id}
+                  className={`chat-draft-toast chat-draft-toast-${visibleDraftPreview.variant} ${
+                    isDraftExiting ? "is-exiting" : "is-entering"
+                  } flex items-center justify-between gap-3 rounded-xl px-3 py-2.5`}
+                >
+                  <span className="chat-draft-toast-icon inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full">
+                    <span className="material-symbols-outlined text-[17px]">
+                      {visibleDraftPreview.icon}
+                    </span>
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block text-xs font-bold">
+                      {visibleDraftPreview.title}
+                    </span>
+                    <span className="block truncate text-xs font-medium">
+                      {visibleDraftPreview.text}
+                    </span>
+                  </span>
+                  <button
+                    type="button"
+                    onClick={onCancelDraft}
+                    className="chat-draft-toast-close inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full transition-colors"
+                    title="Hủy"
+                    aria-label="Hủy"
+                  >
+                    <span className="material-symbols-outlined text-[16px]">
+                      close
+                    </span>
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        <div
+          className={`flex items-center justify-between gap-2 overflow-x-auto bg-slate-50/80 px-3 py-2 ${
+            visibleDraftPreview ? "" : "rounded-t-2xl"
+          }`}
+        >
           <input
             ref={fileInputRef}
             type="file"

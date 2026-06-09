@@ -56,6 +56,9 @@ export const applyDeletedMessage = (messages, deletedMessage) => {
       content: "",
       attachments: [],
       reactions: [],
+      isPinned: false,
+      pinnedAt: null,
+      pinnedBy: null,
     };
   });
 };
