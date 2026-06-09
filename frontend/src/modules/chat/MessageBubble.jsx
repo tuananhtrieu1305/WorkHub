@@ -110,6 +110,15 @@ const voiceWaveformBars = [
   34, 56, 28, 72, 48, 88, 60, 42, 76, 96, 52, 68, 84, 44, 62, 30,
 ];
 
+const voicePlaybackRates = [1, 1.5, 2, 0.5];
+
+const getNextVoicePlaybackRate = (currentRate) => {
+  const currentIndex = voicePlaybackRates.indexOf(currentRate);
+  return voicePlaybackRates[(currentIndex + 1) % voicePlaybackRates.length];
+};
+
+const formatVoicePlaybackRate = (rate) => `${rate}x`;
+
 const isInternalApiFileUrl = (url = "") => {
   const rawUrl = String(url || "");
   if (rawUrl.startsWith("/api/")) return true;
@@ -210,12 +219,23 @@ const triggerAttachmentDownload = async (attachment, fileName) => {
   window.setTimeout(() => URL.revokeObjectURL?.(objectUrl), 0);
 };
 
-const AttachmentImagePreview = ({ attachment, fileName }) => {
+const AttachmentImagePreview = ({
+  attachment,
+  fileName,
+  isMine = false,
+  standalone = false,
+}) => {
   const { src, isLoading, hasError } = useAttachmentObjectUrl(attachment);
+  const toneClassName =
+    isMine && !standalone
+      ? "chat-attachment-media-frame-mine"
+      : "chat-attachment-media-frame-other";
 
   if (hasError) {
     return (
-      <div className="rounded-xl border border-white/20 px-3 py-2 text-xs">
+      <div
+        className={`chat-attachment-error ${toneClassName} rounded-xl border px-3 py-2 text-xs`}
+      >
         Không thể tải ảnh
       </div>
     );
@@ -226,26 +246,37 @@ const AttachmentImagePreview = ({ attachment, fileName }) => {
       href={src || "#"}
       target="_blank"
       rel="noreferrer"
-      className="block overflow-hidden rounded-xl border border-white/20"
+      className={`chat-attachment-media-frame ${toneClassName}`}
       title={fileName}
       aria-busy={isLoading}
     >
       <img
         src={src || undefined}
         alt={fileName}
-        className="max-h-64 max-w-full object-cover"
+        className="chat-attachment-media"
         loading="lazy"
       />
     </a>
   );
 };
 
-const AttachmentVideoPreview = ({ attachment, fileName }) => {
+const AttachmentVideoPreview = ({
+  attachment,
+  fileName,
+  isMine = false,
+  standalone = false,
+}) => {
   const { src, isLoading, hasError } = useAttachmentObjectUrl(attachment);
+  const toneClassName =
+    isMine && !standalone
+      ? "chat-attachment-media-frame-mine"
+      : "chat-attachment-media-frame-other";
 
   if (hasError) {
     return (
-      <div className="rounded-xl border border-white/20 px-3 py-2 text-xs">
+      <div
+        className={`chat-attachment-error ${toneClassName} rounded-xl border px-3 py-2 text-xs`}
+      >
         Không thể tải video
       </div>
     );
@@ -256,22 +287,28 @@ const AttachmentVideoPreview = ({ attachment, fileName }) => {
       src={src || undefined}
       controls
       preload="metadata"
-      className="max-h-64 max-w-full rounded-xl border border-white/20"
+      className={`chat-attachment-media-frame chat-attachment-media ${toneClassName}`}
       title={fileName}
       aria-busy={isLoading}
     />
   );
 };
 
-const AttachmentFileLink = ({ attachment, fileName, isMine }) => {
+const AttachmentFileLink = ({
+  attachment,
+  fileName,
+  isMine,
+  standalone = false,
+}) => {
   const [isDownloading, setIsDownloading] = useState(false);
   const [downloadError, setDownloadError] = useState(false);
   const rawFileUrl = attachment.fileUrl || "";
   const fileUrl = getFileUrl(rawFileUrl);
   const isInternal =
     isInternalApiFileUrl(rawFileUrl) || isInternalApiFileUrl(fileUrl);
+  const usesMineTone = isMine && !standalone;
   const className = `flex items-center gap-2 rounded-xl border px-3 py-2 text-left text-sm transition-colors ${
-    isMine
+    usesMineTone
       ? "border-white/20 bg-white/10 text-white hover:bg-white/15"
       : "border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100"
   }`;
@@ -283,7 +320,7 @@ const AttachmentFileLink = ({ attachment, fileName, isMine }) => {
         {attachment.fileSize ? (
           <span
             className={`ml-2 text-xs ${
-              isMine ? "text-blue-100" : "text-slate-400"
+              usesMineTone ? "text-blue-100" : "text-slate-400"
             }`}
           >
             {formatFileSize(attachment.fileSize)}
@@ -350,6 +387,8 @@ const ReplyVideoThumbnail = ({ attachment }) => {
 const AudioAttachmentPlayer = ({ attachment, isMine }) => {
   const audioRef = useRef(null);
   const objectUrlRef = useRef("");
+  const sourceLoadPromiseRef = useRef(null);
+  const sourceVersionRef = useRef(0);
   const [isPlaying, setIsPlaying] = useState(false);
   const [isLoadingAudio, setIsLoadingAudio] = useState(false);
   const [playbackError, setPlaybackError] = useState(false);
@@ -357,15 +396,21 @@ const AudioAttachmentPlayer = ({ attachment, isMine }) => {
     Number(attachment.durationSeconds) || 0,
   );
   const [currentTime, setCurrentTime] = useState(0);
+  const [playbackRate, setPlaybackRate] = useState(1);
   const rawFileUrl = attachment.fileUrl || "";
   const fileUrl = getFileUrl(rawFileUrl);
+  const requiresBlobAudio =
+    isInternalApiFileUrl(rawFileUrl) || isInternalApiFileUrl(fileUrl);
   const [audioSrc, setAudioSrc] = useState(
-    isInternalApiFileUrl(rawFileUrl) ? "" : fileUrl,
+    requiresBlobAudio ? "" : fileUrl,
   );
   const displayDuration = duration || Number(attachment.durationSeconds) || 0;
   const progress = displayDuration
     ? Math.min(100, (currentTime / displayDuration) * 100)
     : 0;
+  const displayedTime =
+    isPlaying || currentTime > 0 ? currentTime : displayDuration;
+  const playbackRateLabel = formatVoicePlaybackRate(playbackRate);
 
   const releaseObjectUrl = useCallback(() => {
     if (!objectUrlRef.current) return;
@@ -376,37 +421,72 @@ const AudioAttachmentPlayer = ({ attachment, isMine }) => {
   const loadAudioSource = useCallback(async () => {
     if (audioSrc) return audioSrc;
     if (!fileUrl || fileUrl === "#") return "";
+    if (sourceLoadPromiseRef.current) return sourceLoadPromiseRef.current;
+
+    const requestVersion = sourceVersionRef.current;
 
     setIsLoadingAudio(true);
     setPlaybackError(false);
 
-    try {
+    const loadPromise = (async () => {
       let nextAudioSrc = fileUrl;
-      if (isInternalApiFileUrl(rawFileUrl) || isInternalApiFileUrl(fileUrl)) {
-        const blob = await downloadConversationAttachmentBlob(
-          rawFileUrl || fileUrl,
-        );
-        if (!blob?.size) {
-          throw new Error("Voice attachment is empty");
-        }
-        releaseObjectUrl();
-        if (typeof URL.createObjectURL !== "function") {
-          throw new Error("Browser does not support local audio URLs");
-        }
-        nextAudioSrc = URL.createObjectURL(blob);
-        objectUrlRef.current = nextAudioSrc;
-      }
+      let createdObjectUrl = "";
 
-      setAudioSrc(nextAudioSrc);
-      return nextAudioSrc;
-    } catch (error) {
-      console.error("Failed to load voice message:", error);
-      setPlaybackError(true);
-      return "";
-    } finally {
-      setIsLoadingAudio(false);
-    }
-  }, [audioSrc, fileUrl, rawFileUrl, releaseObjectUrl]);
+      try {
+        if (requiresBlobAudio) {
+          const blob = await downloadConversationAttachmentBlob(
+            rawFileUrl || fileUrl,
+          );
+          if (!blob?.size) {
+            throw new Error("Voice attachment is empty");
+          }
+          if (typeof URL.createObjectURL !== "function") {
+            throw new Error("Browser does not support local audio URLs");
+          }
+          createdObjectUrl = URL.createObjectURL(blob);
+          nextAudioSrc = createdObjectUrl;
+        }
+
+        if (sourceVersionRef.current !== requestVersion) {
+          if (createdObjectUrl) {
+            URL.revokeObjectURL?.(createdObjectUrl);
+          }
+          return "";
+        }
+
+        if (createdObjectUrl) {
+          releaseObjectUrl();
+          objectUrlRef.current = createdObjectUrl;
+        }
+
+        setAudioSrc(nextAudioSrc);
+        return nextAudioSrc;
+      } catch (error) {
+        if (createdObjectUrl) {
+          URL.revokeObjectURL?.(createdObjectUrl);
+        }
+        if (sourceVersionRef.current === requestVersion) {
+          console.error("Failed to load voice message:", error);
+          setPlaybackError(true);
+        }
+        return "";
+      } finally {
+        if (sourceVersionRef.current === requestVersion) {
+          sourceLoadPromiseRef.current = null;
+          setIsLoadingAudio(false);
+        }
+      }
+    })();
+
+    sourceLoadPromiseRef.current = loadPromise;
+    return loadPromise;
+  }, [
+    audioSrc,
+    fileUrl,
+    rawFileUrl,
+    releaseObjectUrl,
+    requiresBlobAudio,
+  ]);
 
   const handleTogglePlay = async () => {
     const audio = audioRef.current;
@@ -426,6 +506,7 @@ const AudioAttachmentPlayer = ({ attachment, isMine }) => {
         audio.src = nextAudioSrc;
         audio.load();
       }
+      audio.playbackRate = playbackRate;
       await audio.play();
       setIsPlaying(true);
     } catch (error) {
@@ -437,21 +518,55 @@ const AudioAttachmentPlayer = ({ attachment, isMine }) => {
 
   useEffect(() => {
     const audio = audioRef.current;
-    audio?.pause();
+    sourceVersionRef.current += 1;
+    sourceLoadPromiseRef.current = null;
+
+    if (audio) {
+      audio.pause();
+      audio.removeAttribute("src");
+      audio.load();
+    }
+
     setIsPlaying(false);
     setIsLoadingAudio(false);
     setPlaybackError(false);
     setCurrentTime(0);
     setDuration(Number(attachment.durationSeconds) || 0);
     releaseObjectUrl();
-    setAudioSrc(isInternalApiFileUrl(rawFileUrl) ? "" : fileUrl);
-  }, [attachment.durationSeconds, fileUrl, rawFileUrl, releaseObjectUrl]);
+    setAudioSrc(requiresBlobAudio ? "" : fileUrl);
+    setPlaybackRate(1);
+  }, [
+    attachment.durationSeconds,
+    fileUrl,
+    rawFileUrl,
+    releaseObjectUrl,
+    requiresBlobAudio,
+  ]);
+
+  useEffect(() => {
+    if (!requiresBlobAudio || audioSrc || playbackError) return undefined;
+
+    void loadAudioSource();
+    return undefined;
+  }, [audioSrc, loadAudioSource, playbackError, requiresBlobAudio]);
 
   useEffect(() => {
     return () => {
+      sourceVersionRef.current += 1;
+      sourceLoadPromiseRef.current = null;
       releaseObjectUrl();
     };
   }, [releaseObjectUrl]);
+
+  useEffect(() => {
+    if (audioRef.current) {
+      audioRef.current.playbackRate = playbackRate;
+    }
+  }, [playbackRate]);
+
+  const handlePlaybackRateClick = () => {
+    setPlaybackRate((currentRate) => getNextVoicePlaybackRate(currentRate));
+  };
 
   return (
     <div
@@ -504,13 +619,24 @@ const AudioAttachmentPlayer = ({ attachment, isMine }) => {
           />
         ))}
       </span>
-      <span className="chat-voice-player-duration">
-        {formatAudioDuration(displayDuration)}
+      <span className="chat-voice-player-meta">
+        <span className="chat-voice-player-duration">
+          {formatAudioDuration(displayedTime)}
+        </span>
+        <button
+          type="button"
+          className="chat-voice-player-speed"
+          onClick={handlePlaybackRateClick}
+          title={`Tốc độ phát: ${playbackRateLabel}`}
+          aria-label={`Đổi tốc độ phát voice, hiện tại ${playbackRateLabel}`}
+        >
+          {playbackRateLabel}
+        </button>
       </span>
       <audio
         ref={audioRef}
         src={audioSrc || undefined}
-        preload="metadata"
+        preload="auto"
         onLoadedMetadata={(event) => {
           const nextDuration = event.currentTarget.duration;
           if (Number.isFinite(nextDuration)) {
@@ -525,7 +651,8 @@ const AudioAttachmentPlayer = ({ attachment, isMine }) => {
           setIsPlaying(false);
           setCurrentTime(0);
         }}
-        onError={() => {
+        onError={(event) => {
+          if (!event.currentTarget.currentSrc) return;
           setIsPlaying(false);
           setPlaybackError(true);
         }}
@@ -638,11 +765,22 @@ const MessageText = ({ content }) => {
   );
 };
 
-const MessageAttachments = ({ attachments = [], isMine, hasContent = false }) => {
+const MessageAttachments = ({
+  attachments = [],
+  isMine,
+  hasContent = false,
+  standalone = false,
+}) => {
   if (!attachments.length) return null;
 
   return (
-    <div className={`${hasContent ? "mt-2" : ""} flex flex-col gap-2`}>
+    <div
+      className={`chat-message-attachments ${
+        hasContent ? "chat-message-attachments-after-text" : ""
+      } ${standalone ? "chat-message-attachments-standalone" : "chat-message-attachments-in-bubble"} ${
+        isMine ? "chat-message-attachments-mine" : "chat-message-attachments-other"
+      }`}
+    >
       {attachments.map((attachment, index) => {
         const fileName = attachment.fileName || "Tệp đính kèm";
         const isImage = attachment.mimeType?.startsWith("image/");
@@ -664,6 +802,8 @@ const MessageAttachments = ({ attachments = [], isMine, hasContent = false }) =>
               key={`${attachment.fileUrl || fileName}-${index}`}
               attachment={attachment}
               fileName={fileName}
+              isMine={isMine}
+              standalone={standalone}
             />
           );
         }
@@ -674,6 +814,8 @@ const MessageAttachments = ({ attachments = [], isMine, hasContent = false }) =>
               key={`${attachment.fileUrl || fileName}-${index}`}
               attachment={attachment}
               fileName={fileName}
+              isMine={isMine}
+              standalone={standalone}
             />
           );
         }
@@ -684,6 +826,7 @@ const MessageAttachments = ({ attachments = [], isMine, hasContent = false }) =>
             attachment={attachment}
             fileName={fileName}
             isMine={isMine}
+            standalone={standalone}
           />
         );
       })}
@@ -887,6 +1030,12 @@ const MessageBubble = ({
   const senderInitial = senderName.charAt(0).toUpperCase();
   const reactionGroups = [...groupReactions(message.reactions || []).values()];
   const isDeleted = Boolean(message.deletedAt);
+  const messageAttachments = message.attachments || [];
+  const hasMessageContent = Boolean(message.content);
+  const hasMessageAttachments = messageAttachments.length > 0;
+  const hasMixedContent = hasMessageContent && hasMessageAttachments;
+  const isAttachmentOnlyMessage =
+    !isDeleted && !hasMessageContent && hasMessageAttachments;
   const menuItems = getMenuItems({
     isMine,
     isDeleted,
@@ -905,6 +1054,7 @@ const MessageBubble = ({
     "chat-message-bubble",
     isMine ? "chat-message-bubble-mine" : "chat-message-bubble-other",
     isDeleted ? "chat-message-bubble-deleted" : "",
+    !isDeleted && hasMixedContent ? "chat-message-bubble-with-attachments" : "",
     !isDeleted && showAvatar ? "chat-message-bubble-avatar-anchor" : "",
     !isDeleted && isTightGroup && !message.isPinned
       ? "chat-message-bubble-linked-before"
@@ -915,6 +1065,37 @@ const MessageBubble = ({
   ]
     .filter(Boolean)
     .join(" ");
+  const getMessageSurfaceClassName = (mine) => {
+    if (isAttachmentOnlyMessage) {
+      return [
+        "chat-message-attachment-surface",
+        mine
+          ? "chat-message-attachment-surface-mine ml-auto"
+          : "chat-message-attachment-surface-other",
+        isHighlighted ? "chat-message-attachment-surface-highlighted" : "",
+        "w-fit",
+      ]
+        .filter(Boolean)
+        .join(" ");
+    }
+
+    return `${bubbleClassName} ${
+      mine ? "ml-auto " : ""
+    }w-fit ${mine ? "" : "border "}px-4 py-2.5 text-[15px] font-medium leading-relaxed transition-colors ${
+      isDeleted
+        ? mine
+          ? "rounded-2xl border border-slate-200 bg-slate-100 text-slate-500 italic shadow-none"
+          : "rounded-2xl border-slate-200 bg-slate-100 text-slate-500 italic shadow-none"
+        : mine
+          ? "rounded-2xl bg-blue-600 text-white"
+          : "rounded-2xl border-slate-300 bg-white text-slate-900"
+    }`;
+  };
+  const editedLabelClassName = isAttachmentOnlyMessage
+    ? "mt-1 block text-[11px] font-semibold text-slate-500"
+    : isMine
+      ? "mt-1 block text-[11px] font-semibold text-blue-100"
+      : "mt-1 block text-[11px] font-semibold text-slate-500";
   const messageTimestamp =
     timestampLabel || formatMessageTimestamp(message.createdAt);
   const hoverTimestampPlacement = getHoverTimestampPlacement(isMine);
@@ -1278,11 +1459,7 @@ const MessageBubble = ({
             )}
             <div
               ref={bubbleRef}
-              className={`${bubbleClassName} ml-auto w-fit px-4 py-2.5 text-[15px] font-medium leading-relaxed transition-colors ${
-                isDeleted
-                  ? "rounded-2xl border border-slate-200 bg-slate-100 text-slate-500 italic shadow-none"
-                  : "rounded-2xl bg-blue-600 text-white"
-              }`}
+              className={getMessageSurfaceClassName(true)}
               onPointerLeave={hideHoverTime}
               onPointerMove={updateHoverTimePosition}
             >
@@ -1293,12 +1470,13 @@ const MessageBubble = ({
                 <>
                   <MessageText content={message.content} />
                   <MessageAttachments
-                    attachments={message.attachments || []}
+                    attachments={messageAttachments}
                     isMine
-                    hasContent={Boolean(message.content)}
+                    hasContent={hasMessageContent}
+                    standalone={isAttachmentOnlyMessage}
                   />
                   {message.editedAt && (
-                    <span className="mt-1 block text-[11px] font-semibold text-blue-100">
+                    <span className={editedLabelClassName}>
                       Đã chỉnh sửa
                     </span>
                   )}
@@ -1352,11 +1530,7 @@ const MessageBubble = ({
           )}
           <div
             ref={bubbleRef}
-            className={`${bubbleClassName} w-fit border px-4 py-2.5 text-[15px] font-medium leading-relaxed transition-colors ${
-              isDeleted
-                ? "rounded-2xl border-slate-200 bg-slate-100 text-slate-500 italic shadow-none"
-                : "rounded-2xl border-slate-300 bg-white text-slate-900"
-            }`}
+            className={getMessageSurfaceClassName(false)}
             onPointerLeave={hideHoverTime}
             onPointerMove={updateHoverTimePosition}
           >
@@ -1367,11 +1541,13 @@ const MessageBubble = ({
               <>
                 <MessageText content={message.content} />
                 <MessageAttachments
-                  attachments={message.attachments || []}
-                  hasContent={Boolean(message.content)}
+                  attachments={messageAttachments}
+                  isMine={false}
+                  hasContent={hasMessageContent}
+                  standalone={isAttachmentOnlyMessage}
                 />
                 {message.editedAt && (
-                  <span className="mt-1 block text-[11px] font-semibold text-slate-500">
+                  <span className={editedLabelClassName}>
                     Đã chỉnh sửa
                   </span>
                 )}

@@ -321,9 +321,12 @@ const ChatWindow = ({
   const { user } = useAuth();
   const { message } = App.useApp();
   const messagesPaneRef = useRef(null);
+  const messagesContentRef = useRef(null);
   const messageNodeRefs = useRef(new Map());
   const highlightTimeoutRef = useRef(null);
   const isViewingLatestMessageRef = useRef(true);
+  const shouldStickToLatestMessageRef = useRef(true);
+  const programmaticScrollUntilRef = useRef(0);
   const previousConversationIdRef = useRef("");
   const [highlightedMessageId, setHighlightedMessageId] = useState("");
   const [showScrollToBottomButton, setShowScrollToBottomButton] =
@@ -339,21 +342,64 @@ const ChatWindow = ({
     const pane = messagesPaneRef.current;
     if (!pane || isLoadingMessages || messages.length === 0) {
       isViewingLatestMessageRef.current = true;
+      shouldStickToLatestMessageRef.current = true;
       setShowScrollToBottomButton(false);
       return;
     }
 
     const isViewingLatest = isViewingLatestMessage(pane);
+    const isProgrammaticScroll =
+      typeof Date !== "undefined" &&
+      Date.now() < programmaticScrollUntilRef.current;
     isViewingLatestMessageRef.current = isViewingLatest;
+    if (isViewingLatest) {
+      shouldStickToLatestMessageRef.current = true;
+      setShowScrollToBottomButton(false);
+      return;
+    }
+
+    if (!isProgrammaticScroll) {
+      shouldStickToLatestMessageRef.current = false;
+    } else {
+      setShowScrollToBottomButton(false);
+      return;
+    }
+
     setShowScrollToBottomButton((isVisible) =>
       isVisible === !isViewingLatest ? isVisible : !isViewingLatest,
     );
   }, [isLoadingMessages, messages.length]);
 
+  const scrollPaneToLatestMessage = useCallback((behavior = "auto") => {
+    const pane = messagesPaneRef.current;
+    if (!pane) return;
+
+    shouldStickToLatestMessageRef.current = true;
+    programmaticScrollUntilRef.current =
+      Date.now() + (behavior === "smooth" ? 600 : 160);
+
+    if (behavior === "smooth" && typeof pane.scrollTo === "function") {
+      pane.scrollTo({
+        top: pane.scrollHeight,
+        behavior: "smooth",
+      });
+    } else {
+      pane.scrollTop = pane.scrollHeight;
+    }
+
+    isViewingLatestMessageRef.current = true;
+  }, []);
+
+  const scrollToLatestMessage = useCallback((behavior = "auto") => {
+    scrollPaneToLatestMessage(behavior);
+    setShowScrollToBottomButton(false);
+  }, [scrollPaneToLatestMessage]);
+
   useLayoutEffect(() => {
     if (!conversationId || isLoadingMessages || messages.length === 0) {
       previousConversationIdRef.current = conversationId || "";
       isViewingLatestMessageRef.current = true;
+      shouldStickToLatestMessageRef.current = true;
       return;
     }
 
@@ -364,13 +410,13 @@ const ChatWindow = ({
       previousConversationIdRef.current !== conversationId;
     previousConversationIdRef.current = conversationId;
     const shouldScrollToBottom =
-      didConversationChange || isViewingLatestMessageRef.current;
+      didConversationChange ||
+      shouldStickToLatestMessageRef.current ||
+      isViewingLatestMessageRef.current;
 
-    const scrollToBottom = () => {
-      pane.scrollTop = pane.scrollHeight;
-      isViewingLatestMessageRef.current = true;
-      setShowScrollToBottomButton(false);
-    };
+    if (didConversationChange) {
+      shouldStickToLatestMessageRef.current = true;
+    }
 
     if (!shouldScrollToBottom) {
       if (typeof window === "undefined") {
@@ -386,15 +432,19 @@ const ChatWindow = ({
       };
     }
 
-    scrollToBottom();
+    scrollPaneToLatestMessage();
 
     if (typeof window === "undefined") return;
 
-    const frameId = window.requestAnimationFrame(scrollToBottom);
-    const timeoutId = window.setTimeout(scrollToBottom, 0);
+    const frameId = window.requestAnimationFrame(scrollPaneToLatestMessage);
+    const hideButtonFrameId = window.requestAnimationFrame(() => {
+      setShowScrollToBottomButton(false);
+    });
+    const timeoutId = window.setTimeout(scrollPaneToLatestMessage, 0);
 
     return () => {
       window.cancelAnimationFrame(frameId);
+      window.cancelAnimationFrame(hideButtonFrameId);
       window.clearTimeout(timeoutId);
     };
   }, [
@@ -402,7 +452,65 @@ const ChatWindow = ({
     isLoadingMessages,
     latestMessageKey,
     messages.length,
+    scrollPaneToLatestMessage,
     updateScrollToBottomVisibility,
+  ]);
+
+  useEffect(() => {
+    const pane = messagesPaneRef.current;
+    const content = messagesContentRef.current;
+
+    if (
+      !pane ||
+      !content ||
+      isLoadingMessages ||
+      messages.length === 0 ||
+      typeof window === "undefined"
+    ) {
+      return undefined;
+    }
+
+    let frameId = 0;
+    const keepLatestMessagePinned = () => {
+      if (!shouldStickToLatestMessageRef.current) return;
+
+      if (frameId) {
+        window.cancelAnimationFrame(frameId);
+      }
+
+      frameId = window.requestAnimationFrame(() => {
+        frameId = 0;
+        if (shouldStickToLatestMessageRef.current) {
+          scrollToLatestMessage();
+        }
+      });
+    };
+
+    const resizeObserver =
+      typeof ResizeObserver === "function"
+        ? new ResizeObserver(keepLatestMessagePinned)
+        : null;
+
+    resizeObserver?.observe(content);
+    resizeObserver?.observe(pane);
+    pane.addEventListener("load", keepLatestMessagePinned, true);
+    pane.addEventListener("loadedmetadata", keepLatestMessagePinned, true);
+    pane.addEventListener("loadeddata", keepLatestMessagePinned, true);
+
+    return () => {
+      if (frameId) {
+        window.cancelAnimationFrame(frameId);
+      }
+      resizeObserver?.disconnect();
+      pane.removeEventListener("load", keepLatestMessagePinned, true);
+      pane.removeEventListener("loadedmetadata", keepLatestMessagePinned, true);
+      pane.removeEventListener("loadeddata", keepLatestMessagePinned, true);
+    };
+  }, [
+    conversationId,
+    isLoadingMessages,
+    messages.length,
+    scrollToLatestMessage,
   ]);
 
   useEffect(() => {
@@ -466,16 +574,8 @@ const ChatWindow = ({
   );
 
   const handleScrollToBottom = useCallback(() => {
-    const pane = messagesPaneRef.current;
-    if (!pane) return;
-
-    pane.scrollTo({
-      top: pane.scrollHeight,
-      behavior: "smooth",
-    });
-    isViewingLatestMessageRef.current = true;
-    setShowScrollToBottomButton(false);
-  }, []);
+    scrollToLatestMessage("smooth");
+  }, [scrollToLatestMessage]);
 
   // Empty state - no conversation selected
   if (!conversation) {
@@ -697,7 +797,10 @@ const ChatWindow = ({
             </p>
           </div>
         ) : (
-          <>
+          <div
+            ref={messagesContentRef}
+            className="chat-messages-content flex w-full flex-col"
+          >
             {timelineItems.map((item) => {
               if (item.type === "separator") {
                 return (
@@ -746,7 +849,7 @@ const ChatWindow = ({
                 </div>
               );
             })}
-          </>
+          </div>
         )}
       </div>
 
