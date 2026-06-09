@@ -503,6 +503,8 @@ const ChatPage = () => {
         const attachments = Array.isArray(options.attachments)
           ? options.attachments
           : [];
+        const messageType = options.type || "text";
+        const metadata = options.metadata || {};
         const message = editingMessage
           ? await updateConversationMessage(
               selectedConversationId,
@@ -510,9 +512,10 @@ const ChatPage = () => {
               { content }
             )
           : await sendConversationMessage(selectedConversationId, {
-              type: "text",
+              type: messageType,
               content,
               attachments,
+              metadata,
               replyTo: replyToMessage?.id || null,
             });
         setMessages((prev) => upsertMessageById(prev, message));
@@ -544,12 +547,12 @@ const ChatPage = () => {
   );
 
   const handleUploadAttachment = useCallback(
-    async (file) => {
+    async (file, options = {}) => {
       if (!selectedConversationId) {
         throw new Error("Conversation is required before uploading attachments");
       }
 
-      return uploadConversationAttachment(selectedConversationId, file);
+      return uploadConversationAttachment(selectedConversationId, file, options);
     },
     [selectedConversationId]
   );

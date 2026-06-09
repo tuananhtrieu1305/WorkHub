@@ -7,6 +7,7 @@ import {
   deleteUser,
   getMe,
   searchUsersForChat,
+  streamAvatar,
   updateProfile,
   updateActivityStatus,
   updateAvatar,
@@ -19,6 +20,8 @@ import admin from "../middlewares/adminMiddleware.js";
 import upload from "../config/multer.js";
 
 const router = express.Router();
+
+router.get("/avatars", streamAvatar);
 
 // Profile endpoints (for /me)
 router.get("/me", protect, getMe);

@@ -11,6 +11,7 @@ import {
 } from "./activityStatus";
 import ActivityStatusIcon from "./ActivityStatusIcon";
 import { buildMessageTimeline } from "./messageTimeline";
+import { getMessagePreviewText } from "./chatMessagePreview";
 
 const getComparableId = (value) => {
   if (value == null) return "";
@@ -24,23 +25,11 @@ const getMessageSenderId = (message) =>
   getComparableId(message?.sender?._id || message?.sender?.id || message?.sender);
 
 const getDraftPreviewText = (message) => {
-  if (!message) return "...";
-  if (message.content) return message.content;
-  if (message.attachments?.length) return "Tệp đính kèm";
-  return "...";
+  return getMessagePreviewText(message);
 };
 
 const getPinnedMessagePreviewText = (message) => {
-  if (!message) return "...";
-  if (message.deletedAt) return "Tin nhắn đã được thu hồi";
-  if (message.content) return message.content.replace(/\s+/g, " ").trim();
-
-  const firstAttachment = message.attachments?.[0];
-  if (firstAttachment?.mimeType?.startsWith("image/")) return "Ảnh";
-  if (firstAttachment?.mimeType?.startsWith("video/")) return "Video";
-  if (firstAttachment?.fileName) return firstAttachment.fileName;
-  if (message.attachments?.length) return "Tệp đính kèm";
-  return "...";
+  return getMessagePreviewText(message);
 };
 
 const getPinnedSenderName = (message, currentUserId) => {

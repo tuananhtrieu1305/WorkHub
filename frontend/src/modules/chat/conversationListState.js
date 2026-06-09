@@ -1,3 +1,5 @@
+import { getMessagePreviewText } from "./chatMessagePreview";
+
 const toComparableId = (value) => {
   if (value == null) return "";
   if (typeof value === "object") {
@@ -104,9 +106,7 @@ export const getConversationPreview = (conversation, currentUserId) => {
   }
 
   return {
-    content:
-      lastMessage.content ||
-      (lastMessage.attachments?.length > 0 ? "[Attachment]" : ""),
+    content: getMessagePreviewText(lastMessage, { emptyText: "" }),
     isDeleted: false,
     isMine: getLastMessageSenderId(conversation) === toComparableId(currentUserId),
   };

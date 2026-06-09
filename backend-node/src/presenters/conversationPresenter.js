@@ -16,11 +16,203 @@ import {
   getR2StorageService,
 } from "../services/r2StorageService.js";
 import { normalizePinnedState } from "../utils/messageActionPolicy.js";
+import { contentDisposition } from "../utils/fileResponse.js";
 
 // Helper: get io instance
 let ioInstance = null;
 export const setIo = (io) => {
   ioInstance = io;
+};
+
+const USER_MESSAGE_TYPES = new Set(["text", "image", "file", "audio"]);
+const MAX_MESSAGE_ATTACHMENTS = 10;
+const MAX_VOICE_DURATION_SECONDS = 5 * 60;
+const VOICE_ATTACHMENT_FILE_SIZE_LIMIT = 20 * 1024 * 1024;
+const ALLOWED_AUDIO_MIMES = new Set([
+  "audio/aac",
+  "audio/mp4",
+  "audio/mpeg",
+  "audio/ogg",
+  "audio/wav",
+  "audio/webm",
+  "audio/x-m4a",
+  "audio/x-wav",
+]);
+
+const normalizeString = (value, maxLength = 1000) => {
+  if (typeof value !== "string") return "";
+  return value.trim().slice(0, maxLength);
+};
+
+const normalizePositiveNumber = (value) => {
+  const number = Number(value);
+  return Number.isFinite(number) && number >= 0 ? number : undefined;
+};
+
+const getBaseMimeType = (mimeType = "") =>
+  String(mimeType).toLowerCase().split(";")[0].trim();
+
+const isAudioMime = (mimeType = "") =>
+  getBaseMimeType(mimeType).startsWith("audio/");
+
+const isAllowedAudioMime = (mimeType = "") => {
+  const normalizedMime = getBaseMimeType(mimeType);
+  return isAudioMime(normalizedMime) && ALLOWED_AUDIO_MIMES.has(normalizedMime);
+};
+
+const isAudioAttachment = (attachment = {}) => {
+  return (
+    attachment.kind === "voice" ||
+    attachment.kind === "audio" ||
+    isAudioMime(attachment.mimeType)
+  );
+};
+
+const getAttachmentKind = (attachment = {}) => {
+  const explicitKind = normalizeString(attachment.kind, 24);
+  if (["file", "image", "video", "audio", "voice"].includes(explicitKind)) {
+    return explicitKind;
+  }
+
+  const mimeType = getBaseMimeType(normalizeString(attachment.mimeType, 120));
+  if (mimeType.startsWith("image/")) return "image";
+  if (mimeType.startsWith("video/")) return "video";
+  if (mimeType.startsWith("audio/")) return "audio";
+  return "file";
+};
+
+const normalizeAttachmentPayload = (attachment = {}) => {
+  const fileName = normalizeString(attachment.fileName, 255);
+  const fileUrl = normalizeString(attachment.fileUrl, 2048);
+  const storageKey = normalizeString(attachment.storageKey, 2048);
+  const mimeType = getBaseMimeType(normalizeString(attachment.mimeType, 120));
+  const fileSize = normalizePositiveNumber(attachment.fileSize);
+  const durationSeconds = normalizePositiveNumber(attachment.durationSeconds);
+  const normalized = {
+    fileName,
+    fileUrl,
+    ...(storageKey ? { storageKey } : {}),
+    ...(fileSize !== undefined ? { fileSize } : {}),
+    mimeType,
+    kind: getAttachmentKind({ ...attachment, mimeType }),
+  };
+
+  if (durationSeconds !== undefined) {
+    normalized.durationSeconds = Math.min(
+      Math.round(durationSeconds),
+      MAX_VOICE_DURATION_SECONDS,
+    );
+  }
+
+  return normalized;
+};
+
+const normalizeMessageAttachments = (attachments) => {
+  if (!Array.isArray(attachments)) return [];
+
+  return attachments
+    .slice(0, MAX_MESSAGE_ATTACHMENTS)
+    .map(normalizeAttachmentPayload)
+    .filter((attachment) => attachment.fileName && attachment.fileUrl);
+};
+
+const getMessagePreviewContent = ({ type, content, attachments = [] } = {}) => {
+  const trimmedContent = typeof content === "string" ? content.trim() : "";
+  if (trimmedContent) return trimmedContent;
+
+  if (type === "audio" || attachments.some(isAudioAttachment)) {
+    return "Tin nhắn thoại";
+  }
+
+  const firstAttachment = attachments[0];
+  const firstMime = String(firstAttachment?.mimeType || "").toLowerCase();
+  if (firstMime.startsWith("image/")) return "Ảnh";
+  if (firstMime.startsWith("video/")) return "Video";
+  if (attachments.length > 0) return "Tệp đính kèm";
+  return "";
+};
+
+export const buildConversationAttachmentDownloadUrl = (
+  conversationId,
+  storageKey,
+  fileName = "",
+  { disposition = "inline" } = {},
+) => {
+  if (!conversationId || !storageKey) return "";
+
+  const params = new URLSearchParams({
+    key: storageKey,
+    disposition: disposition === "attachment" ? "attachment" : "inline",
+  });
+
+  if (fileName) {
+    params.set("name", fileName);
+  }
+
+  return `/api/conversations/${conversationId}/attachments/download?${params.toString()}`;
+};
+
+const extractR2StorageKey = (fileUrl = "") => {
+  if (!fileUrl || !fileUrl.startsWith("http")) return "";
+
+  try {
+    const url = new URL(fileUrl);
+    const bucketName = process.env.R2_BUCKET_NAME;
+    const pathParts = url.pathname.split("/").filter(Boolean);
+    if (!bucketName || pathParts[0] !== bucketName) return "";
+
+    const storageKey = decodeURIComponent(pathParts.slice(1).join("/"));
+    return storageKey.startsWith("attachments/conversations/")
+      ? storageKey
+      : "";
+  } catch {
+    return "";
+  }
+};
+
+export const serializeConversationAttachments = (conversationId, attachments = []) => {
+  return (attachments || []).map((attachment) => {
+    const plain = attachment?.toObject?.() || attachment || {};
+    const storageKey =
+      normalizeString(plain.storageKey, 2048) ||
+      extractR2StorageKey(plain.fileUrl);
+
+    if (!storageKey) {
+      return plain;
+    }
+
+    return {
+      ...plain,
+      storageKey,
+      fileUrl: buildConversationAttachmentDownloadUrl(
+        conversationId,
+        storageKey,
+        plain.fileName,
+      ),
+    };
+  });
+};
+
+const getDirectR2AttachmentUrl = (storageKey) => {
+  try {
+    return buildR2PublicUrl(storageKey);
+  } catch {
+    return "";
+  }
+};
+
+const isConversationAttachmentStorageKey = (storageKey = "") =>
+  storageKey.startsWith("attachments/conversations/");
+
+const sanitizeAttachmentHeaderFileName = (fileName = "") => {
+  const normalized = normalizeString(fileName, 255) || "attachment";
+  return normalized.replace(/["\\\r\n]/g, "_");
+};
+
+const normalizeRangeHeader = (rangeHeader) => {
+  if (typeof rangeHeader !== "string") return "";
+  const trimmedRange = rangeHeader.trim();
+  return /^bytes=\d*-\d*$/.test(trimmedRange) ? trimmedRange : "";
 };
 
 // Helper: check if user is participant
@@ -86,7 +278,12 @@ const formatReplyMessage = async (replyTo) => {
     type: replyMessage.type,
     content: isDeleted ? "" : replyMessage.content,
     metadata: isDeleted ? {} : replyMessage.metadata || {},
-    attachments: isDeleted ? [] : replyMessage.attachments,
+    attachments: isDeleted
+      ? []
+      : serializeConversationAttachments(
+          replyMessage.conversationId,
+          replyMessage.attachments,
+        ),
     editedAt: replyMessage.editedAt,
     isPinned: isDeleted ? false : Boolean(replyMessage.isPinned),
     pinnedAt: isDeleted ? null : replyMessage.pinnedAt,
@@ -120,7 +317,12 @@ const formatMessage = async (message) => {
     type: message.type,
     content: isDeleted ? "" : message.content,
     metadata: isDeleted ? {} : message.metadata || {},
-    attachments: isDeleted ? [] : message.attachments,
+    attachments: isDeleted
+      ? []
+      : serializeConversationAttachments(
+          message.conversationId,
+          message.attachments,
+        ),
     mentions: isDeleted ? [] : message.mentions,
     replyTo: await formatReplyMessage(message.replyTo),
     reactions: isDeleted ? [] : message.reactions,
@@ -730,6 +932,100 @@ export const markConversationAsRead = async (req, res) => {
   }
 };
 
+// GET /conversations/:id/attachments/download
+export const downloadConversationAttachment = async (req, res) => {
+  try {
+    const conversation = await Conversation.findById(req.params.id);
+    if (!conversation) {
+      return res.status(404).json({ message: "Conversation not found" });
+    }
+
+    if (!isParticipant(conversation, req.user._id)) {
+      return res
+        .status(403)
+        .json({ message: "You are not a participant of this conversation" });
+    }
+
+    const storageKey = normalizeString(req.query?.key, 2048);
+    if (!storageKey || !isConversationAttachmentStorageKey(storageKey)) {
+      return res.status(400).json({ message: "Invalid attachment key" });
+    }
+
+    const directFileUrl = getDirectR2AttachmentUrl(storageKey);
+    const attachmentLookup = [{ storageKey }];
+    if (directFileUrl) {
+      attachmentLookup.push({ fileUrl: directFileUrl });
+    }
+
+    const attachmentMessage = await Message.findOne({
+      conversationId: conversation._id,
+      attachments: {
+        $elemMatch: {
+          $or: attachmentLookup,
+        },
+      },
+    }).select("_id");
+
+    if (!attachmentMessage) {
+      return res.status(404).json({ message: "Attachment not found" });
+    }
+
+    const range = normalizeRangeHeader(req.headers.range);
+    const object = await getR2StorageService().getObjectStream({
+      key: storageKey,
+      range,
+    });
+
+    if (!object.body) {
+      return res.status(404).json({ message: "Attachment data not found" });
+    }
+
+    const fileName = sanitizeAttachmentHeaderFileName(req.query?.name);
+    const statusCode = range && object.contentRange ? 206 : 200;
+    res.status(statusCode);
+    res.setHeader(
+      "Content-Type",
+      object.contentType || "application/octet-stream",
+    );
+    res.setHeader("Accept-Ranges", "bytes");
+    const dispositionType =
+      req.query?.disposition === "attachment" ? "attachment" : "inline";
+    res.setHeader(
+      "Content-Disposition",
+      contentDisposition(dispositionType, fileName),
+    );
+    res.setHeader("Cache-Control", "private, max-age=3600");
+
+    if (object.contentLength !== undefined) {
+      res.setHeader("Content-Length", String(object.contentLength));
+    }
+
+    if (object.contentRange) {
+      res.setHeader("Content-Range", object.contentRange);
+    }
+
+    object.body.on?.("error", (error) => {
+      console.error(
+        "DownloadConversationAttachment stream error:",
+        error.message,
+      );
+      if (!res.headersSent) {
+        res.status(500).json({ message: "Server error, please try again" });
+      } else {
+        res.destroy(error);
+      }
+    });
+
+    object.body.pipe(res);
+  } catch (error) {
+    console.error("DownloadConversationAttachment error:", error.message);
+    if (error.kind === "ObjectId") {
+      return res.status(400).json({ message: "Invalid conversation ID" });
+    }
+    res.status(500).json({ message: "Server error, please try again" });
+  }
+};
+
 // POST /conversations/:id/attachments
 export const uploadConversationAttachment = async (req, res) => {
   try {
@@ -748,28 +1044,53 @@ export const uploadConversationAttachment = async (req, res) => {
       return res.status(400).json({ message: "Attachment file is required" });
     }
 
+    const uploadPurpose = normalizeString(req.body?.purpose, 40);
+    const isVoiceUpload = uploadPurpose === "voice";
+    const uploadMimeType = getBaseMimeType(req.file.mimetype);
+
+    if (isVoiceUpload) {
+      if (!isAllowedAudioMime(uploadMimeType)) {
+        return res.status(400).json({
+          message: "Voice attachment must be a supported audio file",
+        });
+      }
+
+      if (req.file.size > VOICE_ATTACHMENT_FILE_SIZE_LIMIT) {
+        return res.status(400).json({
+          message: "Voice attachment is too large",
+        });
+      }
+    }
+
     // Upload to R2
     const storage = getR2StorageService();
     const storageKey = buildR2AttachmentKey(
-      "conversations",
+      `conversations/${conversation._id}`,
       req.file.originalname,
     );
 
     await storage.putObject({
       key: storageKey,
       body: req.file.buffer,
-      contentType: req.file.mimetype,
+      contentType: uploadMimeType || req.file.mimetype,
       contentLength: req.file.size,
     });
 
-    // Build R2 URL
-    const r2Url = buildR2PublicUrl(storageKey);
+    const fileUrl = buildConversationAttachmentDownloadUrl(
+      conversation._id,
+      storageKey,
+      req.file.originalname,
+    );
 
     res.status(201).json({
       fileName: req.file.originalname,
-      fileUrl: r2Url,
+      fileUrl,
+      storageKey,
       fileSize: req.file.size,
-      mimeType: req.file.mimetype,
+      mimeType: uploadMimeType,
+      kind: isVoiceUpload
+        ? "voice"
+        : getAttachmentKind({ mimeType: uploadMimeType }),
     });
   } catch (error) {
     console.error("UploadConversationAttachment error:", error.message);
@@ -796,11 +1117,40 @@ export const sendMessage = async (req, res) => {
 
     const { type, content, attachments, mentions, replyTo, metadata } =
       req.body;
+    const messageType = type || "text";
+    const normalizedContent =
+      typeof content === "string" ? content.trim() : "";
+    const normalizedAttachments = normalizeMessageAttachments(attachments);
 
-    if (!content && (!attachments || attachments.length === 0)) {
+    if (!USER_MESSAGE_TYPES.has(messageType)) {
+      return res.status(400).json({ message: "Invalid message type" });
+    }
+
+    if (!normalizedContent && normalizedAttachments.length === 0) {
       return res
         .status(400)
         .json({ message: "Message content or attachments required" });
+    }
+
+    if (messageType === "audio") {
+      const audioAttachments = normalizedAttachments.filter(isAudioAttachment);
+      if (
+        audioAttachments.length === 0 ||
+        audioAttachments.length !== normalizedAttachments.length
+      ) {
+        return res.status(400).json({
+          message: "Audio messages require audio attachments only",
+        });
+      }
+
+      const hasUnsupportedAudio = audioAttachments.some(
+        (attachment) => !isAllowedAudioMime(attachment.mimeType),
+      );
+      if (hasUnsupportedAudio) {
+        return res.status(400).json({
+          message: "Audio message attachment type is not supported",
+        });
+      }
     }
 
     if (replyTo) {
@@ -816,18 +1166,24 @@ export const sendMessage = async (req, res) => {
     const message = await Message.create({
       conversationId: conversation._id,
       senderId: req.user._id,
-      type: type || "text",
-      content: content || "",
+      type: messageType,
+      content: normalizedContent,
       metadata: metadata || {},
-      attachments: attachments || [],
+      attachments: normalizedAttachments,
       mentions: mentions || [],
       replyTo: replyTo || null,
+    });
+
+    const previewContent = getMessagePreviewContent({
+      type: messageType,
+      content: normalizedContent,
+      attachments: normalizedAttachments,
     });
 
     // Update lastMessage on conversation
     conversation.lastMessage = {
       messageId: message._id,
-      content: content || (attachments?.length > 0 ? "[Attachment]" : ""),
+      content: previewContent,
       senderId: req.user._id,
       createdAt: message.createdAt,
       deletedAt: null,

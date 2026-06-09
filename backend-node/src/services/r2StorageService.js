@@ -110,16 +110,19 @@ export const createR2StorageService = ({ client, bucketName }) => {
       return { bucketName, key };
     },
 
-    async getObjectStream({ key }) {
+    async getObjectStream({ key, range }) {
       const result = await client.send(
         new GetObjectCommand({
           Bucket: bucketName,
           Key: key,
+          ...(range ? { Range: range } : {}),
         }),
       );
 
       return {
         body: result.Body,
+        acceptRanges: result.AcceptRanges,
+        contentRange: result.ContentRange,
         contentLength: result.ContentLength,
         contentType: result.ContentType,
         metadata: result.Metadata,

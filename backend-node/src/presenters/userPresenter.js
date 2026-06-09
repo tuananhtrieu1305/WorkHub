@@ -4,6 +4,7 @@ import Department from "../models/Department.js";
 import Project from "../models/Project.js";
 import UserPreference from "../models/UserPreference.js";
 import ActivityLog from "../models/ActivityLog.js";
+import { pipeline } from "stream/promises";
 import generateToken from "../utils/generateToken.js";
 import generateRefreshToken from "../utils/generateRefreshToken.js";
 import {
@@ -14,15 +15,50 @@ import {
 } from "../services/presenceService.js";
 import {
   buildR2AvatarKey,
-  buildR2PublicUrl,
   getR2StorageService,
 } from "../services/r2StorageService.js";
+import { contentDisposition } from "../utils/fileResponse.js";
 
 let ioInstance = null;
 const activityStatusExpiryTimers = new Map();
+const AVATAR_R2_PREFIX = "avatars/";
 
 export const setUserIo = (io) => {
   ioInstance = io;
+};
+
+const getSingleString = (value, fallback = "") => {
+  if (Array.isArray(value)) return value[0] ?? fallback;
+  return typeof value === "string" ? value : fallback;
+};
+
+const isAvatarStorageKey = (storageKey = "") =>
+  storageKey.startsWith(AVATAR_R2_PREFIX);
+
+export const buildAvatarProxyUrl = (storageKey) => {
+  if (!isAvatarStorageKey(storageKey)) return "";
+  const params = new URLSearchParams({ key: storageKey });
+  return `/api/users/avatars?${params.toString()}`;
+};
+
+const extractAvatarStorageKeyFromUrl = (avatarUrl = "") => {
+  if (!avatarUrl || !String(avatarUrl).startsWith("http")) return "";
+
+  try {
+    const url = new URL(avatarUrl);
+    const pathParts = url.pathname.split("/").filter(Boolean);
+    const bucketName = process.env.R2_BUCKET_NAME;
+    const candidates = [
+      decodeURIComponent(pathParts.join("/")),
+      bucketName && pathParts[0] === bucketName
+        ? decodeURIComponent(pathParts.slice(1).join("/"))
+        : "",
+    ];
+
+    return candidates.find(isAvatarStorageKey) || "";
+  } catch {
+    return "";
+  }
 };
 
 const formatCurrentUser = (user) => ({
@@ -545,6 +581,44 @@ export const updateActivityStatus = async (req, res) => {
   }
 };
 
+export const streamAvatar = async (req, res) => {
+  try {
+    const storageKey =
+      getSingleString(req.query.key).trim() ||
+      extractAvatarStorageKeyFromUrl(getSingleString(req.query.url).trim());
+
+    if (!storageKey || !isAvatarStorageKey(storageKey)) {
+      return res.status(400).json({ message: "Invalid avatar key" });
+    }
+
+    const object = await getR2StorageService().getObjectStream({
+      key: storageKey,
+    });
+
+    if (!object.body) {
+      return res.status(404).json({ message: "Avatar not found" });
+    }
+
+    res.setHeader(
+      "Content-Type",
+      object.contentType || "application/octet-stream",
+    );
+    if (object.contentLength !== undefined) {
+      res.setHeader("Content-Length", String(object.contentLength));
+    }
+    res.setHeader(
+      "Content-Disposition",
+      contentDisposition("inline", storageKey.split("/").pop() || "avatar"),
+    );
+    res.setHeader("Cache-Control", "private, max-age=3600");
+
+    await pipeline(object.body, res);
+  } catch (error) {
+    console.error("StreamAvatar error:", error.message);
+    return res.status(404).json({ message: "Avatar not found" });
+  }
+};
+
 export const updateAvatar = async (req, res) => {
   try {
     if (!req.file) {
@@ -586,9 +660,7 @@ export const updateAvatar = async (req, res) => {
       },
     });
 
-    // Build R2 URL
-    const r2Url = buildR2PublicUrl(storageKey);
-    user.avatar = r2Url;
+    user.avatar = buildAvatarProxyUrl(storageKey);
 
     await user.save();
 

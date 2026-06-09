@@ -2,14 +2,9 @@ import { Avatar, Button, Modal, Spin, Typography } from "antd";
 import { CloseOutlined, VideoCameraOutlined, AudioOutlined } from "@ant-design/icons";
 import { getCallStatusText } from "./callState";
 import { useCallCountdown } from "./callCountdown";
+import { getAvatarUrl } from "../../utils/avatar";
 
 const { Text, Title } = Typography;
-const API_URL = import.meta.env.VITE_NODE_API_URL || "http://localhost:5000";
-
-const getAvatarUrl = (avatar) => {
-  if (!avatar) return "";
-  return avatar.startsWith("http") ? avatar : `${API_URL}${avatar}`;
-};
 
 export default function OutgoingCallModal({
   call,

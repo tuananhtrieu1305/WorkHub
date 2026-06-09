@@ -11,6 +11,7 @@ import {
   getPinnedMessages,
   markConversationAsRead,
   uploadConversationAttachment,
+  downloadConversationAttachment,
   sendMessage,
   updateMessage,
   deleteMessage,
@@ -33,7 +34,17 @@ router.delete("/:id/members/:userId", protect, removeConversationMember);
 router.post("/:id/read", protect, markConversationAsRead);
 router.get("/:id/pinned-messages", protect, getPinnedMessages);
 router.get("/:id/messages", protect, getMessages);
-router.post("/:id/attachments", protect, uploadAttachment.single("file"), uploadConversationAttachment);
+router.get(
+  "/:id/attachments/download",
+  protect,
+  downloadConversationAttachment,
+);
+router.post(
+  "/:id/attachments",
+  protect,
+  uploadAttachment.single("file"),
+  uploadConversationAttachment,
+);
 router.post("/:id/messages", protect, sendMessage);
 router.put("/:id/messages/:messageId", protect, updateMessage);
 router.delete("/:id/messages/:messageId", protect, deleteMessage);

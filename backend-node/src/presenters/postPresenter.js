@@ -5,6 +5,7 @@ import User from "../models/User.js";
 import fs from "fs";
 import path from "path";
 import { pipeline } from "stream/promises";
+import { contentDisposition } from "../utils/fileResponse.js";
 import {
   attachmentUploadsDir,
   legacyAttachmentUploadsDir,
@@ -17,9 +18,10 @@ import {
 import { getReactionDetailsForTarget } from "../services/reactionDetailsService.js";
 import {
   buildR2AttachmentKey,
-  buildR2PublicUrl,
   getR2StorageService,
 } from "../services/r2StorageService.js";
+
+const POST_ATTACHMENT_R2_PREFIX = "attachments/posts/";
 
 const getAttachmentType = (mimeType = "") => {
   if (mimeType.startsWith("image/")) return "image";
@@ -27,14 +29,61 @@ const getAttachmentType = (mimeType = "") => {
   return "file";
 };
 
-const buildAttachmentDownloadUrl = (
+const getSingleString = (value, fallback = "") => {
+  if (Array.isArray(value)) return value[0] ?? fallback;
+  return typeof value === "string" ? value : fallback;
+};
+
+const isPostR2AttachmentKey = (storageKey = "") =>
+  storageKey.startsWith(POST_ATTACHMENT_R2_PREFIX);
+
+const normalizeRangeHeader = (rangeHeader) => {
+  if (typeof rangeHeader !== "string") return "";
+  const trimmedRange = rangeHeader.trim();
+  return /^bytes=\d*-\d*$/.test(trimmedRange) ? trimmedRange : "";
+};
+
+const normalizeDisposition = (value) =>
+  value === "inline" ? "inline" : "attachment";
+
+const sanitizeDownloadFileName = (fileName = "") => {
+  const normalized = String(fileName || "attachment").trim() || "attachment";
+  return path.basename(normalized).replace(/["\\\r\n]/g, "_");
+};
+
+const extractR2PostAttachmentKey = (fileUrl = "") => {
+  if (!fileUrl || !String(fileUrl).startsWith("http")) return "";
+
+  try {
+    const url = new URL(fileUrl);
+    const pathParts = url.pathname.split("/").filter(Boolean);
+    const bucketName = process.env.R2_BUCKET_NAME;
+    const candidates = [
+      decodeURIComponent(pathParts.join("/")),
+      bucketName && pathParts[0] === bucketName
+        ? decodeURIComponent(pathParts.slice(1).join("/"))
+        : "",
+    ];
+
+    return candidates.find(isPostR2AttachmentKey) || "";
+  } catch {
+    return "";
+  }
+};
+
+export const buildAttachmentDownloadUrl = (
   storedFileName,
   fileName = storedFileName,
+  { disposition = "attachment" } = {},
 ) => {
   if (!storedFileName) return "";
-  const encodedStoredName = encodeURIComponent(storedFileName);
-  const encodedFileName = encodeURIComponent(fileName || storedFileName);
-  return `/api/posts/attachments/${encodedStoredName}/download?name=${encodedFileName}`;
+  const params = new URLSearchParams({
+    key: storedFileName,
+    name: fileName || storedFileName,
+    disposition: normalizeDisposition(disposition),
+  });
+
+  return `/api/posts/attachments/download?${params.toString()}`;
 };
 
 // Upload attachments to R2 and build attachment objects
@@ -54,13 +103,15 @@ export const uploadPostAttachments = async (files = []) => {
       contentLength: file.size,
     });
 
-    const r2Url = buildR2PublicUrl(storageKey);
+    const fileName = file.originalname;
 
     attachments.push({
-      fileName: file.originalname,
+      fileName,
       storedFileName: storageKey,
-      fileUrl: r2Url,
-      downloadUrl: buildAttachmentDownloadUrl(storageKey, file.originalname),
+      fileUrl: buildAttachmentDownloadUrl(storageKey, fileName, {
+        disposition: "inline",
+      }),
+      downloadUrl: buildAttachmentDownloadUrl(storageKey, fileName),
       fileSize: file.size,
       mimeType: file.mimetype,
       fileType: getAttachmentType(file.mimetype),
@@ -93,23 +144,25 @@ export const serializePostAttachments = (attachments = []) =>
         ? attachment.toObject()
         : attachment;
     const storedFileName =
-      plain.storedFileName || path.basename(plain.fileUrl || "");
-
-    // For R2 URLs, downloadUrl should be the fileUrl itself or a redirect
-    // For local URLs, downloadUrl should be the API download endpoint
-    const isR2Url =
-      plain.fileUrl && plain.fileUrl.includes("r2.cloudflarestorage.com");
-    const downloadUrl = isR2Url
-      ? plain.fileUrl
+      plain.storedFileName ||
+      extractR2PostAttachmentKey(plain.fileUrl) ||
+      path.basename(plain.fileUrl || "");
+    const fileName = plain.fileName || path.basename(storedFileName);
+    const isR2Attachment = isPostR2AttachmentKey(storedFileName);
+    const fileUrl = isR2Attachment
+      ? buildAttachmentDownloadUrl(storedFileName, fileName, {
+          disposition: "inline",
+        })
+      : plain.fileUrl;
+    const downloadUrl = isR2Attachment
+      ? buildAttachmentDownloadUrl(storedFileName, fileName)
       : plain.downloadUrl ||
-        buildAttachmentDownloadUrl(
-          storedFileName,
-          plain.fileName || storedFileName,
-        );
+        buildAttachmentDownloadUrl(storedFileName, fileName);
 
     return {
       ...plain,
       storedFileName,
+      fileUrl,
       fileType: plain.fileType || getAttachmentType(plain.mimeType || ""),
       downloadUrl,
     };
@@ -420,43 +473,74 @@ export const deletePost = async (req, res) => {
 // GET /posts/attachments/:filename/download
 export const downloadPostAttachment = async (req, res) => {
   try {
-    const storedFileName = path.basename(req.params.filename || "");
+    const requestedKey =
+      getSingleString(req.query.key).trim() ||
+      getSingleString(req.params.filename).trim();
+    if (!requestedKey) {
+      return res.status(400).json({ message: "Attachment key is required" });
+    }
+
+    const isR2Attachment = isPostR2AttachmentKey(requestedKey);
+    const storedFileName = isR2Attachment
+      ? requestedKey
+      : path.basename(requestedKey);
     if (!storedFileName) {
       return res
         .status(400)
         .json({ message: "Attachment filename is required" });
     }
 
-    const requestedName =
-      typeof req.query.name === "string" && req.query.name.trim()
-        ? path.basename(req.query.name)
-        : storedFileName;
+    if (requestedKey.includes("/") && !isR2Attachment) {
+      return res.status(400).json({ message: "Invalid attachment key" });
+    }
 
-    // Check if it's an R2 key (contains /)
-    if (storedFileName.includes("/")) {
-      // It's an R2 key, get it from R2
+    const requestedName = sanitizeDownloadFileName(
+      getSingleString(req.query.name).trim() || path.basename(storedFileName),
+    );
+    const dispositionType = normalizeDisposition(req.query.disposition);
+
+    if (isR2Attachment) {
       const storage = getR2StorageService();
       try {
-        const object = await storage.getObjectStream({ key: storedFileName });
+        const range = normalizeRangeHeader(req.headers.range);
+        const object = await storage.getObjectStream({
+          key: storedFileName,
+          range,
+        });
+        const statusCode = range && object.contentRange ? 206 : 200;
+        res.status(statusCode);
         res.setHeader(
           "Content-Type",
           object.contentType || "application/octet-stream",
         );
-        res.setHeader("Content-Length", object.contentLength || 0);
+        res.setHeader("Accept-Ranges", "bytes");
         res.setHeader(
           "Content-Disposition",
-          `attachment; filename="${requestedName}"`,
+          contentDisposition(dispositionType, requestedName),
         );
+        res.setHeader("Cache-Control", "private, max-age=3600");
+        if (object.contentLength !== undefined) {
+          res.setHeader("Content-Length", String(object.contentLength));
+        }
+        if (object.contentRange) {
+          res.setHeader("Content-Range", object.contentRange);
+        }
         await pipeline(object.body, res);
       } catch (error) {
         console.error("Error getting object from R2:", error);
         return res.status(404).json({ message: "Attachment not found" });
       }
     } else {
-      // It's a local file
       const filePath = findPostAttachmentPath(storedFileName);
       if (!filePath) {
         return res.status(404).json({ message: "Attachment not found" });
+      }
+      if (dispositionType === "inline") {
+        res.setHeader(
+          "Content-Disposition",
+          contentDisposition("inline", requestedName),
+        );
+        return res.sendFile(filePath);
       }
       return res.download(filePath, requestedName);
     }

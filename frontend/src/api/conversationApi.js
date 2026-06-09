@@ -43,15 +43,41 @@ export const sendMessage = async (conversationId, payload) => {
   return data;
 };
 
-export const uploadConversationAttachment = async (conversationId, file) => {
+export const uploadConversationAttachment = async (
+  conversationId,
+  file,
+  options = {},
+) => {
   const formData = new FormData();
   formData.append("file", file);
+  if (options.purpose) {
+    formData.append("purpose", options.purpose);
+  }
 
   const { data } = await axiosClient.post(
     `/conversations/${conversationId}/attachments`,
     formData,
     { headers: { "Content-Type": "multipart/form-data" } }
   );
+  return data;
+};
+
+export const downloadConversationAttachmentBlob = async (fileUrl) => {
+  const rawUrl = String(fileUrl || "");
+  let requestPath = rawUrl;
+
+  if (rawUrl.startsWith("http")) {
+    const url = new URL(rawUrl);
+    requestPath = `${url.pathname}${url.search}`;
+  }
+
+  if (requestPath.startsWith("/api/")) {
+    requestPath = requestPath.slice(4);
+  }
+
+  const { data } = await axiosClient.get(requestPath, {
+    responseType: "blob",
+  });
   return data;
 };
 

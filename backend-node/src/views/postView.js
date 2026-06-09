@@ -16,6 +16,7 @@ import { uploadAttachment, uploadCommentImages } from "../config/multer.js";
 
 const router = express.Router();
 
+router.get("/attachments/download", downloadPostAttachment);
 router.get("/attachments/:filename/download", downloadPostAttachment);
 router.get("/", protect, getPosts);
 router.post("/", protect, uploadAttachment.array("attachments", 10), createPost);

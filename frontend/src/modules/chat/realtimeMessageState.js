@@ -1,4 +1,5 @@
 import { sortConversationsByActivity } from "./conversationListState";
+import { getMessagePreviewText } from "./chatMessagePreview";
 
 const toComparableId = (value) => {
   if (value == null) return "";
@@ -245,9 +246,7 @@ export const updateConversationPreview = (
     if (getConversationId(conversation) !== conversationId) return conversation;
 
     const createdAt = message.createdAt || new Date().toISOString();
-    const content =
-      message.content ||
-      (message.attachments?.length > 0 ? "[Attachment]" : "");
+    const content = getMessagePreviewText(message, { emptyText: "" });
     const senderId = getMessageSenderId(message);
     const isDeleted = Boolean(message.deletedAt);
     const isSentByCurrentUser =

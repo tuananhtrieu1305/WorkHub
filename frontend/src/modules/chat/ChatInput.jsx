@@ -1,13 +1,43 @@
 import { useEffect, useRef, useState } from "react";
 import { EmojiPickerButton } from "../../components/emoji";
 import { applyComposerFormat } from "./chatComposerUtils";
+import { formatAudioDuration } from "./chatMessagePreview";
 
-const pendingComposerActions = [
-  { icon: "emoji_symbols", title: "Chọn nhãn dán" },
-  { icon: "gif_box", title: "Chọn file GIF" },
+const secondaryComposerActions = [
   { icon: "contact_page", title: "Gửi danh thiếp" },
-  { icon: "mic", title: "Gửi voice" },
 ];
+
+const MAX_VOICE_DURATION_SECONDS = 120;
+const audioMimeTypeCandidates = [
+  "audio/webm;codecs=opus",
+  "audio/webm",
+  "audio/ogg;codecs=opus",
+  "audio/mp4",
+];
+const recorderWaveformBars = [
+  24, 48, 34, 72, 42, 88, 58, 36, 78, 96, 45, 68, 84, 52, 74, 40, 62, 30,
+];
+
+const getSupportedAudioMimeType = () => {
+  if (typeof MediaRecorder === "undefined") return "";
+  return (
+    audioMimeTypeCandidates.find((mimeType) =>
+      MediaRecorder.isTypeSupported(mimeType),
+    ) || ""
+  );
+};
+
+const getBaseMimeType = (mimeType = "") =>
+  String(mimeType).split(";")[0].trim() || "audio/webm";
+
+const getAudioExtension = (mimeType = "") => {
+  const baseMimeType = getBaseMimeType(mimeType);
+  if (baseMimeType === "audio/ogg") return "ogg";
+  if (baseMimeType === "audio/mp4") return "m4a";
+  if (baseMimeType === "audio/mpeg") return "mp3";
+  if (baseMimeType === "audio/wav") return "wav";
+  return "webm";
+};
 
 const formatToolbarItems = [
   { label: "B", title: "In đậm", action: "bold", className: "font-bold" },
@@ -48,12 +78,24 @@ const ChatInput = ({
   const [showFormattingToolbar, setShowFormattingToolbar] = useState(false);
   const [attachments, setAttachments] = useState([]);
   const [isUploading, setIsUploading] = useState(false);
+  const [isVoiceSending, setIsVoiceSending] = useState(false);
+  const [isPreparingRecording, setIsPreparingRecording] = useState(false);
+  const [isRecording, setIsRecording] = useState(false);
+  const [recordingSeconds, setRecordingSeconds] = useState(0);
   const [attachmentError, setAttachmentError] = useState("");
+  const [recordingError, setRecordingError] = useState("");
   const [renderedDraftPreview, setRenderedDraftPreview] =
     useState(draftPreview);
   const [isDraftExiting, setIsDraftExiting] = useState(false);
   const textareaRef = useRef(null);
   const fileInputRef = useRef(null);
+  const mediaRecorderRef = useRef(null);
+  const mediaStreamRef = useRef(null);
+  const recordingChunksRef = useRef([]);
+  const recordingStartedAtRef = useRef(0);
+  const recordingTimerRef = useRef(null);
+  const pendingRecordingActionRef = useRef("cancel");
+  const recordingRequestCancelledRef = useRef(false);
   const draftIdentityRef = useRef(
     draftPreview
       ? `${draftPreview.variant}-${draftPreview.id}`
@@ -72,13 +114,231 @@ const ChatInput = ({
     onTypingChange?.(Boolean(nextContent.trim()));
   };
 
+  const stopRecordingTimer = () => {
+    if (recordingTimerRef.current) {
+      window.clearInterval(recordingTimerRef.current);
+      recordingTimerRef.current = null;
+    }
+  };
+
+  const stopRecordingStream = () => {
+    mediaStreamRef.current?.getTracks().forEach((track) => track.stop());
+    mediaStreamRef.current = null;
+  };
+
+  const resetRecordingState = () => {
+    stopRecordingTimer();
+    stopRecordingStream();
+    mediaRecorderRef.current = null;
+    recordingChunksRef.current = [];
+    recordingStartedAtRef.current = 0;
+    setIsPreparingRecording(false);
+    setIsRecording(false);
+    setRecordingSeconds(0);
+  };
+
+  const getRecordingDurationSeconds = () => {
+    const startedAt = recordingStartedAtRef.current;
+    if (!startedAt) return Math.max(1, recordingSeconds);
+    const elapsedSeconds = Math.ceil((Date.now() - startedAt) / 1000);
+    return Math.min(
+      Math.max(1, elapsedSeconds),
+      MAX_VOICE_DURATION_SECONDS,
+    );
+  };
+
+  const uploadVoiceRecording = async (blob, mimeType, durationSeconds) => {
+    if (!onUploadAttachment || !onSend) return;
+
+    const baseMimeType = getBaseMimeType(mimeType);
+    const extension = getAudioExtension(baseMimeType);
+    const voiceFile = new File([blob], `voice-${Date.now()}.${extension}`, {
+      type: baseMimeType,
+    });
+
+    setIsVoiceSending(true);
+    setAttachmentError("");
+    setRecordingError("");
+    setShowFormattingToolbar(false);
+
+    try {
+      const attachment = await onUploadAttachment(voiceFile, {
+        purpose: "voice",
+      });
+      const voiceAttachment = {
+        ...attachment,
+        mimeType: attachment.mimeType || baseMimeType,
+        kind: "voice",
+        durationSeconds,
+      };
+
+      await onSend("", {
+        type: "audio",
+        attachments: [voiceAttachment],
+        metadata: {
+          durationSeconds,
+          attachmentKind: "voice",
+        },
+      });
+      onTypingChange?.(false);
+    } catch (error) {
+      console.error("Failed to send voice message:", error);
+      setAttachmentError("Không thể gửi tin nhắn thoại.");
+    } finally {
+      setIsVoiceSending(false);
+      textareaRef.current?.focus();
+    }
+  };
+
+  const stopRecording = (action) => {
+    const recorder = mediaRecorderRef.current;
+    pendingRecordingActionRef.current = action;
+
+    if (!recorder || recorder.state === "inactive") {
+      resetRecordingState();
+      return;
+    }
+
+    recorder.stop();
+  };
+
+  const stopAndSendRecording = () => {
+    stopRecording("send");
+  };
+
+  const cancelRecording = () => {
+    if (isPreparingRecording) {
+      recordingRequestCancelledRef.current = true;
+      setIsPreparingRecording(false);
+      setRecordingSeconds(0);
+      return;
+    }
+
+    stopRecording("cancel");
+  };
+
+  const startRecordingTimer = () => {
+    stopRecordingTimer();
+    recordingTimerRef.current = window.setInterval(() => {
+      const elapsedSeconds = getRecordingDurationSeconds();
+      setRecordingSeconds(elapsedSeconds);
+
+      if (elapsedSeconds >= MAX_VOICE_DURATION_SECONDS) {
+        stopAndSendRecording();
+      }
+    }, 250);
+  };
+
+  const startRecording = async () => {
+    if (
+      disabled ||
+      isUploading ||
+      isVoiceSending ||
+      isPreparingRecording ||
+      mode === "edit"
+    ) {
+      return;
+    }
+    if (!onUploadAttachment || !onSend) return;
+
+    if (
+      typeof navigator === "undefined" ||
+      !navigator.mediaDevices?.getUserMedia ||
+      typeof MediaRecorder === "undefined"
+    ) {
+      setRecordingError("Trình duyệt không hỗ trợ thu âm trực tiếp.");
+      return;
+    }
+
+    setAttachmentError("");
+    setRecordingError("");
+    setShowFormattingToolbar(false);
+    setRecordingSeconds(0);
+    setIsPreparingRecording(true);
+    recordingRequestCancelledRef.current = false;
+
+    let stream = null;
+
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      if (recordingRequestCancelledRef.current) {
+        stream.getTracks().forEach((track) => track.stop());
+        return;
+      }
+
+      mediaStreamRef.current = stream;
+      const mimeType = getSupportedAudioMimeType();
+      const recorder = new MediaRecorder(
+        stream,
+        mimeType ? { mimeType } : undefined,
+      );
+
+      mediaRecorderRef.current = recorder;
+      recordingChunksRef.current = [];
+      pendingRecordingActionRef.current = "cancel";
+      recordingStartedAtRef.current = Date.now();
+
+      recorder.ondataavailable = (event) => {
+        if (event.data?.size > 0) {
+          recordingChunksRef.current.push(event.data);
+        }
+      };
+
+      recorder.onstop = () => {
+        const action = pendingRecordingActionRef.current;
+        const durationSeconds = getRecordingDurationSeconds();
+        const recorderMimeType = recorder.mimeType || mimeType || "audio/webm";
+        const voiceBlob = new Blob(recordingChunksRef.current, {
+          type: getBaseMimeType(recorderMimeType),
+        });
+
+        resetRecordingState();
+
+        if (action === "send") {
+          if (voiceBlob.size === 0) {
+            setAttachmentError("Không có dữ liệu thu âm.");
+            return;
+          }
+          void uploadVoiceRecording(
+            voiceBlob,
+            recorderMimeType,
+            durationSeconds,
+          );
+        }
+      };
+
+      recorder.start(250);
+      setIsPreparingRecording(false);
+      setIsRecording(true);
+      setRecordingSeconds(0);
+      startRecordingTimer();
+    } catch (error) {
+      console.error("Failed to start voice recording:", error);
+      stream?.getTracks().forEach((track) => track.stop());
+      stopRecordingStream();
+      if (recordingRequestCancelledRef.current) return;
+      setIsPreparingRecording(false);
+      setRecordingError("Không thể truy cập microphone.");
+    }
+  };
+
   const handleSend = () => {
     const trimmed = content.trim();
-    if ((!trimmed && attachments.length === 0) || disabled || isUploading) return;
-    onSend?.(trimmed, { attachments });
+    if (
+      (!trimmed && attachments.length === 0) ||
+      disabled ||
+      isUploading ||
+      isVoiceSending ||
+      isPreparingRecording ||
+      isRecording
+    ) {
+      return;
+    }
+    onSend?.(trimmed, { type: "text", attachments });
     setContent("");
     setAttachments([]);
     setAttachmentError("");
+    setRecordingError("");
     onTypingChange?.(false);
     textareaRef.current?.focus();
   };
@@ -150,7 +410,31 @@ const ChatInput = ({
     }
   };
 
-  const canAttach = Boolean(onUploadAttachment) && mode !== "edit";
+  const hasComposerContent = Boolean(content.trim()) || attachments.length > 0;
+  const composerBusy =
+    disabled || isUploading || isVoiceSending || isPreparingRecording;
+  const canAttach =
+    Boolean(onUploadAttachment) &&
+    mode !== "edit" &&
+    !isPreparingRecording &&
+    !isRecording &&
+    !isVoiceSending;
+  const canRecord =
+    Boolean(onUploadAttachment) &&
+    Boolean(onSend) &&
+    mode !== "edit" &&
+    !disabled &&
+    !isUploading &&
+    !isPreparingRecording &&
+    !isVoiceSending &&
+    !hasComposerContent;
+  const canSend =
+    hasComposerContent && !composerBusy && !isRecording;
+  const isRecorderVisible = isPreparingRecording || isRecording;
+  const recordingProgress = Math.min(
+    100,
+    (recordingSeconds / MAX_VOICE_DURATION_SECONDS) * 100,
+  );
   const visibleDraftPreview = renderedDraftPreview;
 
   useEffect(() => {
@@ -163,9 +447,30 @@ const ChatInput = ({
       setContent(mode === "edit" ? initialContent : "");
       setAttachments([]);
       setAttachmentError("");
+      setRecordingError("");
+      recordingRequestCancelledRef.current = true;
+      setIsPreparingRecording(false);
+      const recorder = mediaRecorderRef.current;
+      if (recorder?.state === "recording") {
+        pendingRecordingActionRef.current = "cancel";
+        recorder.stop();
+      }
       onTypingChange?.(false);
     }
   }, [draftPreview, initialContent, mode, onTypingChange]);
+
+  useEffect(() => {
+    return () => {
+      recordingRequestCancelledRef.current = true;
+      stopRecordingTimer();
+      const recorder = mediaRecorderRef.current;
+      if (recorder && recorder.state !== "inactive") {
+        recorder.onstop = null;
+        recorder.stop();
+      }
+      stopRecordingStream();
+    };
+  }, []);
 
   useEffect(() => {
     if (draftPreview) {
@@ -254,7 +559,7 @@ const ChatInput = ({
             <button
               type="button"
               onClick={() => fileInputRef.current?.click()}
-              disabled={disabled || isUploading || !canAttach}
+              disabled={composerBusy || !canAttach}
               className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-slate-600 transition-colors hover:bg-blue-50 hover:text-blue-700 disabled:cursor-not-allowed disabled:text-slate-300"
               title="Đính kèm file"
               aria-label="Đính kèm file"
@@ -264,7 +569,7 @@ const ChatInput = ({
               </span>
             </button>
 
-            {pendingComposerActions.map((item) => (
+            {secondaryComposerActions.map((item) => (
               <button
                 key={item.title}
                 type="button"
@@ -278,16 +583,38 @@ const ChatInput = ({
                 </span>
               </button>
             ))}
+
+            <button
+              type="button"
+              onClick={startRecording}
+              disabled={!canRecord || isRecorderVisible}
+              className={`inline-flex h-8 w-8 items-center justify-center rounded-lg transition-colors disabled:cursor-not-allowed ${
+                isRecorderVisible
+                  ? "bg-red-50 text-red-600"
+                  : "text-slate-600 hover:bg-violet-50 hover:text-violet-700 disabled:text-slate-300"
+              }`}
+              title={
+                hasComposerContent
+                  ? "Gửi hoặc xóa nội dung hiện tại trước khi thu âm"
+                  : "Thu âm voice"
+              }
+              aria-label="Thu âm voice"
+            >
+              <span className="material-symbols-outlined text-[20px]">
+                {isRecorderVisible ? "graphic_eq" : "mic"}
+              </span>
+            </button>
           </div>
 
           <button
             type="button"
             onClick={() => setShowFormattingToolbar((value) => !value)}
+            disabled={isRecorderVisible || isVoiceSending}
             className={`inline-flex h-8 items-center gap-2 rounded-lg px-2.5 text-sm font-semibold transition-colors ${
               showFormattingToolbar
                 ? "bg-blue-600 text-white shadow-sm"
                 : "text-slate-700 hover:bg-blue-50 hover:text-blue-700"
-            }`}
+            } disabled:cursor-not-allowed disabled:text-slate-300`}
             title="Định dạng tin nhắn"
             aria-pressed={showFormattingToolbar}
           >
@@ -298,7 +625,7 @@ const ChatInput = ({
           </button>
         </div>
 
-        {(attachments.length > 0 || attachmentError) && (
+        {(attachments.length > 0 || attachmentError || recordingError) && (
           <div className="flex flex-wrap gap-2 px-3 pt-3">
             {attachments.map((attachment, index) => (
               <span
@@ -330,30 +657,121 @@ const ChatInput = ({
                 {attachmentError}
               </span>
             )}
+            {recordingError && (
+              <span className="text-xs font-semibold text-red-600">
+                {recordingError}
+              </span>
+            )}
           </div>
         )}
 
-        <div className="chat-composer-input-shell relative flex items-start">
-          <textarea
-            ref={textareaRef}
-            value={content}
-            onChange={handleChange}
-            onKeyDown={handleKeyDown}
-            onBlur={() => onTypingChange?.(false)}
-            placeholder={placeholder}
-            disabled={disabled}
-            rows={1}
-            className="chat-composer-textarea w-full resize-none overflow-y-auto border-none bg-transparent px-4 py-3.5 pr-12 text-[15px] font-medium text-slate-900 outline-none placeholder:text-slate-500 focus:ring-0 disabled:text-slate-400"
-          />
-          <EmojiPickerButton
-            align="right"
-            buttonClassName="chat-composer-emoji-button"
-            className="absolute right-2 top-2"
-            label="Biểu tượng cảm xúc"
-            onEmojiSelect={insertText}
-            placement="top"
-            popoverClassName="chat-composer-emoji-popover"
-          />
+        <div className="chat-composer-input-shell relative flex items-center">
+          {isRecorderVisible ? (
+            <div className="chat-voice-recorder flex w-full items-center gap-3 px-3 py-3">
+              <button
+                type="button"
+                onClick={cancelRecording}
+                className="chat-voice-recorder-trash inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-slate-500 transition-colors hover:bg-red-50 hover:text-red-600"
+                title="Hủy thu âm"
+                aria-label="Hủy thu âm"
+              >
+                <span className="material-symbols-outlined text-[22px]">
+                  delete
+                </span>
+              </button>
+              <div
+                className={`chat-voice-recorder-track min-w-0 flex-1 ${
+                  isPreparingRecording ? "is-preparing" : "is-recording"
+                }`}
+              >
+                <span
+                  className="chat-voice-recorder-progress"
+                  style={{ width: `${recordingProgress}%` }}
+                />
+                <div className="relative z-10 flex min-w-0 items-center gap-3">
+                  <span className="chat-voice-recorder-live" aria-hidden="true" />
+                  <span className="w-11 shrink-0 text-sm font-extrabold text-white">
+                    {isPreparingRecording
+                      ? "0:00"
+                      : formatAudioDuration(recordingSeconds)}
+                  </span>
+                  {isPreparingRecording && (
+                    <span className="chat-voice-recorder-status">
+                      Đang bật mic...
+                    </span>
+                  )}
+                  <span
+                    className="chat-voice-recorder-waveform"
+                    aria-hidden="true"
+                  >
+                    {recorderWaveformBars.map((height, index) => (
+                      <span
+                        key={`${height}-${index}`}
+                        style={{
+                          "--bar-height": `${height}%`,
+                          "--bar-index": index,
+                        }}
+                      />
+                    ))}
+                  </span>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={stopAndSendRecording}
+                disabled={isPreparingRecording}
+                className="chat-voice-recorder-send inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-violet-600 text-white shadow-sm shadow-violet-900/20 transition-colors hover:bg-violet-700 disabled:cursor-not-allowed disabled:bg-slate-300 disabled:shadow-none"
+                title="Gửi voice"
+                aria-label="Gửi voice"
+              >
+                <span className="material-symbols-outlined text-[22px]">
+                  send
+                </span>
+              </button>
+            </div>
+          ) : isVoiceSending ? (
+            <div className="flex min-h-14 w-full items-center gap-3 px-4 py-3 text-sm font-bold text-slate-600">
+              <span className="material-symbols-outlined animate-spin text-[20px] text-violet-600">
+                progress_activity
+              </span>
+              <span>Đang gửi tin nhắn thoại...</span>
+            </div>
+          ) : (
+            <>
+              <textarea
+                ref={textareaRef}
+                value={content}
+                onChange={handleChange}
+                onKeyDown={handleKeyDown}
+                onBlur={() => onTypingChange?.(false)}
+                placeholder={placeholder}
+                disabled={disabled}
+                rows={1}
+                className="chat-composer-textarea w-full resize-none overflow-y-auto border-none bg-transparent px-4 py-3.5 pr-24 text-[15px] font-medium text-slate-900 outline-none placeholder:text-slate-500 focus:ring-0 disabled:text-slate-400"
+              />
+              <EmojiPickerButton
+                align="right"
+                buttonClassName="chat-composer-emoji-button"
+                className="absolute right-12 top-2"
+                label="Biểu tượng cảm xúc"
+                onEmojiSelect={insertText}
+                placement="top"
+                popoverClassName="chat-composer-emoji-popover"
+              />
+              <button
+                type="button"
+                onClick={handleSend}
+                disabled={!canSend}
+                className="absolute right-2 top-2 inline-flex h-8 w-8 items-center justify-center rounded-lg bg-blue-600 text-white shadow-sm shadow-blue-900/20 transition-colors hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-400 disabled:shadow-none"
+                title={mode === "edit" ? "Lưu chỉnh sửa" : "Gửi tin nhắn"}
+                aria-label={mode === "edit" ? "Lưu chỉnh sửa" : "Gửi tin nhắn"}
+              >
+                <span className="material-symbols-outlined text-[20px]">
+                  {mode === "edit" ? "check" : "send"}
+                </span>
+              </button>
+            </>
+          )}
         </div>
 
         {showFormattingToolbar && (

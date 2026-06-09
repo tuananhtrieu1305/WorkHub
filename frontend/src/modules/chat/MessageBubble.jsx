@@ -1,18 +1,20 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { EmojiPickerButton } from "../../components/emoji";
+import { downloadConversationAttachmentBlob } from "../../api/conversationApi";
 import { useAuth } from "../../context/AuthContext";
 import {
   formatMessageTimestamp,
   getHoverTimestampPlacement,
 } from "./messageTimeline";
+import {
+  formatAudioDuration,
+  getMessagePreviewText,
+  isAudioAttachment,
+} from "./chatMessagePreview";
+import { getAvatarUrl } from "../../utils/avatar";
 
 const API_URL = import.meta.env.VITE_NODE_API_URL || "http://localhost:5000";
-
-const getAvatarUrl = (avatar) => {
-  if (!avatar) return null;
-  return avatar.startsWith("http") ? avatar : `${API_URL}${avatar}`;
-};
 
 const getFileUrl = (url) => {
   if (!url) return "#";
@@ -33,25 +35,14 @@ const getMessageId = (message) => getComparableId(message?.id || message?._id);
 
 const clamp = (value, min, max) => Math.min(Math.max(value, min), max);
 
-const getMessagePreviewText = (message) => {
-  if (!message) return "...";
-  if (message.deletedAt) return "Tin nhắn đã được thu hồi";
-  if (message.content) return message.content.replace(/\s+/g, " ").trim();
-  const firstAttachment = message.attachments?.[0];
-  if (firstAttachment?.mimeType?.startsWith("image/")) return "Ảnh";
-  if (firstAttachment?.mimeType?.startsWith("video/")) return "Video";
-  if (firstAttachment?.fileName) return firstAttachment.fileName;
-  if (message.attachments?.length) return "Tệp đính kèm";
-  return "...";
-};
-
 const getReplyPreviewAttachment = (message) => {
   if (message?.deletedAt) return null;
   return (
     message?.attachments?.find(
       (attachment) =>
         attachment.mimeType?.startsWith("image/") ||
-        attachment.mimeType?.startsWith("video/"),
+        attachment.mimeType?.startsWith("video/") ||
+        isAudioAttachment(attachment),
     ) ||
     message?.attachments?.[0] ||
     null
@@ -113,6 +104,434 @@ const formatFileSize = (size) => {
   if (size < 1024) return `${size} B`;
   if (size < 1024 * 1024) return `${Math.round(size / 1024)} KB`;
   return `${(size / (1024 * 1024)).toFixed(1)} MB`;
+};
+
+const voiceWaveformBars = [
+  34, 56, 28, 72, 48, 88, 60, 42, 76, 96, 52, 68, 84, 44, 62, 30,
+];
+
+const isInternalApiFileUrl = (url = "") => {
+  const rawUrl = String(url || "");
+  if (rawUrl.startsWith("/api/")) return true;
+  if (!rawUrl.startsWith("http")) return false;
+
+  try {
+    const parsedUrl = new URL(rawUrl);
+    const parsedApiUrl = new URL(API_URL);
+    return (
+      parsedUrl.origin === parsedApiUrl.origin &&
+      parsedUrl.pathname.startsWith("/api/")
+    );
+  } catch {
+    return false;
+  }
+};
+
+const useAttachmentObjectUrl = (attachment, enabled = true) => {
+  const rawFileUrl = attachment?.fileUrl || "";
+  const fileUrl = getFileUrl(rawFileUrl);
+  const needsBlob =
+    enabled &&
+    fileUrl !== "#" &&
+    (isInternalApiFileUrl(rawFileUrl) || isInternalApiFileUrl(fileUrl));
+  const [objectUrl, setObjectUrl] = useState("");
+  const [hasError, setHasError] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    let nextObjectUrl = "";
+
+    setObjectUrl("");
+    setHasError(false);
+
+    if (!needsBlob) {
+      return undefined;
+    }
+
+    const loadAttachment = async () => {
+      try {
+        const blob = await downloadConversationAttachmentBlob(
+          rawFileUrl || fileUrl,
+        );
+        if (!blob?.size || typeof URL.createObjectURL !== "function") {
+          throw new Error("Attachment is empty or unsupported");
+        }
+        nextObjectUrl = URL.createObjectURL(blob);
+        if (cancelled) {
+          URL.revokeObjectURL?.(nextObjectUrl);
+          return;
+        }
+        setObjectUrl(nextObjectUrl);
+      } catch (error) {
+        console.error("Failed to load attachment:", error);
+        if (!cancelled) setHasError(true);
+      }
+    };
+
+    loadAttachment();
+
+    return () => {
+      cancelled = true;
+      if (nextObjectUrl) {
+        URL.revokeObjectURL?.(nextObjectUrl);
+      }
+    };
+  }, [fileUrl, needsBlob, rawFileUrl]);
+
+  return {
+    src: needsBlob ? objectUrl : fileUrl,
+    isLoading: needsBlob && !objectUrl && !hasError,
+    hasError,
+  };
+};
+
+const triggerAttachmentDownload = async (attachment, fileName) => {
+  const rawFileUrl = attachment?.fileUrl || "";
+  const fileUrl = getFileUrl(rawFileUrl);
+  if (!fileUrl || fileUrl === "#") return;
+
+  if (!isInternalApiFileUrl(rawFileUrl) && !isInternalApiFileUrl(fileUrl)) {
+    window.open(fileUrl, "_blank", "noopener,noreferrer");
+    return;
+  }
+
+  const blob = await downloadConversationAttachmentBlob(rawFileUrl || fileUrl);
+  if (!blob?.size || typeof URL.createObjectURL !== "function") {
+    throw new Error("Attachment is empty or unsupported");
+  }
+
+  const objectUrl = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = objectUrl;
+  link.download = fileName || "attachment";
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  window.setTimeout(() => URL.revokeObjectURL?.(objectUrl), 0);
+};
+
+const AttachmentImagePreview = ({ attachment, fileName }) => {
+  const { src, isLoading, hasError } = useAttachmentObjectUrl(attachment);
+
+  if (hasError) {
+    return (
+      <div className="rounded-xl border border-white/20 px-3 py-2 text-xs">
+        Không thể tải ảnh
+      </div>
+    );
+  }
+
+  return (
+    <a
+      href={src || "#"}
+      target="_blank"
+      rel="noreferrer"
+      className="block overflow-hidden rounded-xl border border-white/20"
+      title={fileName}
+      aria-busy={isLoading}
+    >
+      <img
+        src={src || undefined}
+        alt={fileName}
+        className="max-h-64 max-w-full object-cover"
+        loading="lazy"
+      />
+    </a>
+  );
+};
+
+const AttachmentVideoPreview = ({ attachment, fileName }) => {
+  const { src, isLoading, hasError } = useAttachmentObjectUrl(attachment);
+
+  if (hasError) {
+    return (
+      <div className="rounded-xl border border-white/20 px-3 py-2 text-xs">
+        Không thể tải video
+      </div>
+    );
+  }
+
+  return (
+    <video
+      src={src || undefined}
+      controls
+      preload="metadata"
+      className="max-h-64 max-w-full rounded-xl border border-white/20"
+      title={fileName}
+      aria-busy={isLoading}
+    />
+  );
+};
+
+const AttachmentFileLink = ({ attachment, fileName, isMine }) => {
+  const [isDownloading, setIsDownloading] = useState(false);
+  const [downloadError, setDownloadError] = useState(false);
+  const rawFileUrl = attachment.fileUrl || "";
+  const fileUrl = getFileUrl(rawFileUrl);
+  const isInternal =
+    isInternalApiFileUrl(rawFileUrl) || isInternalApiFileUrl(fileUrl);
+  const className = `flex items-center gap-2 rounded-xl border px-3 py-2 text-left text-sm transition-colors ${
+    isMine
+      ? "border-white/20 bg-white/10 text-white hover:bg-white/15"
+      : "border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100"
+  }`;
+  const content = (
+    <>
+      <span className="material-symbols-outlined text-base">attach_file</span>
+      <span className="min-w-0 flex-1 truncate">
+        {downloadError ? "Không thể tải tệp" : fileName}
+        {attachment.fileSize ? (
+          <span
+            className={`ml-2 text-xs ${
+              isMine ? "text-blue-100" : "text-slate-400"
+            }`}
+          >
+            {formatFileSize(attachment.fileSize)}
+          </span>
+        ) : null}
+      </span>
+    </>
+  );
+
+  if (!isInternal) {
+    return (
+      <a href={fileUrl} target="_blank" rel="noreferrer" className={className}>
+        {content}
+      </a>
+    );
+  }
+
+  return (
+    <button
+      type="button"
+      className={className}
+      disabled={isDownloading}
+      onClick={async () => {
+        setIsDownloading(true);
+        setDownloadError(false);
+        try {
+          await triggerAttachmentDownload(attachment, fileName);
+        } catch (error) {
+          console.error("Failed to download attachment:", error);
+          setDownloadError(true);
+        } finally {
+          setIsDownloading(false);
+        }
+      }}
+    >
+      {content}
+    </button>
+  );
+};
+
+const ReplyImageThumbnail = ({ attachment }) => {
+  const { src } = useAttachmentObjectUrl(attachment);
+
+  return (
+    <span className="chat-reply-preview-media" aria-hidden="true">
+      <img src={src || undefined} alt="" loading="lazy" />
+    </span>
+  );
+};
+
+const ReplyVideoThumbnail = ({ attachment }) => {
+  const { src } = useAttachmentObjectUrl(attachment);
+
+  return (
+    <span className="chat-reply-preview-media" aria-hidden="true">
+      <video src={src || undefined} muted playsInline preload="metadata" />
+      <span className="chat-reply-preview-play material-symbols-outlined">
+        play_arrow
+      </span>
+    </span>
+  );
+};
+
+const AudioAttachmentPlayer = ({ attachment, isMine }) => {
+  const audioRef = useRef(null);
+  const objectUrlRef = useRef("");
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [isLoadingAudio, setIsLoadingAudio] = useState(false);
+  const [playbackError, setPlaybackError] = useState(false);
+  const [duration, setDuration] = useState(
+    Number(attachment.durationSeconds) || 0,
+  );
+  const [currentTime, setCurrentTime] = useState(0);
+  const rawFileUrl = attachment.fileUrl || "";
+  const fileUrl = getFileUrl(rawFileUrl);
+  const [audioSrc, setAudioSrc] = useState(
+    isInternalApiFileUrl(rawFileUrl) ? "" : fileUrl,
+  );
+  const displayDuration = duration || Number(attachment.durationSeconds) || 0;
+  const progress = displayDuration
+    ? Math.min(100, (currentTime / displayDuration) * 100)
+    : 0;
+
+  const releaseObjectUrl = useCallback(() => {
+    if (!objectUrlRef.current) return;
+    URL.revokeObjectURL?.(objectUrlRef.current);
+    objectUrlRef.current = "";
+  }, []);
+
+  const loadAudioSource = useCallback(async () => {
+    if (audioSrc) return audioSrc;
+    if (!fileUrl || fileUrl === "#") return "";
+
+    setIsLoadingAudio(true);
+    setPlaybackError(false);
+
+    try {
+      let nextAudioSrc = fileUrl;
+      if (isInternalApiFileUrl(rawFileUrl) || isInternalApiFileUrl(fileUrl)) {
+        const blob = await downloadConversationAttachmentBlob(
+          rawFileUrl || fileUrl,
+        );
+        if (!blob?.size) {
+          throw new Error("Voice attachment is empty");
+        }
+        releaseObjectUrl();
+        if (typeof URL.createObjectURL !== "function") {
+          throw new Error("Browser does not support local audio URLs");
+        }
+        nextAudioSrc = URL.createObjectURL(blob);
+        objectUrlRef.current = nextAudioSrc;
+      }
+
+      setAudioSrc(nextAudioSrc);
+      return nextAudioSrc;
+    } catch (error) {
+      console.error("Failed to load voice message:", error);
+      setPlaybackError(true);
+      return "";
+    } finally {
+      setIsLoadingAudio(false);
+    }
+  }, [audioSrc, fileUrl, rawFileUrl, releaseObjectUrl]);
+
+  const handleTogglePlay = async () => {
+    const audio = audioRef.current;
+    if (!audio || isLoadingAudio) return;
+
+    if (isPlaying) {
+      audio.pause();
+      setIsPlaying(false);
+      return;
+    }
+
+    try {
+      const nextAudioSrc = await loadAudioSource();
+      if (!nextAudioSrc) return;
+      setPlaybackError(false);
+      if (audio.src !== nextAudioSrc) {
+        audio.src = nextAudioSrc;
+        audio.load();
+      }
+      await audio.play();
+      setIsPlaying(true);
+    } catch (error) {
+      console.error("Failed to play voice message:", error);
+      setIsPlaying(false);
+      setPlaybackError(true);
+    }
+  };
+
+  useEffect(() => {
+    const audio = audioRef.current;
+    audio?.pause();
+    setIsPlaying(false);
+    setIsLoadingAudio(false);
+    setPlaybackError(false);
+    setCurrentTime(0);
+    setDuration(Number(attachment.durationSeconds) || 0);
+    releaseObjectUrl();
+    setAudioSrc(isInternalApiFileUrl(rawFileUrl) ? "" : fileUrl);
+  }, [attachment.durationSeconds, fileUrl, rawFileUrl, releaseObjectUrl]);
+
+  useEffect(() => {
+    return () => {
+      releaseObjectUrl();
+    };
+  }, [releaseObjectUrl]);
+
+  return (
+    <div
+      className={`chat-voice-player ${
+        isMine ? "chat-voice-player-mine" : "chat-voice-player-other"
+      } ${isPlaying ? "is-playing" : ""} ${
+        isLoadingAudio ? "is-loading" : ""
+      } ${playbackError ? "has-error" : ""}`}
+      style={{ "--voice-progress": `${progress}%` }}
+    >
+      <button
+        type="button"
+        onClick={handleTogglePlay}
+        disabled={isLoadingAudio}
+        className="chat-voice-player-button"
+        aria-label={
+          playbackError
+            ? "Không thể phát voice"
+            : isPlaying
+              ? "Tạm dừng voice"
+              : "Phát voice"
+        }
+        title={
+          playbackError
+            ? "Không thể phát voice"
+            : isPlaying
+              ? "Tạm dừng"
+              : "Phát voice"
+        }
+      >
+        <span className="material-symbols-outlined">
+          {playbackError
+            ? "error"
+            : isLoadingAudio
+              ? "progress_activity"
+              : isPlaying
+                ? "pause"
+                : "play_arrow"}
+        </span>
+      </button>
+      <span className="chat-voice-player-divider" aria-hidden="true" />
+      <span className="chat-voice-player-waveform" aria-hidden="true">
+        {voiceWaveformBars.map((height, index) => (
+          <span
+            key={`${height}-${index}`}
+            style={{
+              "--bar-height": `${height}%`,
+              "--bar-index": index,
+            }}
+          />
+        ))}
+      </span>
+      <span className="chat-voice-player-duration">
+        {formatAudioDuration(displayDuration)}
+      </span>
+      <audio
+        ref={audioRef}
+        src={audioSrc || undefined}
+        preload="metadata"
+        onLoadedMetadata={(event) => {
+          const nextDuration = event.currentTarget.duration;
+          if (Number.isFinite(nextDuration)) {
+            setDuration(nextDuration);
+          }
+        }}
+        onTimeUpdate={(event) => {
+          setCurrentTime(event.currentTarget.currentTime || 0);
+        }}
+        onPause={() => setIsPlaying(false)}
+        onEnded={() => {
+          setIsPlaying(false);
+          setCurrentTime(0);
+        }}
+        onError={() => {
+          setIsPlaying(false);
+          setPlaybackError(true);
+        }}
+      />
+    </div>
+  );
 };
 
 const sanitizeHref = (href) => {
@@ -219,66 +638,53 @@ const MessageText = ({ content }) => {
   );
 };
 
-const MessageAttachments = ({ attachments = [], isMine }) => {
+const MessageAttachments = ({ attachments = [], isMine, hasContent = false }) => {
   if (!attachments.length) return null;
 
   return (
-    <div className="mt-2 flex flex-col gap-2">
+    <div className={`${hasContent ? "mt-2" : ""} flex flex-col gap-2`}>
       {attachments.map((attachment, index) => {
         const fileName = attachment.fileName || "Tệp đính kèm";
-        const fileUrl = getFileUrl(attachment.fileUrl);
         const isImage = attachment.mimeType?.startsWith("image/");
+        const isVideo = attachment.mimeType?.startsWith("video/");
+
+        if (isAudioAttachment(attachment)) {
+          return (
+            <AudioAttachmentPlayer
+              key={`${attachment.fileUrl || fileName}-${index}`}
+              attachment={attachment}
+              isMine={isMine}
+            />
+          );
+        }
 
         if (isImage) {
           return (
-            <a
+            <AttachmentImagePreview
               key={`${attachment.fileUrl || fileName}-${index}`}
-              href={fileUrl}
-              target="_blank"
-              rel="noreferrer"
-              className="block overflow-hidden rounded-xl border border-white/20"
-              title={fileName}
-            >
-              <img
-                src={fileUrl}
-                alt={fileName}
-                className="max-h-64 max-w-full object-cover"
-                loading="lazy"
-              />
-            </a>
+              attachment={attachment}
+              fileName={fileName}
+            />
+          );
+        }
+
+        if (isVideo) {
+          return (
+            <AttachmentVideoPreview
+              key={`${attachment.fileUrl || fileName}-${index}`}
+              attachment={attachment}
+              fileName={fileName}
+            />
           );
         }
 
         return (
-          <a
+          <AttachmentFileLink
             key={`${attachment.fileUrl || fileName}-${index}`}
-            href={fileUrl}
-            target="_blank"
-            rel="noreferrer"
-            className={`flex items-center gap-2 rounded-xl border px-3 py-2 text-sm transition-colors ${
-              isMine
-                ? "border-white/20 bg-white/10 text-white hover:bg-white/15"
-                : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
-            }`}
-          >
-            <span className="material-symbols-outlined text-[18px]">
-              attach_file
-            </span>
-            <span className="min-w-0">
-              <span className="block max-w-56 truncate font-semibold">
-                {fileName}
-              </span>
-              {attachment.fileSize ? (
-                <span
-                  className={`block text-xs ${
-                    isMine ? "text-blue-100" : "text-slate-400"
-                  }`}
-                >
-                  {formatFileSize(attachment.fileSize)}
-                </span>
-              ) : null}
-            </span>
-          </a>
+            attachment={attachment}
+            fileName={fileName}
+            isMine={isMine}
+          />
         );
       })}
     </div>
@@ -289,25 +695,25 @@ const ReplyMediaThumbnail = ({ attachment }) => {
   if (!attachment) return null;
 
   const fileName = attachment.fileName || "Tệp đính kèm";
-  const fileUrl = getFileUrl(attachment.fileUrl);
   const isImage = attachment.mimeType?.startsWith("image/");
   const isVideo = attachment.mimeType?.startsWith("video/");
 
   if (isImage) {
-    return (
-      <span className="chat-reply-preview-media" aria-hidden="true">
-        <img src={fileUrl} alt="" loading="lazy" />
-      </span>
-    );
+    return <ReplyImageThumbnail attachment={attachment} />;
   }
 
   if (isVideo) {
+    return <ReplyVideoThumbnail attachment={attachment} />;
+  }
+
+  if (isAudioAttachment(attachment)) {
     return (
-      <span className="chat-reply-preview-media" aria-hidden="true">
-        <video src={fileUrl} muted playsInline preload="metadata" />
-        <span className="chat-reply-preview-play material-symbols-outlined">
-          play_arrow
-        </span>
+      <span
+        className="chat-reply-preview-media chat-reply-preview-audio"
+        aria-hidden="true"
+        title={fileName}
+      >
+        <span className="material-symbols-outlined">graphic_eq</span>
       </span>
     );
   }
@@ -889,6 +1295,7 @@ const MessageBubble = ({
                   <MessageAttachments
                     attachments={message.attachments || []}
                     isMine
+                    hasContent={Boolean(message.content)}
                   />
                   {message.editedAt && (
                     <span className="mt-1 block text-[11px] font-semibold text-blue-100">
@@ -959,7 +1366,10 @@ const MessageBubble = ({
             ) : (
               <>
                 <MessageText content={message.content} />
-                <MessageAttachments attachments={message.attachments || []} />
+                <MessageAttachments
+                  attachments={message.attachments || []}
+                  hasContent={Boolean(message.content)}
+                />
                 {message.editedAt && (
                   <span className="mt-1 block text-[11px] font-semibold text-slate-500">
                     Đã chỉnh sửa
