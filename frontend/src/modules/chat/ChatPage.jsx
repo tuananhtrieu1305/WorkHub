@@ -7,6 +7,7 @@ import {
   getConversationById,
   getConversations,
   getMessages,
+  getPinnedMessages,
   markConversationAsRead as markConversationReadRequest,
   removeMessageReaction,
   sendMessage as sendConversationMessage,
@@ -75,10 +76,52 @@ const getConversationId = (conversation) => {
   return toComparableId(conversation?.id || conversation?._id);
 };
 
+const getMessageId = (message) => {
+  return toComparableId(message?.id || message?._id || message?.messageId);
+};
+
 const normalizeMessagesForDisplay = (items = []) => {
   return [...items].sort(
     (a, b) => new Date(a.createdAt || 0) - new Date(b.createdAt || 0)
   );
+};
+
+const getPinnedMessageTime = (message) => {
+  const time = new Date(message?.pinnedAt || message?.createdAt || 0).getTime();
+  return Number.isFinite(time) ? time : 0;
+};
+
+const sortPinnedMessages = (items = []) => {
+  return [...items]
+    .filter((message) => message?.isPinned && !message?.deletedAt)
+    .sort((a, b) => getPinnedMessageTime(b) - getPinnedMessageTime(a));
+};
+
+const upsertPinnedMessage = (pinnedMessages, incomingMessage) => {
+  const incomingMessageId = getMessageId(incomingMessage);
+  if (!incomingMessageId) return pinnedMessages;
+
+  if (!incomingMessage?.isPinned || incomingMessage?.deletedAt) {
+    return pinnedMessages.filter(
+      (message) => getMessageId(message) !== incomingMessageId
+    );
+  }
+
+  const existingIndex = pinnedMessages.findIndex(
+    (message) => getMessageId(message) === incomingMessageId
+  );
+
+  if (existingIndex === -1) {
+    return sortPinnedMessages([...pinnedMessages, incomingMessage]);
+  }
+
+  const nextPinnedMessages = [...pinnedMessages];
+  nextPinnedMessages[existingIndex] = {
+    ...nextPinnedMessages[existingIndex],
+    ...incomingMessage,
+  };
+
+  return sortPinnedMessages(nextPinnedMessages);
 };
 
 const mergeConversationUpdate = (
@@ -125,6 +168,7 @@ const ChatPage = () => {
   const [conversations, setConversations] = useState([]);
   const [selectedConversation, setSelectedConversation] = useState(null);
   const [messages, setMessages] = useState([]);
+  const [pinnedMessages, setPinnedMessages] = useState([]);
   const [isLoadingMessages, setIsLoadingMessages] = useState(false);
   const [isSending, setIsSending] = useState(false);
   const [showDetail, setShowDetail] = useState(true);
@@ -189,6 +233,7 @@ const ChatPage = () => {
   useEffect(() => {
     if (!selectedConversationId) {
       setMessages([]);
+      setPinnedMessages([]);
       setTypingUsers([]);
       setReplyToMessage(null);
       setEditingMessage(null);
@@ -199,6 +244,10 @@ const ChatPage = () => {
     setIsLoadingMessages(true);
 
     const fetchMessages = async () => {
+      const pinnedMessagesRequest = getPinnedMessages(selectedConversationId)
+        .then((response) => ({ response }))
+        .catch((error) => ({ error }));
+
       try {
         const res = await getMessages(selectedConversationId, { limit: 50 });
         if (!ignore) {
@@ -211,9 +260,27 @@ const ChatPage = () => {
             return markConversationAsRead([prev], selectedConversationId)[0];
           });
         }
+
+        const pinnedMessagesResult = await pinnedMessagesRequest;
+        if (ignore) return;
+
+        if (pinnedMessagesResult.response) {
+          setPinnedMessages(
+            sortPinnedMessages(pinnedMessagesResult.response.content || [])
+          );
+        } else {
+          console.error(
+            "Failed to fetch pinned messages:",
+            pinnedMessagesResult.error
+          );
+          setPinnedMessages([]);
+        }
       } catch (err) {
         console.error("Failed to fetch messages:", err);
-        if (!ignore) setMessages([]);
+        if (!ignore) {
+          setMessages([]);
+          setPinnedMessages([]);
+        }
       } finally {
         if (!ignore) setIsLoadingMessages(false);
       }
@@ -270,6 +337,7 @@ const ChatPage = () => {
     const handleMessageUpdated = (message) => {
       if (isSelectedConversationEvent(message.conversationId)) {
         setMessages((prev) => upsertMessageById(prev, message));
+        setPinnedMessages((prev) => upsertPinnedMessage(prev, message));
       }
       if (message.conversation) {
         setConversations((prev) =>
@@ -295,6 +363,7 @@ const ChatPage = () => {
 
       if (isSelectedConversationEvent(eventConversationId)) {
         setMessages((prev) => applyDeletedMessage(prev, deletedMessage));
+        setPinnedMessages((prev) => upsertPinnedMessage(prev, deletedMessage));
         setReplyToMessage((prev) =>
           toComparableId(prev?.id) === toComparableId(messageId) ? null : prev
         );
@@ -512,6 +581,7 @@ const ChatPage = () => {
         );
         const deletedMessage = deleteResult.message || deleteResult;
         setMessages((prev) => applyDeletedMessage(prev, deletedMessage));
+        setPinnedMessages((prev) => upsertPinnedMessage(prev, deletedMessage));
         setReplyToMessage((prev) =>
           toComparableId(prev?.id) === toComparableId(message.id) ? null : prev
         );
@@ -591,22 +661,77 @@ const ChatPage = () => {
       if (!selectedConversationId || !message?.id) return;
 
       const nextPinnedState = !message.isPinned;
+
       try {
-        const updatedMessage = await updateMessagePin(
+        const pinResult = await updateMessagePin(
           selectedConversationId,
           message.id,
           nextPinnedState
         );
-        setMessages((prev) => upsertMessageById(prev, updatedMessage));
-        toast.success(
-          nextPinnedState ? "Đã ghim tin nhắn" : "Đã bỏ ghim tin nhắn"
-        );
+        const {
+          message: responseMessage,
+          systemMessage,
+          conversation,
+          ...messagePayload
+        } = pinResult;
+        const updatedMessage = responseMessage || messagePayload;
+
+        setMessages((prev) => {
+          const withUpdatedMessage = upsertMessageById(prev, updatedMessage);
+          return systemMessage
+            ? upsertMessageById(withUpdatedMessage, systemMessage)
+            : withUpdatedMessage;
+        });
+        setPinnedMessages((prev) => upsertPinnedMessage(prev, updatedMessage));
+        if (conversation) {
+          setConversations((prev) =>
+            mergeConversationUpdate(prev, conversation)
+          );
+        }
       } catch (err) {
         console.error("Failed to pin message:", err);
         toast.error("Không thể cập nhật ghim tin nhắn");
       }
     },
     [selectedConversationId, toast]
+  );
+
+  const handleEnsureMessageLoaded = useCallback(
+    async (targetMessage) => {
+      const targetMessageId = getMessageId(targetMessage);
+      if (!selectedConversationId || !targetMessageId) return false;
+
+      const isAlreadyLoaded = messages.some(
+        (message) => getMessageId(message) === targetMessageId
+      );
+      if (isAlreadyLoaded) return true;
+
+      try {
+        const res = await getMessages(selectedConversationId, {
+          around: targetMessageId,
+          limit: 50,
+        });
+        const loadedMessages = normalizeMessagesForDisplay(res.content || []);
+        const didLoadTarget = loadedMessages.some(
+          (message) => getMessageId(message) === targetMessageId
+        );
+
+        if (!didLoadTarget) return false;
+
+        setMessages((prev) =>
+          loadedMessages.reduce(
+            (nextMessages, message) => upsertMessageById(nextMessages, message),
+            prev
+          )
+        );
+
+        return true;
+      } catch (err) {
+        console.error("Failed to load pinned message context:", err);
+        return false;
+      }
+    },
+    [messages, selectedConversationId]
   );
 
   const handleToggleReaction = useCallback(
@@ -699,6 +824,7 @@ const ChatPage = () => {
         <ChatWindow
           conversation={selectedConversation}
           messages={messages}
+          pinnedMessages={pinnedMessages}
           onSendMessage={handleSendMessage}
           onUploadAttachment={handleUploadAttachment}
           onTypingChange={handleTypingChange}
@@ -707,6 +833,7 @@ const ChatPage = () => {
           onDeleteMessage={handleDeleteMessage}
           onCopyMessage={handleCopyMessage}
           onTogglePinMessage={handleTogglePinMessage}
+          onEnsureMessageLoaded={handleEnsureMessageLoaded}
           onToggleReaction={handleToggleReaction}
           onCancelDraft={handleCancelDraft}
           onStartCall={startCall}

@@ -55,10 +55,10 @@ export const formatMessageTimestamp = (dateValue, { now = new Date() } = {}) => 
   return `${time} ${date.getDate()} Tháng ${date.getMonth() + 1}, ${date.getFullYear()}`;
 };
 
-const formatTimeSeparatorLabel = (dateValue) => {
-  const date = toValidDate(dateValue);
-  return date ? formatClockTime(date) : "";
-};
+const formatTimeSeparatorLabel = (
+  dateValue,
+  { now = new Date() } = {},
+) => formatMessageTimestamp(dateValue, { now });
 
 export const buildMessageTimeline = (messages = [], { now = new Date() } = {}) => {
   const timeline = [];
@@ -73,6 +73,9 @@ export const buildMessageTimeline = (messages = [], { now = new Date() } = {}) =
       messageDate && previousDate ? messageDate.getTime() - previousDate.getTime() : null;
     const nextElapsedMs =
       messageDate && nextDate ? nextDate.getTime() - messageDate.getTime() : null;
+    const isSystemMessage = message?.type === "system";
+    const isPreviousSystemMessage = previousMessage?.type === "system";
+    const isNextSystemMessage = nextMessage?.type === "system";
     const hasTimeSeparator =
       !previousMessage ||
       elapsedMs == null ||
@@ -85,9 +88,13 @@ export const buildMessageTimeline = (messages = [], { now = new Date() } = {}) =
       nextElapsedMs >= TIME_SEPARATOR_GAP_MS;
     const isSameSender =
       previousMessage &&
+      !isPreviousSystemMessage &&
+      !isSystemMessage &&
       getMessageSenderId(previousMessage) === getMessageSenderId(message);
     const isSameNextSender =
       nextMessage &&
+      !isNextSystemMessage &&
+      !isSystemMessage &&
       getMessageSenderId(nextMessage) === getMessageSenderId(message);
     const isTightGroup =
       !hasTimeSeparator &&
@@ -114,7 +121,7 @@ export const buildMessageTimeline = (messages = [], { now = new Date() } = {}) =
       timeline.push({
         type: "separator",
         id: `separator-${messageId}`,
-        label: formatTimeSeparatorLabel(message?.createdAt),
+        label: formatTimeSeparatorLabel(message?.createdAt, { now }),
       });
     }
 

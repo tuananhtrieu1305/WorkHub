@@ -1,21 +1,16 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import MessageBubble from "./MessageBubble";
 import ChatInput from "./ChatInput";
 import { App } from "antd";
 import { useAuth } from "../../context/AuthContext";
+import { getAvatarReferrerPolicy, getAvatarUrl } from "../../utils/avatar";
 import {
   getActivityStatusMeta,
   getEffectiveActivityStatus,
 } from "./activityStatus";
 import ActivityStatusIcon from "./ActivityStatusIcon";
 import { buildMessageTimeline } from "./messageTimeline";
-
-const API_URL = import.meta.env.VITE_NODE_API_URL || "http://localhost:5000";
-
-const getAvatarUrl = (avatar) => {
-  if (!avatar) return null;
-  return avatar.startsWith("http") ? avatar : `${API_URL}${avatar}`;
-};
 
 const getComparableId = (value) => {
   if (value == null) return "";
@@ -35,6 +30,75 @@ const getDraftPreviewText = (message) => {
   return "...";
 };
 
+const getPinnedMessagePreviewText = (message) => {
+  if (!message) return "...";
+  if (message.deletedAt) return "Tin nhắn đã được thu hồi";
+  if (message.content) return message.content.replace(/\s+/g, " ").trim();
+
+  const firstAttachment = message.attachments?.[0];
+  if (firstAttachment?.mimeType?.startsWith("image/")) return "Ảnh";
+  if (firstAttachment?.mimeType?.startsWith("video/")) return "Video";
+  if (firstAttachment?.fileName) return firstAttachment.fileName;
+  if (message.attachments?.length) return "Tệp đính kèm";
+  return "...";
+};
+
+const getPinnedSenderName = (message, currentUserId) => {
+  const senderId = getMessageSenderId(message);
+  if (senderId && senderId === currentUserId) return "Bạn";
+  return message?.sender?.fullName || "Người dùng";
+};
+
+const formatPinnedMessageDate = (dateValue) => {
+  if (!dateValue) return "";
+
+  const date = new Date(dateValue);
+  if (Number.isNaN(date.getTime())) return "";
+
+  return new Intl.DateTimeFormat("vi-VN", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(date);
+};
+
+const PinnedSenderAvatar = ({ message, senderName }) => {
+  const avatarUrl = getAvatarUrl(message?.sender?.avatar);
+  const senderInitial = (senderName || "N").charAt(0).toUpperCase();
+
+  if (avatarUrl) {
+    return (
+      <img
+        src={avatarUrl}
+        alt={senderName}
+        referrerPolicy={getAvatarReferrerPolicy(avatarUrl)}
+        className="h-11 w-11 shrink-0 rounded-full object-cover ring-2 ring-white shadow-md shadow-slate-900/10"
+        loading="lazy"
+      />
+    );
+  }
+
+  return (
+    <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-slate-200 to-slate-300 text-sm font-extrabold text-slate-700 ring-2 ring-white shadow-md shadow-slate-900/10">
+      {senderInitial}
+    </span>
+  );
+};
+
+const waitForMessageRender = () =>
+  new Promise((resolve) => {
+    if (typeof window === "undefined") {
+      resolve();
+      return;
+    }
+
+    window.requestAnimationFrame(() => {
+      window.requestAnimationFrame(resolve);
+    });
+  });
+
 const ActivityStatusBadge = ({ meta }) => (
   <span
     className={`absolute bottom-0 right-0 flex h-3.5 w-3.5 items-center justify-center rounded-full border-2 border-white ${meta.badgeClassName}`}
@@ -43,6 +107,186 @@ const ActivityStatusBadge = ({ meta }) => (
   </span>
 );
 
+const PinnedMessageBar = ({ pinnedMessages, currentUserId, onOpen }) => {
+  const pinnedMessage = pinnedMessages[0];
+  if (!pinnedMessage) return null;
+
+  const senderName = getPinnedSenderName(pinnedMessage, currentUserId);
+  const previewText = getPinnedMessagePreviewText(pinnedMessage);
+
+  return (
+    <button
+      type="button"
+      onClick={onOpen}
+      className="chat-pinned-summary flex w-full shrink-0 items-center gap-3 border-b border-slate-200 bg-white px-4 py-2.5 text-left transition-colors hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-blue-500 sm:px-6"
+      aria-label="Mở danh sách tin nhắn đã ghim"
+    >
+      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-blue-50 text-blue-600">
+        <span className="material-symbols-outlined text-[20px]">push_pin</span>
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="flex min-w-0 items-center gap-2">
+          <span className="truncate text-xs font-bold text-slate-900">
+            {senderName}
+          </span>
+          {pinnedMessages.length > 1 && (
+            <span className="shrink-0 rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-bold text-slate-500">
+              {pinnedMessages.length}
+            </span>
+          )}
+        </span>
+        <span className="block truncate text-sm font-semibold text-slate-600">
+          {previewText}
+        </span>
+      </span>
+      <span className="material-symbols-outlined shrink-0 text-[22px] text-slate-500">
+        keyboard_arrow_down
+      </span>
+    </button>
+  );
+};
+
+const PinnedMessagesModal = ({
+  isOpen,
+  pinnedMessages,
+  currentUserId,
+  onClose,
+  onJumpToMessage,
+  onUnpinMessage,
+}) => {
+  if (!isOpen || typeof document === "undefined") return null;
+
+  return createPortal(
+    <div
+      className="chat-pinned-modal-backdrop fixed inset-0 z-[10020] flex items-center justify-center bg-slate-950/50 px-3 py-4 backdrop-blur-sm sm:px-4 sm:py-6"
+      role="presentation"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) onClose?.();
+      }}
+    >
+      <section
+        className="chat-pinned-modal flex max-h-[min(42rem,calc(100dvh-2rem))] w-full max-w-2xl flex-col overflow-hidden rounded-2xl border border-slate-200 bg-slate-50 shadow-2xl shadow-slate-950/25"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="chat-pinned-modal-title"
+      >
+        <div className="grid shrink-0 grid-cols-[2.25rem_minmax(0,1fr)_2.25rem] items-center gap-3 border-b border-slate-200 bg-white px-4 py-4 sm:px-5">
+          <span
+            className="flex h-9 w-9 items-center justify-center rounded-full bg-amber-50 text-amber-600"
+            aria-hidden="true"
+          >
+            <span className="material-symbols-outlined text-[20px]">
+              push_pin
+            </span>
+          </span>
+          <h3
+            id="chat-pinned-modal-title"
+            className="truncate text-center text-lg font-extrabold text-slate-950"
+          >
+            Tin nhắn đã ghim
+          </h3>
+          <button
+            type="button"
+            onClick={onClose}
+            className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-slate-100 text-slate-500 transition-all duration-200 hover:bg-slate-200 hover:text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 active:scale-95"
+            aria-label="Đóng danh sách tin nhắn đã ghim"
+          >
+            <span className="material-symbols-outlined text-[24px]">close</span>
+          </button>
+        </div>
+        <div className="chat-pinned-modal-body min-h-0 flex-1 overflow-y-auto px-3 py-3 sm:px-5 sm:py-4">
+          {pinnedMessages.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-12 text-center">
+              <span className="material-symbols-outlined mb-2 text-4xl text-slate-300">
+                push_pin
+              </span>
+              <p className="text-sm font-bold text-slate-600">
+                Chưa có tin nhắn đã ghim
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {pinnedMessages.map((pinnedMessage) => {
+                const pinnedMessageId =
+                  pinnedMessage.id || pinnedMessage._id || pinnedMessage.pinnedAt;
+                const senderName = getPinnedSenderName(
+                  pinnedMessage,
+                  currentUserId,
+                );
+                const previewText = getPinnedMessagePreviewText(pinnedMessage);
+                const originalDate = formatPinnedMessageDate(pinnedMessage.createdAt);
+
+                return (
+                  <article
+                    key={pinnedMessageId}
+                    className="chat-pinned-item grid gap-3 rounded-xl border border-slate-200 bg-white p-3 shadow-sm shadow-slate-900/[0.04] sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center sm:p-4"
+                  >
+                    <div className="flex min-w-0 gap-3">
+                      <PinnedSenderAvatar
+                        message={pinnedMessage}
+                        senderName={senderName}
+                      />
+                      <div className="min-w-0 flex-1">
+                        <div className="flex min-w-0 flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+                          <span className="truncate text-sm font-extrabold text-slate-950">
+                            {senderName}
+                          </span>
+                          {originalDate && (
+                            <span className="inline-flex min-w-0 items-center gap-1 text-xs font-semibold text-slate-500">
+                              <span
+                                className="material-symbols-outlined text-[15px] text-blue-500"
+                                aria-hidden="true"
+                              >
+                                schedule
+                              </span>
+                              <span className="truncate">
+                                {originalDate}
+                              </span>
+                            </span>
+                          )}
+                        </div>
+                        <p
+                          className="chat-pinned-preview mt-2 text-sm font-semibold leading-6 text-slate-700"
+                          title={previewText}
+                        >
+                          {previewText}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="chat-pinned-item-actions flex shrink-0 flex-wrap gap-2 sm:justify-end">
+                      <button
+                        type="button"
+                        onClick={() => onJumpToMessage?.(pinnedMessage)}
+                        className="inline-flex h-9 items-center justify-center gap-1.5 rounded-lg border border-blue-200 bg-blue-50 px-3 text-sm font-bold text-blue-700 transition-all duration-200 hover:border-blue-300 hover:bg-blue-100 hover:text-blue-800 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 active:scale-[0.98]"
+                      >
+                        <span className="material-symbols-outlined text-[18px]">
+                          subdirectory_arrow_right
+                        </span>
+                        <span className="truncate">Đi tới chat</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => onUnpinMessage?.(pinnedMessage)}
+                        className="inline-flex h-9 items-center justify-center gap-1.5 rounded-lg bg-slate-900 px-3 text-sm font-bold text-white shadow-sm shadow-slate-900/15 transition-all duration-200 hover:bg-slate-700 focus:outline-none focus:ring-2 focus:ring-slate-500 focus:ring-offset-2 active:scale-[0.98]"
+                      >
+                        <span className="material-symbols-outlined text-[18px]">
+                          keep_off
+                        </span>
+                        <span className="truncate">Bỏ ghim</span>
+                      </button>
+                    </div>
+                  </article>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      </section>
+    </div>,
+    document.body,
+  );
+};
+
 const messageSpacingClassNames = {
   "after-separator": "mt-2",
   tight: "mt-0.5",
@@ -50,9 +294,21 @@ const messageSpacingClassNames = {
   default: "mt-3",
 };
 
+const SCROLL_BOTTOM_THRESHOLD_PX = 48;
+
+const isViewingLatestMessage = (pane) => {
+  if (!pane) return true;
+
+  return (
+    pane.scrollHeight - pane.scrollTop - pane.clientHeight <=
+    SCROLL_BOTTOM_THRESHOLD_PX
+  );
+};
+
 const ChatWindow = ({
   conversation,
   messages = [],
+  pinnedMessages = [],
   onSendMessage,
   onUploadAttachment,
   onTypingChange,
@@ -61,6 +317,7 @@ const ChatWindow = ({
   onDeleteMessage,
   onCopyMessage,
   onTogglePinMessage,
+  onEnsureMessageLoaded,
   onToggleReaction,
   onCancelDraft,
   onStartCall,
@@ -77,22 +334,68 @@ const ChatWindow = ({
   const messagesPaneRef = useRef(null);
   const messageNodeRefs = useRef(new Map());
   const highlightTimeoutRef = useRef(null);
+  const isViewingLatestMessageRef = useRef(true);
+  const previousConversationIdRef = useRef("");
   const [highlightedMessageId, setHighlightedMessageId] = useState("");
+  const [showScrollToBottomButton, setShowScrollToBottomButton] =
+    useState(false);
+  const [isPinnedListOpen, setIsPinnedListOpen] = useState(false);
   const conversationId = conversation?.id || conversation?._id;
   const latestMessage = messages[messages.length - 1];
   const latestMessageKey =
     latestMessage?.id || latestMessage?._id || latestMessage?.createdAt || "";
   const currentUserId = getComparableId(user?._id || user?.id);
 
+  const updateScrollToBottomVisibility = useCallback(() => {
+    const pane = messagesPaneRef.current;
+    if (!pane || isLoadingMessages || messages.length === 0) {
+      isViewingLatestMessageRef.current = true;
+      setShowScrollToBottomButton(false);
+      return;
+    }
+
+    const isViewingLatest = isViewingLatestMessage(pane);
+    isViewingLatestMessageRef.current = isViewingLatest;
+    setShowScrollToBottomButton((isVisible) =>
+      isVisible === !isViewingLatest ? isVisible : !isViewingLatest,
+    );
+  }, [isLoadingMessages, messages.length]);
+
   useLayoutEffect(() => {
-    if (!conversationId || isLoadingMessages || messages.length === 0) return;
+    if (!conversationId || isLoadingMessages || messages.length === 0) {
+      previousConversationIdRef.current = conversationId || "";
+      isViewingLatestMessageRef.current = true;
+      return;
+    }
 
     const pane = messagesPaneRef.current;
     if (!pane) return;
 
+    const didConversationChange =
+      previousConversationIdRef.current !== conversationId;
+    previousConversationIdRef.current = conversationId;
+    const shouldScrollToBottom =
+      didConversationChange || isViewingLatestMessageRef.current;
+
     const scrollToBottom = () => {
       pane.scrollTop = pane.scrollHeight;
+      isViewingLatestMessageRef.current = true;
+      setShowScrollToBottomButton(false);
     };
+
+    if (!shouldScrollToBottom) {
+      if (typeof window === "undefined") {
+        return;
+      }
+
+      const frameId = window.requestAnimationFrame(
+        updateScrollToBottomVisibility,
+      );
+
+      return () => {
+        window.cancelAnimationFrame(frameId);
+      };
+    }
 
     scrollToBottom();
 
@@ -105,7 +408,13 @@ const ChatWindow = ({
       window.cancelAnimationFrame(frameId);
       window.clearTimeout(timeoutId);
     };
-  }, [conversationId, isLoadingMessages, latestMessageKey, messages.length]);
+  }, [
+    conversationId,
+    isLoadingMessages,
+    latestMessageKey,
+    messages.length,
+    updateScrollToBottomVisibility,
+  ]);
 
   useEffect(() => {
     return () => {
@@ -128,15 +437,23 @@ const ChatWindow = ({
   }, []);
 
   const handleJumpToMessage = useCallback(
-    (targetMessage) => {
+    async (targetMessage) => {
       const targetMessageId = getComparableId(
         targetMessage?.id || targetMessage?._id,
       );
       if (!targetMessageId) return;
 
-      const targetNode = messageNodeRefs.current.get(targetMessageId);
+      let targetNode = messageNodeRefs.current.get(targetMessageId);
+      if (!targetNode && onEnsureMessageLoaded) {
+        const didLoadMessage = await onEnsureMessageLoaded(targetMessage);
+        if (didLoadMessage) {
+          await waitForMessageRender();
+          targetNode = messageNodeRefs.current.get(targetMessageId);
+        }
+      }
+
       if (!targetNode) {
-        message.warning("Tin nhắn được trả lời chưa có trong danh sách hiện tại");
+        message.warning("Tin nhắn chưa có trong danh sách hiện tại");
         return;
       }
 
@@ -156,8 +473,20 @@ const ChatWindow = ({
         );
       }, 1800);
     },
-    [message],
+    [message, onEnsureMessageLoaded],
   );
+
+  const handleScrollToBottom = useCallback(() => {
+    const pane = messagesPaneRef.current;
+    if (!pane) return;
+
+    pane.scrollTo({
+      top: pane.scrollHeight,
+      behavior: "smooth",
+    });
+    isViewingLatestMessageRef.current = true;
+    setShowScrollToBottomButton(false);
+  }, []);
 
   // Empty state - no conversation selected
   if (!conversation) {
@@ -345,9 +674,16 @@ const ChatWindow = ({
         </div>
       </div>
 
+      <PinnedMessageBar
+        pinnedMessages={pinnedMessages}
+        currentUserId={currentUserId}
+        onOpen={() => setIsPinnedListOpen(true)}
+      />
+
       {/* Messages Area */}
       <div
         ref={messagesPaneRef}
+        onScroll={updateScrollToBottomVisibility}
         className="chat-messages-pane chat-messages-scroll flex flex-1 flex-col overflow-y-auto px-4 py-6 sm:px-6"
       >
         {isLoadingMessages ? (
@@ -416,6 +752,7 @@ const ChatWindow = ({
                     onTogglePin={onTogglePinMessage}
                     onToggleReaction={onToggleReaction}
                     onJumpToMessage={handleJumpToMessage}
+                    onOpenPinnedList={() => setIsPinnedListOpen(true)}
                   />
                 </div>
               );
@@ -439,16 +776,45 @@ const ChatWindow = ({
       )}
 
       {/* Chat Input */}
-      <ChatInput
-        onSend={onSendMessage}
-        onUploadAttachment={onUploadAttachment}
-        onTypingChange={onTypingChange}
-        onCancelDraft={onCancelDraft}
-        initialContent={editingMessage?.content || ""}
-        mode={editingMessage ? "edit" : replyToMessage ? "reply" : "send"}
-        draftPreview={draftPreview}
-        disabled={isSending}
-        placeholder={`Trả lời ${isPrivate ? displayName : `# ${displayName}`}...`}
+      <div className="relative shrink-0">
+        {showScrollToBottomButton && !isLoadingMessages && messages.length > 0 && (
+          <button
+            type="button"
+            onClick={handleScrollToBottom}
+            className="chat-scroll-to-bottom-button absolute left-1/2 top-0 z-20 inline-flex h-10 w-10 -translate-x-1/2 -translate-y-[calc(100%+0.75rem)] items-center justify-center rounded-full border border-slate-200 bg-white text-blue-600 shadow-lg shadow-slate-900/15 transition-colors hover:bg-blue-50 hover:text-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
+            title="Cuộn xuống tin nhắn mới nhất"
+            aria-label="Cuộn xuống tin nhắn mới nhất"
+          >
+            <span
+              className="material-symbols-outlined text-[24px]"
+              aria-hidden="true"
+            >
+              keyboard_arrow_down
+            </span>
+          </button>
+        )}
+        <ChatInput
+          onSend={onSendMessage}
+          onUploadAttachment={onUploadAttachment}
+          onTypingChange={onTypingChange}
+          onCancelDraft={onCancelDraft}
+          initialContent={editingMessage?.content || ""}
+          mode={editingMessage ? "edit" : replyToMessage ? "reply" : "send"}
+          draftPreview={draftPreview}
+          disabled={isSending}
+          placeholder={`Trả lời ${isPrivate ? displayName : `# ${displayName}`}...`}
+        />
+      </div>
+      <PinnedMessagesModal
+        isOpen={isPinnedListOpen && pinnedMessages.length > 0}
+        pinnedMessages={pinnedMessages}
+        currentUserId={currentUserId}
+        onClose={() => setIsPinnedListOpen(false)}
+        onJumpToMessage={(pinnedMessage) => {
+          setIsPinnedListOpen(false);
+          handleJumpToMessage(pinnedMessage);
+        }}
+        onUnpinMessage={onTogglePinMessage}
       />
     </main>
   );

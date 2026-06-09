@@ -8,6 +8,7 @@ import {
   addConversationMember,
   removeConversationMember,
   getMessages,
+  getPinnedMessages,
   markConversationAsRead,
   uploadConversationAttachment,
   sendMessage,
@@ -30,6 +31,7 @@ router.delete("/:id", protect, deleteConversation);
 router.post("/:id/members", protect, addConversationMember);
 router.delete("/:id/members/:userId", protect, removeConversationMember);
 router.post("/:id/read", protect, markConversationAsRead);
+router.get("/:id/pinned-messages", protect, getPinnedMessages);
 router.get("/:id/messages", protect, getMessages);
 router.post("/:id/attachments", protect, uploadAttachment.single("file"), uploadConversationAttachment);
 router.post("/:id/messages", protect, sendMessage);

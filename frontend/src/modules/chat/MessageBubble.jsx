@@ -408,6 +408,42 @@ const CallSystemMessage = ({ message }) => {
   );
 };
 
+const pinSystemEventTypes = new Set(["message_pinned", "message_unpinned"]);
+
+const getPinSystemActorName = (sender, currentUserId) => {
+  const senderId = getUserId(sender);
+  if (senderId && senderId === currentUserId) return "Bạn";
+  return sender?.fullName || "";
+};
+
+const PinSystemMessage = ({ message, currentUserId, onOpenPinnedList }) => {
+  const isUnpin = message.metadata?.eventType === "message_unpinned";
+  const actorName = getPinSystemActorName(message.sender, currentUserId);
+  const noticeText =
+    actorName || !message.content
+      ? `${actorName || "Người dùng"} ${
+          isUnpin ? "đã bỏ ghim một tin nhắn" : "đã ghim một tin nhắn."
+        }`
+      : message.content;
+
+  return (
+    <div className="chat-pin-system-notice my-3 flex justify-center px-3">
+      <div className="inline-flex max-w-full flex-wrap items-center justify-center gap-y-1 text-center text-xs font-semibold text-slate-500">
+        <span className="min-w-0 truncate">{noticeText}</span>
+        {!isUnpin && (
+          <button
+            type="button"
+            onClick={onOpenPinnedList}
+            className="ml-1 font-bold text-blue-600 transition-colors hover:text-blue-700 hover:underline focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
+          >
+            Xem tất cả
+          </button>
+        )}
+      </div>
+    </div>
+  );
+};
+
 const MessageBubble = ({
   message,
   showAvatar = true,
@@ -423,6 +459,7 @@ const MessageBubble = ({
   onTogglePin,
   onToggleReaction,
   onJumpToMessage,
+  onOpenPinnedList,
 }) => {
   const { user } = useAuth();
   const [isMenuOpen, setIsMenuOpen] = useState(false);
@@ -463,7 +500,9 @@ const MessageBubble = ({
     isMine ? "chat-message-bubble-mine" : "chat-message-bubble-other",
     isDeleted ? "chat-message-bubble-deleted" : "",
     !isDeleted && showAvatar ? "chat-message-bubble-avatar-anchor" : "",
-    !isDeleted && isTightGroup ? "chat-message-bubble-linked-before" : "",
+    !isDeleted && isTightGroup && !message.isPinned
+      ? "chat-message-bubble-linked-before"
+      : "",
     !isDeleted && hasTightNext ? "chat-message-bubble-linked-after" : "",
     !isDeleted && message.replyTo ? "chat-message-bubble-with-reply" : "",
     !isDeleted && isHighlighted ? "chat-message-bubble-highlighted" : "",
@@ -473,7 +512,8 @@ const MessageBubble = ({
   const messageTimestamp =
     timestampLabel || formatMessageTimestamp(message.createdAt);
   const hoverTimestampPlacement = getHoverTimestampPlacement(isMine);
-  const shouldShowSenderHeader = showSenderHeader && !message.replyTo;
+  const shouldShowSenderHeader =
+    showSenderHeader || (!isDeleted && message.isPinned);
 
   const updateHoverTimePosition = useCallback(() => {
     if (!messageTimestamp || !bubbleRef.current) {
@@ -591,8 +631,22 @@ const MessageBubble = ({
     };
   }, [hideHoverTime, hoverTimePosition, updateHoverTimePosition]);
 
-  if (message.type === "system" && message.metadata?.eventType?.startsWith("call_")) {
-    return <CallSystemMessage message={message} />;
+  if (message.type === "system") {
+    const systemEventType = message.metadata?.eventType;
+
+    if (systemEventType?.startsWith("call_")) {
+      return <CallSystemMessage message={message} />;
+    }
+
+    if (pinSystemEventTypes.has(systemEventType)) {
+      return (
+        <PinSystemMessage
+          message={message}
+          currentUserId={currentUserId}
+          onOpenPinnedList={onOpenPinnedList}
+        />
+      );
+    }
   }
 
   const renderAvatar = (className = "") => {
@@ -618,6 +672,20 @@ const MessageBubble = ({
       </div>
     );
   };
+
+  const renderPinnedLabel = () =>
+    !isDeleted &&
+    message.isPinned && (
+      <span className="chat-message-pinned-label">Đã ghim</span>
+    );
+
+  const renderPinMarker = () =>
+    !isDeleted &&
+    message.isPinned && (
+      <span className="chat-message-pin-marker" aria-hidden="true">
+        <span className="material-symbols-outlined">push_pin</span>
+      </span>
+    );
 
   const handleMenuAction = (action) => {
     setIsMenuOpen(false);
@@ -784,6 +852,7 @@ const MessageBubble = ({
         {shouldShowSenderHeader && (
           <div className="flex items-baseline gap-2">
               <span className="text-sm font-bold text-slate-900">Bạn</span>
+              {renderPinnedLabel()}
             </div>
           )}
           <div
@@ -811,18 +880,11 @@ const MessageBubble = ({
               onPointerLeave={hideHoverTime}
               onPointerMove={updateHoverTimePosition}
             >
+              {renderPinMarker()}
               {isDeleted ? (
                 <span>{deletedMessageText}</span>
               ) : (
                 <>
-                  {message.isPinned && (
-                    <span className="mb-1.5 inline-flex items-center gap-1 rounded-full bg-white/15 px-2 py-0.5 text-[11px] font-bold text-blue-50">
-                      <span className="material-symbols-outlined text-[13px]">
-                        push_pin
-                      </span>
-                      Đã ghim
-                    </span>
-                  )}
                   <MessageText content={message.content} />
                   <MessageAttachments
                     attachments={message.attachments || []}
@@ -864,6 +926,7 @@ const MessageBubble = ({
             <span className="text-sm font-bold text-slate-900 cursor-pointer hover:underline">
               {senderName}
             </span>
+            {renderPinnedLabel()}
           </div>
         )}
         <div
@@ -890,18 +953,11 @@ const MessageBubble = ({
             onPointerLeave={hideHoverTime}
             onPointerMove={updateHoverTimePosition}
           >
+            {renderPinMarker()}
             {isDeleted ? (
               <span>{deletedMessageText}</span>
             ) : (
               <>
-                {message.isPinned && (
-                  <span className="mb-1.5 inline-flex items-center gap-1 rounded-full bg-blue-50 px-2 py-0.5 text-[11px] font-bold text-blue-700">
-                    <span className="material-symbols-outlined text-[13px]">
-                      push_pin
-                    </span>
-                    Đã ghim
-                  </span>
-                )}
                 <MessageText content={message.content} />
                 <MessageAttachments attachments={message.attachments || []} />
                 {message.editedAt && (

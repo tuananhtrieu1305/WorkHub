@@ -589,8 +589,43 @@ export const getMessages = async (req, res) => {
         .json({ message: "You are not a participant of this conversation" });
     }
 
-    const { before, limit = 30 } = req.query;
+    const { before, around, limit = 30 } = req.query;
     const messageLimit = Math.min(Math.max(1, parseInt(limit)), 100);
+
+    if (around) {
+      const targetMessage = await Message.findById(around);
+      if (
+        !targetMessage ||
+        targetMessage.conversationId.toString() !== conversation._id.toString()
+      ) {
+        return res.status(404).json({ message: "Message not found" });
+      }
+
+      const olderLimit = Math.floor((messageLimit - 1) / 2);
+      const newerLimit = Math.max(0, messageLimit - olderLimit - 1);
+      const [olderMessages, newerMessages] = await Promise.all([
+        Message.find({
+          conversationId: conversation._id,
+          createdAt: { $lt: targetMessage.createdAt },
+        })
+          .sort({ createdAt: -1, _id: -1 })
+          .limit(olderLimit),
+        Message.find({
+          conversationId: conversation._id,
+          createdAt: { $gt: targetMessage.createdAt },
+        })
+          .sort({ createdAt: 1, _id: 1 })
+          .limit(newerLimit),
+      ]);
+
+      const content = await Promise.all(
+        [...olderMessages.reverse(), targetMessage, ...newerMessages].map(
+          formatMessage,
+        ),
+      );
+
+      return res.status(200).json({ content, hasMore: false });
+    }
 
     const filter = { conversationId: conversation._id };
     if (before) {
@@ -613,6 +648,38 @@ export const getMessages = async (req, res) => {
     res.status(200).json({ content, hasMore });
   } catch (error) {
     console.error("GetMessages error:", error.message);
+    if (error.kind === "ObjectId") {
+      return res.status(400).json({ message: "Invalid conversation ID" });
+    }
+    res.status(500).json({ message: "Server error, please try again" });
+  }
+};
+
+// GET /conversations/:id/pinned-messages
+export const getPinnedMessages = async (req, res) => {
+  try {
+    const conversation = await Conversation.findById(req.params.id);
+    if (!conversation) {
+      return res.status(404).json({ message: "Conversation not found" });
+    }
+
+    if (!isParticipant(conversation, req.user._id)) {
+      return res
+        .status(403)
+        .json({ message: "You are not a participant of this conversation" });
+    }
+
+    const pinnedMessages = await Message.find({
+      conversationId: conversation._id,
+      isPinned: true,
+      deletedAt: null,
+    }).sort({ pinnedAt: -1, createdAt: -1, _id: -1 });
+
+    const content = await Promise.all(pinnedMessages.map(formatMessage));
+
+    res.status(200).json({ content });
+  } catch (error) {
+    console.error("GetPinnedMessages error:", error.message);
     if (error.kind === "ObjectId") {
       return res.status(400).json({ message: "Invalid conversation ID" });
     }
@@ -989,20 +1056,72 @@ export const updateMessagePin = async (req, res) => {
     }
 
     const isPinned = normalizePinnedState(req.body?.isPinned);
+    const pinChangedAt = new Date();
     message.isPinned = isPinned;
     message.pinnedBy = isPinned ? req.user._id : null;
-    message.pinnedAt = isPinned ? new Date() : null;
+    message.pinnedAt = isPinned ? pinChangedAt : null;
     await message.save();
 
-    const messageData = await formatMessage(message);
+    const systemContent = `${req.user.fullName || "Người dùng"} ${
+      isPinned ? "đã ghim một tin nhắn." : "đã bỏ ghim một tin nhắn"
+    }`;
+    const systemMessage = await Message.create({
+      conversationId: conversation._id,
+      senderId: req.user._id,
+      type: "system",
+      content: systemContent,
+      metadata: {
+        eventType: isPinned ? "message_pinned" : "message_unpinned",
+        action: isPinned ? "pin" : "unpin",
+        targetMessageId: message._id,
+        actorId: req.user._id,
+      },
+    });
+
+    conversation.lastMessage = {
+      messageId: systemMessage._id,
+      content: systemContent,
+      senderId: req.user._id,
+      createdAt: systemMessage.createdAt,
+      deletedAt: null,
+      deletedBy: null,
+    };
+    await conversation.save();
+
+    const [messageData, systemMessageData, conversationData] =
+      await Promise.all([
+        formatMessage(message),
+        formatMessage(systemMessage),
+        formatConversation(conversation, { currentUserId: req.user._id }),
+      ]);
+    const pinEvent = {
+      type: isPinned ? "pin" : "unpin",
+      actor: messageData.pinnedBy || formatConversationUser(req.user),
+      at: message.pinnedAt || message.updatedAt || pinChangedAt,
+    };
+    const messagePayload = {
+      ...messageData,
+      pinEvent,
+      conversation: conversationData,
+    };
 
     if (ioInstance) {
+      joinParticipantSocketsToConversationRoom(ioInstance, conversation);
       ioInstance
         .to(getConversationRealtimeRoomNames(conversation))
-        .emit("message_updated", messageData);
+        .emit("message_updated", messagePayload);
+      ioInstance
+        .to(getConversationRealtimeRoomNames(conversation))
+        .emit("new_message", {
+          ...systemMessageData,
+          conversation: conversationData,
+        });
     }
 
-    res.status(200).json(messageData);
+    res.status(200).json({
+      ...messagePayload,
+      systemMessage: systemMessageData,
+    });
   } catch (error) {
     console.error("UpdateMessagePin error:", error.message);
     if (error.message === "isPinned must be a boolean") {

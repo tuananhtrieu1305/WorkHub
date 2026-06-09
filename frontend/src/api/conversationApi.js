@@ -23,6 +23,13 @@ export const getMessages = async (conversationId, params = {}) => {
   return data;
 };
 
+export const getPinnedMessages = async (conversationId) => {
+  const { data } = await axiosClient.get(
+    `/conversations/${conversationId}/pinned-messages`
+  );
+  return data;
+};
+
 export const markConversationAsRead = async (conversationId) => {
   const { data } = await axiosClient.post(`/conversations/${conversationId}/read`);
   return data;
