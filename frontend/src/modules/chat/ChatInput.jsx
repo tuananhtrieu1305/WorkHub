@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { EmojiPickerButton } from "../../components/emoji";
 import { applyComposerFormat } from "./chatComposerUtils";
 import { formatAudioDuration } from "./chatMessagePreview";
+import PollCreateModal from "./PollCreateModal";
 
 const secondaryComposerActions = [
   { icon: "contact_page", title: "Gửi danh thiếp" },
@@ -66,6 +67,7 @@ const formatToolbarItems = [
 const ChatInput = ({
   onSend,
   onUploadAttachment,
+  onCreatePoll,
   onTypingChange,
   onCancelDraft,
   initialContent = "",
@@ -77,6 +79,7 @@ const ChatInput = ({
   const [content, setContent] = useState(initialContent);
   const [showFormattingToolbar, setShowFormattingToolbar] = useState(false);
   const [attachments, setAttachments] = useState([]);
+  const [isPollModalOpen, setIsPollModalOpen] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const [isVoiceSending, setIsVoiceSending] = useState(false);
   const [isPreparingRecording, setIsPreparingRecording] = useState(false);
@@ -428,6 +431,14 @@ const ChatInput = ({
     !isPreparingRecording &&
     !isVoiceSending &&
     !hasComposerContent;
+  const canCreatePoll =
+    Boolean(onCreatePoll) &&
+    mode === "send" &&
+    !disabled &&
+    !isUploading &&
+    !isPreparingRecording &&
+    !isRecording &&
+    !isVoiceSending;
   const canSend =
     hasComposerContent && !composerBusy && !isRecording;
   const isRecorderVisible = isPreparingRecording || isRecording;
@@ -458,6 +469,12 @@ const ChatInput = ({
       onTypingChange?.(false);
     }
   }, [draftPreview, initialContent, mode, onTypingChange]);
+
+  useEffect(() => {
+    if (mode !== "send") {
+      setIsPollModalOpen(false);
+    }
+  }, [mode]);
 
   useEffect(() => {
     return () => {
@@ -491,6 +508,7 @@ const ChatInput = ({
   }, [draftPreview, renderedDraftPreview]);
 
   return (
+    <>
     <div
       className={`bg-white px-3 pb-3 pt-3 sm:px-6 sm:pb-4 ${
         visibleDraftPreview
@@ -583,6 +601,19 @@ const ChatInput = ({
                 </span>
               </button>
             ))}
+
+            <button
+              type="button"
+              onClick={() => setIsPollModalOpen(true)}
+              disabled={!canCreatePoll}
+              className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-slate-600 transition-colors hover:bg-blue-50 hover:text-blue-700 disabled:cursor-not-allowed disabled:text-slate-300"
+              title="Tạo bình chọn"
+              aria-label="Tạo bình chọn"
+            >
+              <span className="material-symbols-outlined text-[20px]">
+                bar_chart
+              </span>
+            </button>
 
             <button
               type="button"
@@ -820,6 +851,13 @@ const ChatInput = ({
         )}
       </div>
     </div>
+    <PollCreateModal
+      isOpen={isPollModalOpen}
+      onClose={() => setIsPollModalOpen(false)}
+      onCreatePoll={onCreatePoll}
+      disabled={!canCreatePoll}
+    />
+    </>
   );
 };
 

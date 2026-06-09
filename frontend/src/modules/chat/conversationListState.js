@@ -1,4 +1,4 @@
-import { getMessagePreviewText } from "./chatMessagePreview";
+import { getMessagePreviewText } from "./chatMessagePreview.js";
 
 const toComparableId = (value) => {
   if (value == null) return "";

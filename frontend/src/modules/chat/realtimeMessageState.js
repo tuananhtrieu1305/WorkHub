@@ -1,5 +1,5 @@
-import { sortConversationsByActivity } from "./conversationListState";
-import { getMessagePreviewText } from "./chatMessagePreview";
+import { sortConversationsByActivity } from "./conversationListState.js";
+import { getMessagePreviewText } from "./chatMessagePreview.js";
 
 const toComparableId = (value) => {
   if (value == null) return "";
@@ -15,6 +15,37 @@ const sortMessagesByCreatedAt = (messages) => {
   return [...messages].sort((a, b) => getMessageTime(a) - getMessageTime(b));
 };
 
+const syncPollActivityMessages = (messages, incomingMessage) => {
+  if (incomingMessage?.type !== "poll" || !incomingMessage?.poll) {
+    return messages;
+  }
+
+  const incomingId = toComparableId(incomingMessage.id || incomingMessage._id);
+  if (!incomingId) return messages;
+
+  return messages.map((message) => {
+    const metadata = message?.metadata || {};
+    const targetMessageId = toComparableId(metadata.targetMessageId);
+    const isPollActivity =
+      message?.type === "system" &&
+      metadata.eventType === "poll_voted" &&
+      targetMessageId === incomingId;
+
+    if (!isPollActivity) return message;
+
+    return {
+      ...message,
+      metadata: {
+        ...metadata,
+        pollMessage: {
+          ...(metadata.pollMessage || {}),
+          ...incomingMessage,
+        },
+      },
+    };
+  });
+};
+
 export const upsertMessageById = (messages, incomingMessage) => {
   if (!incomingMessage?.id) return messages;
 
@@ -24,7 +55,9 @@ export const upsertMessageById = (messages, incomingMessage) => {
   );
 
   if (existingIndex === -1) {
-    return sortMessagesByCreatedAt([...messages, incomingMessage]);
+    return sortMessagesByCreatedAt(
+      syncPollActivityMessages([...messages, incomingMessage], incomingMessage),
+    );
   }
 
   const nextMessages = [...messages];
@@ -33,7 +66,9 @@ export const upsertMessageById = (messages, incomingMessage) => {
     ...incomingMessage,
   };
 
-  return sortMessagesByCreatedAt(nextMessages);
+  return sortMessagesByCreatedAt(
+    syncPollActivityMessages(nextMessages, incomingMessage),
+  );
 };
 
 export const removeMessageById = (messages, messageId) => {

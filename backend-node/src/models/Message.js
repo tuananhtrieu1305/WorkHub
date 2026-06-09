@@ -1,5 +1,87 @@
 import mongoose from "mongoose";
 
+const pollVoterSchema = new mongoose.Schema(
+  {
+    userId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      required: true,
+    },
+    votedAt: {
+      type: Date,
+      default: Date.now,
+    },
+  },
+  { _id: false },
+);
+
+const pollOptionSchema = new mongoose.Schema(
+  {
+    text: {
+      type: String,
+      required: true,
+      trim: true,
+      maxlength: 100,
+    },
+    createdBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      default: null,
+    },
+    createdAt: {
+      type: Date,
+      default: Date.now,
+    },
+    voters: {
+      type: [pollVoterSchema],
+      default: [],
+    },
+  },
+  { _id: true },
+);
+
+const pollSchema = new mongoose.Schema(
+  {
+    question: {
+      type: String,
+      trim: true,
+      maxlength: 200,
+      default: "",
+    },
+    options: {
+      type: [pollOptionSchema],
+      default: [],
+    },
+    settings: {
+      multiple: {
+        type: Boolean,
+        default: false,
+      },
+      allowOptions: {
+        type: Boolean,
+        default: false,
+      },
+      hideResultsUntilVoted: {
+        type: Boolean,
+        default: false,
+      },
+      hideVoters: {
+        type: Boolean,
+        default: false,
+      },
+    },
+    expiresAt: {
+      type: Date,
+      default: null,
+    },
+    closedAt: {
+      type: Date,
+      default: null,
+    },
+  },
+  { _id: false },
+);
+
 const messageSchema = new mongoose.Schema(
   {
     conversationId: {
@@ -14,7 +96,7 @@ const messageSchema = new mongoose.Schema(
     },
     type: {
       type: String,
-      enum: ["text", "image", "file", "audio", "system"],
+      enum: ["text", "image", "file", "audio", "poll", "system"],
       default: "text",
     },
     content: {
@@ -24,6 +106,10 @@ const messageSchema = new mongoose.Schema(
     metadata: {
       type: mongoose.Schema.Types.Mixed,
       default: {},
+    },
+    poll: {
+      type: pollSchema,
+      default: null,
     },
     attachments: [
       {

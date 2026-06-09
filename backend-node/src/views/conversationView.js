@@ -16,6 +16,8 @@ import {
   updateMessage,
   deleteMessage,
   updateMessagePin,
+  votePoll,
+  addPollOptionToMessage,
   addReaction,
   removeReaction,
 } from "../presenters/conversationPresenter.js";
@@ -49,6 +51,12 @@ router.post("/:id/messages", protect, sendMessage);
 router.put("/:id/messages/:messageId", protect, updateMessage);
 router.delete("/:id/messages/:messageId", protect, deleteMessage);
 router.patch("/:id/messages/:messageId/pin", protect, updateMessagePin);
+router.post("/:id/messages/:messageId/poll/votes", protect, votePoll);
+router.post(
+  "/:id/messages/:messageId/poll/options",
+  protect,
+  addPollOptionToMessage,
+);
 router.post("/:id/messages/:messageId/reactions", protect, addReaction);
 router.delete("/:id/messages/:messageId/reactions", protect, removeReaction);
 

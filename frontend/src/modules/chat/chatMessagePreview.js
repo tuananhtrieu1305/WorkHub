@@ -20,6 +20,10 @@ export const getMessagePreviewText = (
 ) => {
   if (!message) return emptyText;
   if (message.deletedAt) return "Tin nhắn đã được thu hồi";
+  if (message.type === "poll") {
+    const question = message.poll?.question || message.content;
+    return question ? `Bình chọn: ${question}` : "Bình chọn";
+  }
   if (message.content) return message.content.replace(/\s+/g, " ").trim();
 
   const attachments = message.attachments || [];

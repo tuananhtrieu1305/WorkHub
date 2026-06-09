@@ -300,6 +300,7 @@ const ChatWindow = ({
   pinnedMessages = [],
   onSendMessage,
   onUploadAttachment,
+  onCreatePoll,
   onTypingChange,
   onReplyMessage,
   onEditMessage,
@@ -308,6 +309,8 @@ const ChatWindow = ({
   onTogglePinMessage,
   onEnsureMessageLoaded,
   onToggleReaction,
+  onVotePoll,
+  onAddPollOption,
   onCancelDraft,
   onStartCall,
   onBack,
@@ -337,6 +340,11 @@ const ChatWindow = ({
   const latestMessageKey =
     latestMessage?.id || latestMessage?._id || latestMessage?.createdAt || "";
   const currentUserId = getComparableId(user?._id || user?.id);
+  const latestMessageSenderId = getMessageSenderId(latestMessage);
+  const isLatestMessageFromCurrentUser =
+    Boolean(currentUserId) &&
+    Boolean(latestMessageSenderId) &&
+    latestMessageSenderId === currentUserId;
 
   const updateScrollToBottomVisibility = useCallback(() => {
     const pane = messagesPaneRef.current;
@@ -412,7 +420,8 @@ const ChatWindow = ({
     const shouldScrollToBottom =
       didConversationChange ||
       shouldStickToLatestMessageRef.current ||
-      isViewingLatestMessageRef.current;
+      isViewingLatestMessageRef.current ||
+      isLatestMessageFromCurrentUser;
 
     if (didConversationChange) {
       shouldStickToLatestMessageRef.current = true;
@@ -451,6 +460,7 @@ const ChatWindow = ({
     conversationId,
     isLoadingMessages,
     latestMessageKey,
+    isLatestMessageFromCurrentUser,
     messages.length,
     scrollPaneToLatestMessage,
     updateScrollToBottomVisibility,
@@ -723,42 +733,41 @@ const ChatWindow = ({
         </div>
 
         {/* Actions */}
-        <div className="flex items-center gap-1 shrink-0">
+        <div className="flex items-center gap-2 shrink-0">
           <button
+            type="button"
             onClick={() => handleStartCall("audio")}
             disabled={!canAttemptPrivateCall}
             aria-label="Gọi thoại"
-            className="hidden items-center gap-2 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm font-semibold text-slate-700 transition-colors hover:border-blue-300 hover:bg-blue-50 hover:text-blue-700 disabled:cursor-not-allowed disabled:opacity-50 sm:flex"
+            title="Gọi thoại"
+            className="inline-flex h-9 w-9 items-center justify-center rounded-full text-blue-500 transition-colors hover:bg-blue-50 hover:text-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-300 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-40"
           >
-            <span className="material-symbols-outlined text-[18px]">call</span>
-            <span className="hidden lg:inline">Gọi</span>
+            <span className="chat-conversation-action-icon material-symbols-outlined text-[22px]">
+              call
+            </span>
           </button>
           <button
+            type="button"
             onClick={() => handleStartCall("video")}
             disabled={!canAttemptPrivateCall}
             aria-label="Gọi video"
-            className="hidden items-center gap-2 rounded-lg bg-blue-600 px-3 py-1.5 text-sm font-semibold text-white shadow-sm shadow-blue-900/20 transition-colors hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50 sm:flex"
+            title="Gọi video"
+            className="inline-flex h-9 w-9 items-center justify-center rounded-full text-blue-500 transition-colors hover:bg-blue-50 hover:text-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-300 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-40"
           >
-            <span className="material-symbols-outlined text-[18px]">
+            <span className="chat-conversation-action-icon material-symbols-outlined text-[22px]">
               videocam
             </span>
-            <span className="hidden lg:inline">Họp</span>
-          </button>
-          <div className="w-px h-6 bg-slate-200 mx-1 hidden sm:block" />
-          <button
-            className="rounded-lg p-2 text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-900"
-            title="Tìm trong cuộc hội thoại"
-          >
-            <span className="material-symbols-outlined text-[20px]">
-              search
-            </span>
           </button>
           <button
+            type="button"
             onClick={onToggleDetail}
-            className="rounded-lg p-2 text-slate-600 transition-colors hover:bg-blue-50 hover:text-blue-700"
+            aria-label="Thông tin hội thoại"
             title="Thông tin hội thoại"
+            className="inline-flex h-9 w-9 items-center justify-center rounded-full text-blue-500 transition-colors hover:bg-blue-50 hover:text-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-300 focus:ring-offset-2"
           >
-            <span className="material-symbols-outlined text-[20px]">info</span>
+            <span className="chat-conversation-action-icon material-symbols-outlined text-[22px]">
+              info
+            </span>
           </button>
         </div>
       </div>
@@ -843,6 +852,8 @@ const ChatWindow = ({
                     onCopy={onCopyMessage}
                     onTogglePin={onTogglePinMessage}
                     onToggleReaction={onToggleReaction}
+                    onVotePoll={onVotePoll}
+                    onAddPollOption={onAddPollOption}
                     onJumpToMessage={handleJumpToMessage}
                     onOpenPinnedList={() => setIsPinnedListOpen(true)}
                   />
@@ -888,6 +899,7 @@ const ChatWindow = ({
         <ChatInput
           onSend={onSendMessage}
           onUploadAttachment={onUploadAttachment}
+          onCreatePoll={onCreatePoll}
           onTypingChange={onTypingChange}
           onCancelDraft={onCancelDraft}
           initialContent={editingMessage?.content || ""}

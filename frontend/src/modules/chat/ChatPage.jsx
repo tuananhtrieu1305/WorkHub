@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { App } from "antd";
 import { useNavigate, useParams } from "react-router-dom";
 import {
+  addPollOption as addConversationPollOption,
   addMessageReaction,
   deleteMessage as deleteConversationMessage,
   getConversationById,
@@ -14,6 +15,7 @@ import {
   uploadConversationAttachment,
   updateMessage as updateConversationMessage,
   updateMessagePin,
+  votePoll as voteConversationPoll,
 } from "../../api/conversationApi";
 import { useAuth } from "../../context/AuthContext";
 import ConversationList from "./ConversationList";
@@ -325,6 +327,7 @@ const ChatPage = () => {
     const handleNewMessage = (message) => {
       if (isSelectedConversationEvent(message.conversationId)) {
         setMessages((prev) => upsertMessageById(prev, message));
+        setPinnedMessages((prev) => upsertPinnedMessage(prev, message));
       }
       setConversations((prev) =>
         updateConversationPreview(prev, message, {
@@ -505,6 +508,7 @@ const ChatPage = () => {
           : [];
         const messageType = options.type || "text";
         const metadata = options.metadata || {};
+        const poll = options.poll || null;
         const message = editingMessage
           ? await updateConversationMessage(
               selectedConversationId,
@@ -516,6 +520,7 @@ const ChatPage = () => {
               content,
               attachments,
               metadata,
+              poll,
               replyTo: replyToMessage?.id || null,
             });
         setMessages((prev) => upsertMessageById(prev, message));
@@ -555,6 +560,46 @@ const ChatPage = () => {
       return uploadConversationAttachment(selectedConversationId, file, options);
     },
     [selectedConversationId]
+  );
+
+  const handleCreatePoll = useCallback(
+    async (poll) => {
+      if (!selectedConversationId) return;
+
+      setIsSending(true);
+      try {
+        const message = await sendConversationMessage(selectedConversationId, {
+          type: "poll",
+          content: poll.question,
+          poll,
+          metadata: {},
+        });
+        setMessages((prev) => upsertMessageById(prev, message));
+        setPinnedMessages((prev) => upsertPinnedMessage(prev, message));
+        setConversations((prev) =>
+          updateConversationPreview(prev, message, {
+            currentUserId: user?._id || user?.id,
+            selectedConversationId,
+          })
+        );
+        setReplyToMessage(null);
+        setEditingMessage(null);
+        handleTypingChange(false);
+      } catch (err) {
+        console.error("Failed to create poll:", err);
+        toast.error("Không thể tạo bình chọn");
+        throw err;
+      } finally {
+        setIsSending(false);
+      }
+    },
+    [
+      handleTypingChange,
+      selectedConversationId,
+      toast,
+      user?._id,
+      user?.id,
+    ]
   );
 
   const handleReplyMessage = useCallback((message) => {
@@ -775,6 +820,68 @@ const ChatPage = () => {
     [selectedConversationId, user?._id, user?.id]
   );
 
+  const handleVotePoll = useCallback(
+    async (message, optionIds) => {
+      if (!selectedConversationId || !message?.id) return;
+
+      try {
+        const voteResult = await voteConversationPoll(
+          selectedConversationId,
+          message.id,
+          optionIds
+        );
+        const updatedMessage = voteResult.message || voteResult;
+        const systemMessage = voteResult.systemMessage || null;
+
+        setMessages((prev) => {
+          const withUpdatedPoll = upsertMessageById(prev, updatedMessage);
+          return systemMessage
+            ? upsertMessageById(withUpdatedPoll, systemMessage)
+            : withUpdatedPoll;
+        });
+        setPinnedMessages((prev) => upsertPinnedMessage(prev, updatedMessage));
+        if (voteResult.conversation) {
+          setConversations((prev) =>
+            mergeConversationUpdate(prev, voteResult.conversation)
+          );
+        } else {
+          setConversations((prev) =>
+            updateConversationPreview(prev, systemMessage || updatedMessage, {
+              currentUserId: user?._id || user?.id,
+              selectedConversationId,
+            })
+          );
+        }
+      } catch (err) {
+        console.error("Failed to vote poll:", err);
+        toast.error("Không thể cập nhật bình chọn");
+        throw err;
+      }
+    },
+    [selectedConversationId, toast, user?._id, user?.id]
+  );
+
+  const handleAddPollOption = useCallback(
+    async (message, text) => {
+      if (!selectedConversationId || !message?.id) return;
+
+      try {
+        const updatedMessage = await addConversationPollOption(
+          selectedConversationId,
+          message.id,
+          text
+        );
+        setMessages((prev) => upsertMessageById(prev, updatedMessage));
+        setPinnedMessages((prev) => upsertPinnedMessage(prev, updatedMessage));
+      } catch (err) {
+        console.error("Failed to add poll option:", err);
+        toast.error("Không thể thêm phương án");
+        throw err;
+      }
+    },
+    [selectedConversationId, toast]
+  );
+
   const handleCreateConversation = async (newConv) => {
     const newConversationId = getConversationId(newConv);
     let nextConversation = newConv;
@@ -830,6 +937,7 @@ const ChatPage = () => {
           pinnedMessages={pinnedMessages}
           onSendMessage={handleSendMessage}
           onUploadAttachment={handleUploadAttachment}
+          onCreatePoll={handleCreatePoll}
           onTypingChange={handleTypingChange}
           onReplyMessage={handleReplyMessage}
           onEditMessage={handleEditMessage}
@@ -838,6 +946,8 @@ const ChatPage = () => {
           onTogglePinMessage={handleTogglePinMessage}
           onEnsureMessageLoaded={handleEnsureMessageLoaded}
           onToggleReaction={handleToggleReaction}
+          onVotePoll={handleVotePoll}
+          onAddPollOption={handleAddPollOption}
           onCancelDraft={handleCancelDraft}
           onStartCall={startCall}
           onBack={handleBackToList}

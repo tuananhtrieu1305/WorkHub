@@ -16,6 +16,13 @@ import {
   getR2StorageService,
 } from "../services/r2StorageService.js";
 import { normalizePinnedState } from "../utils/messageActionPolicy.js";
+import {
+  addPollOption,
+  applyPollVote,
+  getCurrentUserPollOptionIds,
+  isPollClosed,
+  normalizePollPayload,
+} from "../utils/pollPolicy.js";
 import { contentDisposition } from "../utils/fileResponse.js";
 
 // Helper: get io instance
@@ -24,10 +31,11 @@ export const setIo = (io) => {
   ioInstance = io;
 };
 
-const USER_MESSAGE_TYPES = new Set(["text", "image", "file", "audio"]);
+const USER_MESSAGE_TYPES = new Set(["text", "image", "file", "audio", "poll"]);
 const MAX_MESSAGE_ATTACHMENTS = 10;
 const MAX_VOICE_DURATION_SECONDS = 5 * 60;
 const VOICE_ATTACHMENT_FILE_SIZE_LIMIT = 20 * 1024 * 1024;
+const POLL_VOTED_EVENT_TYPE = "poll_voted";
 const ALLOWED_AUDIO_MIMES = new Set([
   "audio/aac",
   "audio/mp4",
@@ -118,6 +126,10 @@ const normalizeMessageAttachments = (attachments) => {
 
 const getMessagePreviewContent = ({ type, content, attachments = [] } = {}) => {
   const trimmedContent = typeof content === "string" ? content.trim() : "";
+  if (type === "poll") {
+    return trimmedContent ? `Bình chọn: ${trimmedContent}` : "Bình chọn";
+  }
+
   if (trimmedContent) return trimmedContent;
 
   if (type === "audio" || attachments.some(isAudioAttachment)) {
@@ -251,7 +263,164 @@ const formatConversationUser = (user, includeEmail = false) => {
   };
 };
 
-const formatReplyMessage = async (replyTo) => {
+const formatPollVoter = (user) =>
+  user
+    ? {
+        _id: user._id,
+        id: user._id,
+        fullName: user.fullName,
+        avatar: user.avatar,
+      }
+    : null;
+
+const collectPollVoterIds = (poll) => {
+  const voterIds = new Set();
+  (poll?.options || []).forEach((option) => {
+    (option.voters || []).forEach((vote) => {
+      const userId = toComparableId(vote.userId);
+      if (userId) voterIds.add(userId);
+    });
+  });
+  return [...voterIds];
+};
+
+const formatPoll = async (poll, { currentUserId = null } = {}) => {
+  if (!poll) return null;
+
+  const plain = poll.toObject?.() || poll;
+  const currentUserOptionIds = getCurrentUserPollOptionIds(
+    plain,
+    currentUserId,
+  );
+  const hasCurrentUserVoted = currentUserOptionIds.length > 0;
+  const resultsVisible =
+    !plain.settings?.hideResultsUntilVoted || hasCurrentUserVoted;
+  const hideVoters = Boolean(plain.settings?.hideVoters);
+  const pollClosed = isPollClosed(plain);
+  const voterIds = collectPollVoterIds(plain);
+  const users =
+    resultsVisible && !hideVoters && voterIds.length
+      ? await User.find({ _id: { $in: voterIds } }).select(
+          "_id fullName avatar",
+        )
+      : [];
+  const userById = new Map(users.map((user) => [user._id.toString(), user]));
+  const totalVotes = (plain.options || []).reduce(
+    (sum, option) => sum + (option.voters || []).length,
+    0,
+  );
+
+  return {
+    question: plain.question || "",
+    options: (plain.options || []).map((option) => {
+      const optionId = toComparableId(option._id || option.id);
+      const voters = option.voters || [];
+      const voterUsers =
+        resultsVisible && !hideVoters
+          ? voters
+              .map((vote) => formatPollVoter(userById.get(toComparableId(vote.userId))))
+              .filter(Boolean)
+          : [];
+
+      return {
+        id: optionId,
+        text: option.text || "",
+        voteCount: resultsVisible ? voters.length : null,
+        voters: voterUsers,
+        isSelectedByCurrentUser: currentUserOptionIds.includes(optionId),
+      };
+    }),
+    settings: {
+      multiple: Boolean(plain.settings?.multiple),
+      allowOptions: Boolean(plain.settings?.allowOptions),
+      hideResultsUntilVoted: Boolean(plain.settings?.hideResultsUntilVoted),
+      hideVoters,
+    },
+    expiresAt: plain.expiresAt || null,
+    closedAt: plain.closedAt || null,
+    isClosed: pollClosed,
+    resultsVisible,
+    currentUserOptionIds,
+    totalVotes: resultsVisible ? totalVotes : null,
+    totalVoters: resultsVisible ? voterIds.length : null,
+  };
+};
+
+const getSystemMessageMetadata = (message) => {
+  const metadata = message.metadata?.toObject?.() || message.metadata || {};
+  return metadata && typeof metadata === "object" ? metadata : {};
+};
+
+const formatPollActivityTargetMessage = async (
+  metadata,
+  { currentUserId = null } = {},
+) => {
+  const targetMessageId = metadata?.targetMessageId;
+  if (!targetMessageId) return null;
+
+  const pollMessage = await Message.findById(targetMessageId);
+  if (
+    !pollMessage ||
+    pollMessage.deletedAt ||
+    pollMessage.type !== "poll" ||
+    !pollMessage.poll
+  ) {
+    return null;
+  }
+
+  const [sender, pinnedBy, pollData] = await Promise.all([
+    User.findById(pollMessage.senderId).select(
+      "_id fullName avatar activityStatus activityStatusExpiresAt",
+    ),
+    pollMessage.pinnedBy
+      ? User.findById(pollMessage.pinnedBy).select(
+          "_id fullName avatar activityStatus activityStatusExpiresAt",
+        )
+      : null,
+    formatPoll(pollMessage.poll, { currentUserId }),
+  ]);
+
+  return {
+    id: pollMessage._id,
+    conversationId: pollMessage.conversationId,
+    sender: formatConversationUser(sender),
+    type: pollMessage.type,
+    content: pollMessage.content,
+    metadata: pollMessage.metadata || {},
+    poll: pollData,
+    attachments: [],
+    mentions: pollMessage.mentions || [],
+    replyTo: null,
+    reactions: pollMessage.reactions || [],
+    editedAt: pollMessage.editedAt,
+    isPinned: Boolean(pollMessage.isPinned),
+    pinnedAt: pollMessage.pinnedAt,
+    pinnedBy: formatConversationUser(pinnedBy),
+    deletedAt: null,
+    deletedBy: null,
+    createdAt: pollMessage.createdAt,
+    updatedAt: pollMessage.updatedAt,
+  };
+};
+
+const formatMessageMetadata = async (
+  message,
+  { currentUserId = null } = {},
+) => {
+  const metadata = getSystemMessageMetadata(message);
+  if (message.type !== "system" || metadata.eventType !== POLL_VOTED_EVENT_TYPE) {
+    return metadata;
+  }
+
+  return {
+    ...metadata,
+    pollMessage: await formatPollActivityTargetMessage(metadata, {
+      currentUserId,
+    }),
+  };
+};
+
+const formatReplyMessage = async (replyTo, { currentUserId = null } = {}) => {
   if (!replyTo) return null;
 
   const replyMessage = await Message.findById(replyTo);
@@ -278,6 +447,9 @@ const formatReplyMessage = async (replyTo) => {
     type: replyMessage.type,
     content: isDeleted ? "" : replyMessage.content,
     metadata: isDeleted ? {} : replyMessage.metadata || {},
+    poll: isDeleted
+      ? null
+      : await formatPoll(replyMessage.poll, { currentUserId }),
     attachments: isDeleted
       ? []
       : serializeConversationAttachments(
@@ -294,7 +466,7 @@ const formatReplyMessage = async (replyTo) => {
   };
 };
 
-const formatMessage = async (message) => {
+const formatMessage = async (message, { currentUserId = null } = {}) => {
   const sender = await User.findById(message.senderId).select(
     "_id fullName avatar activityStatus activityStatusExpiresAt",
   );
@@ -309,6 +481,9 @@ const formatMessage = async (message) => {
       )
     : null;
   const isDeleted = Boolean(message.deletedAt);
+  const metadata = isDeleted
+    ? {}
+    : await formatMessageMetadata(message, { currentUserId });
 
   return {
     id: message._id,
@@ -316,7 +491,8 @@ const formatMessage = async (message) => {
     sender: formatConversationUser(sender),
     type: message.type,
     content: isDeleted ? "" : message.content,
-    metadata: isDeleted ? {} : message.metadata || {},
+    metadata,
+    poll: isDeleted ? null : await formatPoll(message.poll, { currentUserId }),
     attachments: isDeleted
       ? []
       : serializeConversationAttachments(
@@ -324,7 +500,7 @@ const formatMessage = async (message) => {
           message.attachments,
         ),
     mentions: isDeleted ? [] : message.mentions,
-    replyTo: await formatReplyMessage(message.replyTo),
+    replyTo: await formatReplyMessage(message.replyTo, { currentUserId }),
     reactions: isDeleted ? [] : message.reactions,
     editedAt: message.editedAt,
     isPinned: isDeleted ? false : Boolean(message.isPinned),
@@ -335,6 +511,54 @@ const formatMessage = async (message) => {
     createdAt: message.createdAt,
     updatedAt: message.updatedAt,
   };
+};
+
+const emitPersonalizedMessageUpdated = async (
+  conversation,
+  message,
+  extraPayload = {},
+) => {
+  if (!ioInstance) return;
+
+  await Promise.all(
+    (conversation.participants || []).map(async (participant) => {
+      const participantUserId = participant.userId;
+      const [messageData, conversationData] = await Promise.all([
+        formatMessage(message, { currentUserId: participantUserId }),
+        formatConversation(conversation, { currentUserId: participantUserId }),
+      ]);
+
+      ioInstance.to(`user:${participantUserId}`).emit("message_updated", {
+        ...messageData,
+        ...extraPayload,
+        conversation: conversationData,
+      });
+    }),
+  );
+};
+
+const emitPersonalizedNewMessage = async (
+  conversation,
+  message,
+  extraPayload = {},
+) => {
+  if (!ioInstance) return;
+
+  await Promise.all(
+    (conversation.participants || []).map(async (participant) => {
+      const participantUserId = participant.userId;
+      const [messageData, conversationData] = await Promise.all([
+        formatMessage(message, { currentUserId: participantUserId }),
+        formatConversation(conversation, { currentUserId: participantUserId }),
+      ]);
+
+      ioInstance.to(`user:${participantUserId}`).emit("new_message", {
+        ...messageData,
+        ...extraPayload,
+        conversation: conversationData,
+      });
+    }),
+  );
 };
 
 const formatConversation = async (
@@ -822,7 +1046,7 @@ export const getMessages = async (req, res) => {
 
       const content = await Promise.all(
         [...olderMessages.reverse(), targetMessage, ...newerMessages].map(
-          formatMessage,
+          (message) => formatMessage(message, { currentUserId: req.user._id }),
         ),
       );
 
@@ -845,7 +1069,11 @@ export const getMessages = async (req, res) => {
       await markConversationRead(conversation, req.user._id, messages[0]._id);
     }
 
-    const content = await Promise.all(messages.map(formatMessage));
+    const content = await Promise.all(
+      messages.map((message) =>
+        formatMessage(message, { currentUserId: req.user._id }),
+      ),
+    );
 
     res.status(200).json({ content, hasMore });
   } catch (error) {
@@ -877,7 +1105,11 @@ export const getPinnedMessages = async (req, res) => {
       deletedAt: null,
     }).sort({ pinnedAt: -1, createdAt: -1, _id: -1 });
 
-    const content = await Promise.all(pinnedMessages.map(formatMessage));
+    const content = await Promise.all(
+      pinnedMessages.map((message) =>
+        formatMessage(message, { currentUserId: req.user._id }),
+      ),
+    );
 
     res.status(200).json({ content });
   } catch (error) {
@@ -1115,21 +1347,47 @@ export const sendMessage = async (req, res) => {
         .json({ message: "You are not a participant of this conversation" });
     }
 
-    const { type, content, attachments, mentions, replyTo, metadata } =
+    const { type, content, attachments, mentions, replyTo, metadata, poll } =
       req.body;
     const messageType = type || "text";
     const normalizedContent =
       typeof content === "string" ? content.trim() : "";
     const normalizedAttachments = normalizeMessageAttachments(attachments);
+    let normalizedPoll = null;
+    let pinPollOnCreate = false;
 
     if (!USER_MESSAGE_TYPES.has(messageType)) {
       return res.status(400).json({ message: "Invalid message type" });
     }
 
-    if (!normalizedContent && normalizedAttachments.length === 0) {
+    if (messageType === "poll") {
+      try {
+        const normalized = normalizePollPayload(poll || metadata?.poll, {
+          creatorId: req.user._id,
+          now: new Date(),
+        });
+        normalizedPoll = normalized.poll;
+        pinPollOnCreate = normalized.pinOnCreate;
+      } catch (error) {
+        return res.status(400).json({ message: error.message });
+      }
+    }
+
+    if (
+      messageType !== "poll" &&
+      !normalizedContent &&
+      normalizedAttachments.length === 0
+    ) {
       return res
         .status(400)
         .json({ message: "Message content or attachments required" });
+    }
+
+    if (
+      messageType === "poll" &&
+      (!normalizedPoll?.question || normalizedPoll.options.length < 2)
+    ) {
+      return res.status(400).json({ message: "Poll content is required" });
     }
 
     if (messageType === "audio") {
@@ -1167,16 +1425,21 @@ export const sendMessage = async (req, res) => {
       conversationId: conversation._id,
       senderId: req.user._id,
       type: messageType,
-      content: normalizedContent,
+      content: messageType === "poll" ? normalizedPoll.question : normalizedContent,
       metadata: metadata || {},
+      poll: normalizedPoll,
       attachments: normalizedAttachments,
       mentions: mentions || [],
       replyTo: replyTo || null,
+      isPinned: messageType === "poll" && pinPollOnCreate,
+      pinnedBy: messageType === "poll" && pinPollOnCreate ? req.user._id : null,
+      pinnedAt:
+        messageType === "poll" && pinPollOnCreate ? new Date() : null,
     });
 
     const previewContent = getMessagePreviewContent({
       type: messageType,
-      content: normalizedContent,
+      content: messageType === "poll" ? normalizedPoll.question : normalizedContent,
       attachments: normalizedAttachments,
     });
 
@@ -1192,7 +1455,7 @@ export const sendMessage = async (req, res) => {
     await conversation.save();
 
     const [messageData, conversationData] = await Promise.all([
-      formatMessage(message),
+      formatMessage(message, { currentUserId: req.user._id }),
       formatConversation(conversation, { currentUserId: req.user._id }),
     ]);
 
@@ -1274,7 +1537,7 @@ export const updateMessage = async (req, res) => {
     }
 
     const [messageData, conversationData] = await Promise.all([
-      formatMessage(message),
+      formatMessage(message, { currentUserId: req.user._id }),
       formatConversation(conversation, { currentUserId: req.user._id }),
     ]);
 
@@ -1332,7 +1595,9 @@ export const deleteMessage = async (req, res) => {
     message.pinnedAt = null;
     await message.save();
 
-    const messageData = await formatMessage(message);
+    const messageData = await formatMessage(message, {
+      currentUserId: req.user._id,
+    });
     const isLastMessage =
       toComparableId(conversation.lastMessage?.messageId) ===
         toComparableId(message._id) ||
@@ -1446,8 +1711,8 @@ export const updateMessagePin = async (req, res) => {
 
     const [messageData, systemMessageData, conversationData] =
       await Promise.all([
-        formatMessage(message),
-        formatMessage(systemMessage),
+        formatMessage(message, { currentUserId: req.user._id }),
+        formatMessage(systemMessage, { currentUserId: req.user._id }),
         formatConversation(conversation, { currentUserId: req.user._id }),
       ]);
     const pinEvent = {
@@ -1463,9 +1728,15 @@ export const updateMessagePin = async (req, res) => {
 
     if (ioInstance) {
       joinParticipantSocketsToConversationRoom(ioInstance, conversation);
-      ioInstance
-        .to(getConversationRealtimeRoomNames(conversation))
-        .emit("message_updated", messagePayload);
+      if (message.type === "poll") {
+        await emitPersonalizedMessageUpdated(conversation, message, {
+          pinEvent,
+        });
+      } else {
+        ioInstance
+          .to(getConversationRealtimeRoomNames(conversation))
+          .emit("message_updated", messagePayload);
+      }
       ioInstance
         .to(getConversationRealtimeRoomNames(conversation))
         .emit("new_message", {
@@ -1483,6 +1754,173 @@ export const updateMessagePin = async (req, res) => {
     if (error.message === "isPinned must be a boolean") {
       return res.status(400).json({ message: error.message });
     }
+    if (error.kind === "ObjectId") {
+      return res.status(400).json({ message: "Invalid ID" });
+    }
+    res.status(500).json({ message: "Server error, please try again" });
+  }
+};
+
+// POST /conversations/:id/messages/:messageId/poll/votes
+export const votePoll = async (req, res) => {
+  try {
+    const conversation = await Conversation.findById(req.params.id);
+    if (!conversation) {
+      return res.status(404).json({ message: "Conversation not found" });
+    }
+
+    if (!isParticipant(conversation, req.user._id)) {
+      return res
+        .status(403)
+        .json({ message: "You are not a participant of this conversation" });
+    }
+
+    const message = await Message.findById(req.params.messageId);
+    if (
+      !message ||
+      message.conversationId.toString() !== conversation._id.toString()
+    ) {
+      return res.status(404).json({ message: "Message not found" });
+    }
+
+    if (message.deletedAt) {
+      return res.status(400).json({ message: "Cannot vote on a deleted poll" });
+    }
+
+    if (message.type !== "poll" || !message.poll) {
+      return res.status(400).json({ message: "Message is not a poll" });
+    }
+
+    const optionIds = Array.isArray(req.body?.optionIds)
+      ? req.body.optionIds
+      : req.body?.optionId
+        ? [req.body.optionId]
+        : [];
+
+    try {
+      applyPollVote(message.poll, optionIds, {
+        userId: req.user._id,
+        now: new Date(),
+      });
+    } catch (error) {
+      return res.status(400).json({ message: error.message });
+    }
+
+    message.markModified("poll");
+    await message.save();
+
+    const pollQuestion = message.poll?.question || message.content || "Bình chọn";
+    const systemContent = `${
+      req.user.fullName || "Người dùng"
+    } tham gia cuộc bình chọn: ${pollQuestion}`;
+    const systemMessage = await Message.create({
+      conversationId: conversation._id,
+      senderId: req.user._id,
+      type: "system",
+      content: systemContent,
+      metadata: {
+        eventType: POLL_VOTED_EVENT_TYPE,
+        action: "vote",
+        targetMessageId: message._id,
+        actorId: req.user._id,
+        pollQuestion,
+        pollCreatorId: message.senderId,
+        pollCreatedAt: message.createdAt,
+      },
+    });
+
+    conversation.lastMessage = {
+      messageId: systemMessage._id,
+      content: systemContent,
+      senderId: req.user._id,
+      createdAt: systemMessage.createdAt,
+      deletedAt: null,
+      deletedBy: null,
+    };
+    await conversation.save();
+
+    const [messageData, systemMessageData, conversationData] =
+      await Promise.all([
+        formatMessage(message, { currentUserId: req.user._id }),
+        formatMessage(systemMessage, { currentUserId: req.user._id }),
+        formatConversation(conversation, { currentUserId: req.user._id }),
+      ]);
+
+    if (ioInstance) {
+      joinParticipantSocketsToConversationRoom(ioInstance, conversation);
+      await emitPersonalizedMessageUpdated(conversation, message);
+      await emitPersonalizedNewMessage(conversation, systemMessage);
+    }
+
+    res.status(200).json({
+      message: messageData,
+      systemMessage: systemMessageData,
+      conversation: conversationData,
+    });
+  } catch (error) {
+    console.error("VotePoll error:", error.message);
+    if (error.kind === "ObjectId") {
+      return res.status(400).json({ message: "Invalid ID" });
+    }
+    res.status(500).json({ message: "Server error, please try again" });
+  }
+};
+
+// POST /conversations/:id/messages/:messageId/poll/options
+export const addPollOptionToMessage = async (req, res) => {
+  try {
+    const conversation = await Conversation.findById(req.params.id);
+    if (!conversation) {
+      return res.status(404).json({ message: "Conversation not found" });
+    }
+
+    if (!isParticipant(conversation, req.user._id)) {
+      return res
+        .status(403)
+        .json({ message: "You are not a participant of this conversation" });
+    }
+
+    const message = await Message.findById(req.params.messageId);
+    if (
+      !message ||
+      message.conversationId.toString() !== conversation._id.toString()
+    ) {
+      return res.status(404).json({ message: "Message not found" });
+    }
+
+    if (message.deletedAt) {
+      return res
+        .status(400)
+        .json({ message: "Cannot add options to a deleted poll" });
+    }
+
+    if (message.type !== "poll" || !message.poll) {
+      return res.status(400).json({ message: "Message is not a poll" });
+    }
+
+    try {
+      addPollOption(message.poll, req.body?.text, {
+        userId: req.user._id,
+        now: new Date(),
+      });
+    } catch (error) {
+      return res.status(400).json({ message: error.message });
+    }
+
+    message.markModified("poll");
+    await message.save();
+
+    const messageData = await formatMessage(message, {
+      currentUserId: req.user._id,
+    });
+
+    if (ioInstance) {
+      await emitPersonalizedMessageUpdated(conversation, message);
+    }
+
+    res.status(200).json(messageData);
+  } catch (error) {
+    console.error("AddPollOption error:", error.message);
     if (error.kind === "ObjectId") {
       return res.status(400).json({ message: "Invalid ID" });
     }

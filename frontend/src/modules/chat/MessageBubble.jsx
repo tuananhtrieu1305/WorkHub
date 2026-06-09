@@ -13,6 +13,7 @@ import {
   isAudioAttachment,
 } from "./chatMessagePreview";
 import { getAvatarUrl } from "../../utils/avatar";
+import PollMessage, { PollDetailModal } from "./PollMessage";
 
 const API_URL = import.meta.env.VITE_NODE_API_URL || "http://localhost:5000";
 
@@ -60,7 +61,7 @@ const getReplyParticipantName = (
   return participant?.fullName || fallback;
 };
 
-const getMenuItems = ({ isMine, isDeleted, isPinned }) => {
+const getMenuItems = ({ isMine, isDeleted, isPinned, isPoll = false }) => {
   if (isDeleted) return [];
 
   const pinItem = {
@@ -78,7 +79,9 @@ const getMenuItems = ({ isMine, isDeleted, isPinned }) => {
 
   return [
     { key: "copy", icon: "content_copy", label: "Sao chép tin nhắn" },
-    { key: "edit", icon: "edit", label: "Chỉnh sửa tin nhắn" },
+    ...(!isPoll
+      ? [{ key: "edit", icon: "edit", label: "Chỉnh sửa tin nhắn" }]
+      : []),
     pinItem,
     { key: "recall", icon: "delete", label: "Thu hồi tin nhắn", danger: true },
   ];
@@ -958,6 +961,7 @@ const CallSystemMessage = ({ message }) => {
 };
 
 const pinSystemEventTypes = new Set(["message_pinned", "message_unpinned"]);
+const pollActivityEventTypes = new Set(["poll_voted"]);
 
 const getPinSystemActorName = (sender, currentUserId) => {
   const senderId = getUserId(sender);
@@ -993,6 +997,75 @@ const PinSystemMessage = ({ message, currentUserId, onOpenPinnedList }) => {
   );
 };
 
+const PollActivitySystemMessage = ({
+  message,
+  currentUserId,
+  onVotePoll,
+  onAddPollOption,
+}) => {
+  const [isDetailOpen, setIsDetailOpen] = useState(false);
+  const pollMessage = message.metadata?.pollMessage;
+  const actorName = getPinSystemActorName(message.sender, currentUserId);
+  const pollQuestion =
+    message.metadata?.pollQuestion ||
+    pollMessage?.poll?.question ||
+    pollMessage?.content ||
+    "Bình chọn";
+
+  if (!pollMessage?.poll) {
+    return (
+      <div className="chat-poll-activity my-3 flex justify-center px-3">
+        <div className="chat-poll-activity-notice">
+          <span className="material-symbols-outlined" aria-hidden="true">
+            bar_chart
+          </span>
+          <span>{message.content}</span>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="chat-poll-activity my-3 flex flex-col items-center gap-3 px-3">
+      <div className="chat-poll-activity-notice">
+        <span className="material-symbols-outlined" aria-hidden="true">
+          bar_chart
+        </span>
+        <span className="min-w-0 truncate">
+          <strong>{actorName || "Người dùng"}</strong> tham gia cuộc bình chọn:{" "}
+          <strong>{pollQuestion}</strong>
+        </span>
+        <button
+          type="button"
+          onClick={() => setIsDetailOpen(true)}
+          className="chat-poll-activity-detail-button"
+        >
+          Xem
+        </button>
+      </div>
+
+      <div className="chat-message-poll-surface chat-poll-activity-surface">
+        <PollMessage
+          message={pollMessage}
+          isMine={false}
+          onVote={onVotePoll}
+          onAddOption={onAddPollOption}
+        />
+      </div>
+
+      {isDetailOpen && (
+        <PollDetailModal
+          message={pollMessage}
+          poll={pollMessage.poll}
+          onVote={onVotePoll}
+          onAddOption={onAddPollOption}
+          onClose={() => setIsDetailOpen(false)}
+        />
+      )}
+    </div>
+  );
+};
+
 const MessageBubble = ({
   message,
   showAvatar = true,
@@ -1007,6 +1080,8 @@ const MessageBubble = ({
   onCopy,
   onTogglePin,
   onToggleReaction,
+  onVotePoll,
+  onAddPollOption,
   onJumpToMessage,
   onOpenPinnedList,
 }) => {
@@ -1030,8 +1105,9 @@ const MessageBubble = ({
   const senderInitial = senderName.charAt(0).toUpperCase();
   const reactionGroups = [...groupReactions(message.reactions || []).values()];
   const isDeleted = Boolean(message.deletedAt);
-  const messageAttachments = message.attachments || [];
-  const hasMessageContent = Boolean(message.content);
+  const isPollMessage = !isDeleted && message.type === "poll" && message.poll;
+  const messageAttachments = isPollMessage ? [] : message.attachments || [];
+  const hasMessageContent = !isPollMessage && Boolean(message.content);
   const hasMessageAttachments = messageAttachments.length > 0;
   const hasMixedContent = hasMessageContent && hasMessageAttachments;
   const isAttachmentOnlyMessage =
@@ -1040,6 +1116,7 @@ const MessageBubble = ({
     isMine,
     isDeleted,
     isPinned: message.isPinned,
+    isPoll: isPollMessage,
   });
   const deletedById = getComparableId(message.deletedBy || message.sender?._id);
   const deletedByName =
@@ -1066,6 +1143,16 @@ const MessageBubble = ({
     .filter(Boolean)
     .join(" ");
   const getMessageSurfaceClassName = (mine) => {
+    if (isPollMessage) {
+      return [
+        "chat-message-poll-surface",
+        mine ? "ml-auto" : "",
+        isHighlighted ? "chat-message-poll-surface-highlighted" : "",
+      ]
+        .filter(Boolean)
+        .join(" ");
+    }
+
     if (isAttachmentOnlyMessage) {
       return [
         "chat-message-attachment-surface",
@@ -1231,6 +1318,17 @@ const MessageBubble = ({
           message={message}
           currentUserId={currentUserId}
           onOpenPinnedList={onOpenPinnedList}
+        />
+      );
+    }
+
+    if (pollActivityEventTypes.has(systemEventType)) {
+      return (
+        <PollActivitySystemMessage
+          message={message}
+          currentUserId={currentUserId}
+          onVotePoll={onVotePoll}
+          onAddPollOption={onAddPollOption}
         />
       );
     }
@@ -1424,6 +1522,54 @@ const MessageBubble = ({
       </div>
     );
 
+  if (isPollMessage) {
+    return (
+      <>
+        <div
+          className={`chat-message-group chat-poll-message-group my-3 flex justify-center px-3 group ${
+            isTightGroup ? "chat-message-group-tight" : ""
+          }`}
+          onPointerLeave={() => {
+            hideHoverTime();
+          }}
+        >
+          <div className="chat-poll-message-frame flex w-full flex-col items-center gap-1">
+            {shouldShowSenderHeader && (
+              <div className="chat-poll-message-author">
+                <span>{isMine ? "Bạn" : senderName}</span>
+                {renderPinnedLabel()}
+              </div>
+            )}
+            <div
+              ref={stackRef}
+              className={`chat-message-stack relative ${
+                reactionGroups.length ? "pb-4" : ""
+              }`}
+            >
+              <div
+                ref={bubbleRef}
+                className={getMessageSurfaceClassName(false)}
+                onPointerLeave={hideHoverTime}
+                onPointerMove={updateHoverTimePosition}
+              >
+                {renderPinMarker()}
+                <PollMessage
+                  message={message}
+                  isMine={false}
+                  onVote={onVotePoll}
+                  onAddOption={onAddPollOption}
+                />
+              </div>
+              {renderActions()}
+              {renderReactions()}
+            </div>
+          </div>
+        </div>
+        {renderHoverTimestamp()}
+      </>
+    );
+  }
+
   if (isMine) {
     return (
       <>
@@ -1466,6 +1612,13 @@ const MessageBubble = ({
               {renderPinMarker()}
               {isDeleted ? (
                 <span>{deletedMessageText}</span>
+              ) : isPollMessage ? (
+                <PollMessage
+                  message={message}
+                  isMine
+                  onVote={onVotePoll}
+                  onAddOption={onAddPollOption}
+                />
               ) : (
                 <>
                   <MessageText content={message.content} />
@@ -1537,6 +1690,13 @@ const MessageBubble = ({
             {renderPinMarker()}
             {isDeleted ? (
               <span>{deletedMessageText}</span>
+            ) : isPollMessage ? (
+              <PollMessage
+                message={message}
+                isMine={false}
+                onVote={onVotePoll}
+                onAddOption={onAddPollOption}
+              />
             ) : (
               <>
                 <MessageText content={message.content} />

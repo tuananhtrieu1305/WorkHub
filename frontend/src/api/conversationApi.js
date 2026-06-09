@@ -104,6 +104,22 @@ export const updateMessagePin = async (conversationId, messageId, isPinned) => {
   return data;
 };
 
+export const votePoll = async (conversationId, messageId, optionIds) => {
+  const { data } = await axiosClient.post(
+    `/conversations/${conversationId}/messages/${messageId}/poll/votes`,
+    { optionIds }
+  );
+  return data;
+};
+
+export const addPollOption = async (conversationId, messageId, text) => {
+  const { data } = await axiosClient.post(
+    `/conversations/${conversationId}/messages/${messageId}/poll/options`,
+    { text }
+  );
+  return data;
+};
+
 export const addMessageReaction = async (conversationId, messageId, reaction) => {
   const { data } = await axiosClient.post(
     `/conversations/${conversationId}/messages/${messageId}/reactions`,
