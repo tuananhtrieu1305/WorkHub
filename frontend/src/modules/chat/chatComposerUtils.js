@@ -1,6 +1,3 @@
-const inlineMarkdownPattern =
-  /(\*\*([^*]+)\*\*|\*([^*]+)\*|<u>([^<]+)<\/u>|~~([^~]+)~~|`([^`]+)`|\[([^\]]+)\]\(([^)]+)\))/g;
-
 const blockElementNames = new Set(["ADDRESS", "ARTICLE", "ASIDE", "BLOCKQUOTE", "DIV", "FOOTER", "HEADER", "H1", "H2", "H3", "H4", "H5", "H6", "MAIN", "P", "PRE", "SECTION"]);
 
 const escapeHtml = (value = "") =>
@@ -11,10 +8,146 @@ const escapeHtml = (value = "") =>
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&#39;");
 
-const sanitizeHref = (href = "") => {
+export const sanitizeHref = (href = "") => {
   const normalizedHref = String(href || "").trim();
   return /^(https?:|mailto:)/i.test(normalizedHref) ? normalizedHref : "#";
 };
+
+const findClosingSingleAsterisk = (value, fromIndex) => {
+  let index = value.indexOf("*", fromIndex);
+
+  while (index !== -1) {
+    if (value[index - 1] !== "*" && value[index + 1] !== "*") {
+      return index;
+    }
+
+    index = value.indexOf("*", index + 1);
+  }
+
+  return -1;
+};
+
+const findLinkToken = (value, fromIndex) => {
+  const start = value.indexOf("[", fromIndex);
+  if (start === -1) return null;
+
+  const labelEnd = value.indexOf("](", start + 1);
+  if (labelEnd === -1) return null;
+
+  const hrefEnd = value.indexOf(")", labelEnd + 2);
+  if (hrefEnd === -1) return null;
+
+  return {
+    start,
+    end: hrefEnd + 1,
+    node: {
+      type: "link",
+      href: sanitizeHref(value.slice(labelEnd + 2, hrefEnd)),
+      children: parseInlineMarkdown(value.slice(start + 1, labelEnd)),
+    },
+  };
+};
+
+const findDelimitedToken = (value, fromIndex, token) => {
+  const start = value.indexOf(token.open, fromIndex);
+  if (start === -1) return null;
+
+  const contentStart = start + token.open.length;
+  const close =
+    token.open === "*"
+      ? findClosingSingleAsterisk(value, contentStart)
+      : value.indexOf(token.close, contentStart);
+
+  if (close === -1) return null;
+
+  const rawContent = value.slice(contentStart, close);
+  if (!rawContent) return null;
+
+  return {
+    start,
+    end: close + token.close.length,
+    node:
+      token.type === "code"
+        ? { type: "code", text: rawContent }
+        : { type: token.type, children: parseInlineMarkdown(rawContent) },
+  };
+};
+
+const inlineTokens = [
+  { type: "code", open: "`", close: "`", priority: 0 },
+  { type: "strong", open: "**", close: "**", priority: 1 },
+  { type: "strike", open: "~~", close: "~~", priority: 2 },
+  { type: "underline", open: "<u>", close: "</u>", priority: 3 },
+  { type: "small", open: "<small>", close: "</small>", priority: 4 },
+  { type: "big", open: "<big>", close: "</big>", priority: 5 },
+  { type: "emphasis", open: "*", close: "*", priority: 6 },
+];
+
+const findNextInlineToken = (value, fromIndex) => {
+  const candidates = [
+    findLinkToken(value, fromIndex),
+    ...inlineTokens.map((token) => findDelimitedToken(value, fromIndex, token)),
+  ].filter(Boolean);
+
+  if (!candidates.length) return null;
+
+  return candidates.sort((left, right) => {
+    if (left.start !== right.start) return left.start - right.start;
+    const leftPriority =
+      inlineTokens.find((token) => token.type === left.node.type)?.priority ??
+      0;
+    const rightPriority =
+      inlineTokens.find((token) => token.type === right.node.type)?.priority ??
+      0;
+    return leftPriority - rightPriority;
+  })[0];
+};
+
+export const parseInlineMarkdown = (text = "") => {
+  const value = String(text);
+  const nodes = [];
+  let index = 0;
+
+  while (index < value.length) {
+    const token = findNextInlineToken(value, index);
+
+    if (!token) {
+      nodes.push({ type: "text", text: value.slice(index) });
+      break;
+    }
+
+    if (token.start > index) {
+      nodes.push({ type: "text", text: value.slice(index, token.start) });
+    }
+
+    nodes.push(token.node);
+    index = token.end;
+  }
+
+  return nodes.filter((node) => node.type !== "text" || node.text);
+};
+
+const inlineNodesToHtml = (nodes = []) =>
+  nodes
+    .map((node) => {
+      if (node.type === "text") return escapeHtml(node.text);
+      if (node.type === "code") return `<code>${escapeHtml(node.text)}</code>`;
+      if (node.type === "link") {
+        return `<a href="${escapeHtml(node.href)}" target="_blank" rel="noreferrer">${inlineNodesToHtml(node.children)}</a>`;
+      }
+
+      const children = inlineNodesToHtml(node.children);
+
+      if (node.type === "strong") return `<strong>${children}</strong>`;
+      if (node.type === "emphasis") return `<em>${children}</em>`;
+      if (node.type === "underline") return `<u>${children}</u>`;
+      if (node.type === "strike") return `<s>${children}</s>`;
+      if (node.type === "small") return `<small>${children}</small>`;
+      if (node.type === "big") return `<big>${children}</big>`;
+
+      return children;
+    })
+    .join("");
 
 const isBulletLine = (line) => line.trim().startsWith("- ");
 
@@ -24,39 +157,7 @@ const trimListMarker = (line) =>
   line.trim().replace(/^(?:-\s|\d+\.\s)/, "");
 
 const inlineMarkdownToHtml = (text = "") => {
-  const parts = [];
-  let lastIndex = 0;
-  let match;
-
-  while ((match = inlineMarkdownPattern.exec(text)) !== null) {
-    if (match.index > lastIndex) {
-      parts.push(escapeHtml(text.slice(lastIndex, match.index)));
-    }
-
-    if (match[2]) {
-      parts.push(`<strong>${escapeHtml(match[2])}</strong>`);
-    } else if (match[3]) {
-      parts.push(`<em>${escapeHtml(match[3])}</em>`);
-    } else if (match[4]) {
-      parts.push(`<u>${escapeHtml(match[4])}</u>`);
-    } else if (match[5]) {
-      parts.push(`<s>${escapeHtml(match[5])}</s>`);
-    } else if (match[6]) {
-      parts.push(`<code>${escapeHtml(match[6])}</code>`);
-    } else if (match[7]) {
-      const label = escapeHtml(match[7]);
-      const href = escapeHtml(sanitizeHref(match[8]));
-      parts.push(`<a href="${href}" target="_blank" rel="noreferrer">${label}</a>`);
-    }
-
-    lastIndex = inlineMarkdownPattern.lastIndex;
-  }
-
-  if (lastIndex < text.length) {
-    parts.push(escapeHtml(text.slice(lastIndex)));
-  }
-
-  return parts.join("");
+  return inlineNodesToHtml(parseInlineMarkdown(text));
 };
 
 export const markdownToComposerHtml = (markdown = "") => {
@@ -129,6 +230,39 @@ const isStrikeElement = (element) =>
   ["S", "STRIKE", "DEL"].includes(element.tagName) ||
   getElementTextDecoration(element).includes("line-through");
 
+const getElementFontScale = (element) => {
+  const tagName = element.tagName;
+  const fontSizeAttribute = element.getAttribute?.("size");
+  const inlineFontSize = element.style?.fontSize || "";
+
+  if (tagName === "SMALL") return "small";
+  if (tagName === "BIG") return "big";
+  if (tagName === "FONT" && fontSizeAttribute) {
+    const size = Number.parseInt(fontSizeAttribute, 10);
+    if (size <= 2) return "small";
+    if (size >= 4) return "big";
+  }
+
+  if (/^(x-small|small|smaller)$/i.test(inlineFontSize)) return "small";
+  if (/^(large|x-large|xx-large|larger)$/i.test(inlineFontSize)) return "big";
+
+  const pixelSize = Number.parseFloat(inlineFontSize);
+  if (Number.isFinite(pixelSize)) {
+    if (/rem$/i.test(inlineFontSize)) {
+      if (pixelSize <= 0.9) return "small";
+      if (pixelSize >= 1.1) return "big";
+    } else if (/em$/i.test(inlineFontSize)) {
+      if (pixelSize <= 0.9) return "small";
+      if (pixelSize >= 1.1) return "big";
+    } else if (/px$/i.test(inlineFontSize)) {
+      if (pixelSize <= 14) return "small";
+      if (pixelSize >= 17) return "big";
+    }
+  }
+
+  return "";
+};
+
 const wrapMarkdown = (value, prefix, suffix = prefix) => {
   if (!value) return "";
   return `${prefix}${value}${suffix}`;
@@ -170,6 +304,10 @@ const serializeInlineNode = (node) => {
   if (isUnderlineElement(element)) value = wrapMarkdown(value, "<u>", "</u>");
   if (isEmphasisElement(element)) value = wrapMarkdown(value, "*");
   if (isStrongElement(element)) value = wrapMarkdown(value, "**");
+
+  const fontScale = getElementFontScale(element);
+  if (fontScale === "small") value = wrapMarkdown(value, "<small>", "</small>");
+  if (fontScale === "big") value = wrapMarkdown(value, "<big>", "</big>");
 
   return value;
 };

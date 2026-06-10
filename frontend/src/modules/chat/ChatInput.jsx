@@ -73,8 +73,26 @@ const formatToolbarItems = [
     command: "strikeThrough",
     className: "line-through",
   },
-  { label: "aA", title: "Đổi kiểu chữ", action: "case", className: "font-semibold" },
   { icon: "ink_eraser", title: "Xóa định dạng", action: "clear" },
+  { divider: true },
+  {
+    label: "A-",
+    title: "Cỡ chữ nhỏ",
+    action: "fontSmall",
+    className: "text-xs font-semibold",
+  },
+  {
+    label: "A",
+    title: "Cỡ chữ thường",
+    action: "fontNormal",
+    className: "text-sm font-semibold",
+  },
+  {
+    label: "A+",
+    title: "Cỡ chữ lớn",
+    action: "fontLarge",
+    className: "text-base font-semibold",
+  },
   { divider: true },
   {
     icon: "format_list_bulleted",
@@ -105,6 +123,417 @@ const commandByFormatAction = {
   outdent: "outdent",
   undo: "undo",
   redo: "redo",
+};
+
+const fontSizeCommandValueByAction = {
+  fontSmall: "2",
+  fontNormal: "3",
+  fontLarge: "4",
+};
+
+const getFontSizeActionFromCommandValue = (value) => {
+  const fontSize = Number.parseInt(String(value || ""), 10);
+
+  if (fontSize <= 2) return "fontSmall";
+  if (fontSize >= 4) return "fontLarge";
+  return "fontNormal";
+};
+
+const TEXT_NODE = 3;
+const ELEMENT_NODE = 1;
+const DOCUMENT_FRAGMENT_NODE = 11;
+
+const inlineFormatActions = ["bold", "italic", "underline", "strike"];
+const inlineFormatNestingOrder = ["bold", "underline", "italic", "strike"];
+
+const inlineFormatDefinitions = {
+  bold: {
+    tagName: "strong",
+    matches: (element) => {
+      const fontWeight = element.style?.fontWeight || "";
+      return (
+        element.tagName === "B" ||
+        element.tagName === "STRONG" ||
+        fontWeight === "bold" ||
+        Number.parseInt(fontWeight, 10) >= 600
+      );
+    },
+  },
+  italic: {
+    tagName: "em",
+    matches: (element) =>
+      element.tagName === "I" ||
+      element.tagName === "EM" ||
+      element.style?.fontStyle === "italic",
+  },
+  underline: {
+    tagName: "u",
+    matches: (element) =>
+      element.tagName === "U" ||
+      `${element.style?.textDecoration || ""} ${
+        element.style?.textDecorationLine || ""
+      }`.includes("underline"),
+  },
+  strike: {
+    tagName: "s",
+    matches: (element) =>
+      ["S", "STRIKE", "DEL"].includes(element.tagName) ||
+      `${element.style?.textDecoration || ""} ${
+        element.style?.textDecorationLine || ""
+      }`.includes("line-through"),
+  },
+};
+
+const createEmptyInlineFormats = () =>
+  inlineFormatActions.reduce((formats, action) => {
+    formats[action] = false;
+    return formats;
+  }, {});
+
+const isElementNode = (node) => node?.nodeType === ELEMENT_NODE;
+
+const getNodeElement = (node) => {
+  if (!node) return null;
+  return isElementNode(node) ? node : node.parentElement;
+};
+
+const isInlineFormatElement = (element, action) => {
+  if (!isElementNode(element)) return false;
+  return Boolean(inlineFormatDefinitions[action]?.matches(element));
+};
+
+const isManagedFontScaleElement = (element) => {
+  if (!isElementNode(element)) return false;
+
+  if (["FONT", "SMALL", "BIG"].includes(element.tagName)) return true;
+
+  const fontSize = element.style?.fontSize || "";
+  return Boolean(fontSize);
+};
+
+const getClosestInlineFormatElement = (node, action, editor) => {
+  let element = getNodeElement(node);
+
+  while (element && element !== editor) {
+    if (isInlineFormatElement(element, action)) return element;
+    element = element.parentElement;
+  }
+
+  return null;
+};
+
+const collectTextNodes = (root, textNodes = []) => {
+  root.childNodes?.forEach((child) => {
+    if (child.nodeType === TEXT_NODE) {
+      if (child.textContent) textNodes.push(child);
+      return;
+    }
+
+    collectTextNodes(child, textNodes);
+  });
+
+  return textNodes;
+};
+
+const getSelectedTextNodes = (range, editor) => {
+  if (!range || range.collapsed) return [];
+
+  return collectTextNodes(editor).filter((node) => {
+    try {
+      return range.intersectsNode(node) && node.textContent.trim();
+    } catch {
+      return false;
+    }
+  });
+};
+
+const getInlineFormatStateForRange = (range, editor) => {
+  const formats = createEmptyInlineFormats();
+
+  if (!range || !editor) return formats;
+
+  if (range.collapsed) {
+    inlineFormatActions.forEach((action) => {
+      formats[action] = Boolean(
+        getClosestInlineFormatElement(range.startContainer, action, editor),
+      );
+    });
+    return formats;
+  }
+
+  const selectedTextNodes = getSelectedTextNodes(range, editor);
+
+  inlineFormatActions.forEach((action) => {
+    formats[action] =
+      selectedTextNodes.length > 0 &&
+      selectedTextNodes.every((node) =>
+        getClosestInlineFormatElement(node, action, editor),
+      );
+  });
+
+  return formats;
+};
+
+const normalizeCollapsedRangePoint = (range) => {
+  if (range.startContainer?.nodeType !== TEXT_NODE) return;
+
+  const textNode = range.startContainer;
+  const offset = range.startOffset;
+
+  if (offset <= 0) {
+    range.setStartBefore(textNode);
+  } else if (offset >= textNode.textContent.length) {
+    range.setStartAfter(textNode);
+  } else {
+    const afterText = textNode.splitText(offset);
+    range.setStartBefore(afterText);
+  }
+
+  range.collapse(true);
+};
+
+const isCollapsedRangeAtStartOfElement = (range, element) => {
+  const beforeRange = document.createRange();
+  beforeRange.setStart(element, 0);
+  beforeRange.setEnd(range.startContainer, range.startOffset);
+  return beforeRange.toString() === "";
+};
+
+const isCollapsedRangeAtEndOfElement = (range, element) => {
+  const afterRange = document.createRange();
+  afterRange.setStart(range.startContainer, range.startOffset);
+  afterRange.setEnd(element, element.childNodes.length);
+  return afterRange.toString() === "";
+};
+
+const splitInlineElementAtCollapsedRange = (range, element) => {
+  if (!element?.parentNode) return { before: null, after: null };
+
+  normalizeCollapsedRangePoint(range);
+
+  if (isCollapsedRangeAtStartOfElement(range, element)) {
+    return { before: null, after: element };
+  }
+
+  if (isCollapsedRangeAtEndOfElement(range, element)) {
+    return { before: element, after: null };
+  }
+
+  const afterRange = range.cloneRange();
+  afterRange.setEndAfter(element);
+  const afterFragment = afterRange.extractContents();
+  const afterNode = afterFragment.firstChild;
+  element.parentNode.insertBefore(afterFragment, element.nextSibling);
+
+  return { before: element, after: afterNode };
+};
+
+const splitFormatAtRangeStart = (range, action, editor) => {
+  const ancestor = getClosestInlineFormatElement(
+    range.startContainer,
+    action,
+    editor,
+  );
+
+  if (!ancestor) return;
+
+  const pointRange = range.cloneRange();
+  pointRange.collapse(true);
+  const { before, after } = splitInlineElementAtCollapsedRange(
+    pointRange,
+    ancestor,
+  );
+
+  if (after) {
+    range.setStartBefore(after);
+  } else if (before) {
+    range.setStartAfter(before);
+  }
+};
+
+const splitFormatAtRangeEnd = (range, action, editor) => {
+  const ancestor = getClosestInlineFormatElement(
+    range.endContainer,
+    action,
+    editor,
+  );
+
+  if (!ancestor) return;
+
+  const pointRange = range.cloneRange();
+  pointRange.collapse(false);
+  const { before, after } = splitInlineElementAtCollapsedRange(
+    pointRange,
+    ancestor,
+  );
+
+  if (before) {
+    range.setEndAfter(before);
+  } else if (after) {
+    range.setEndBefore(after);
+  }
+};
+
+const splitFormatAtSelectionBoundaries = (range, action, editor) => {
+  splitFormatAtRangeStart(range, action, editor);
+  splitFormatAtRangeEnd(range, action, editor);
+};
+
+const normalizeCollapsedRangeForInlineFormats = (range, editor, formats) => {
+  inlineFormatActions.forEach((action) => {
+    if (formats[action]) return;
+
+    let ancestor = getClosestInlineFormatElement(
+      range.startContainer,
+      action,
+      editor,
+    );
+    let guard = 0;
+
+    while (ancestor && guard < 12) {
+      const { before, after } = splitInlineElementAtCollapsedRange(
+        range,
+        ancestor,
+      );
+
+      if (after) {
+        range.setStartBefore(after);
+      } else if (before) {
+        range.setStartAfter(before);
+      }
+      range.collapse(true);
+
+      ancestor = getClosestInlineFormatElement(
+        range.startContainer,
+        action,
+        editor,
+      );
+      guard += 1;
+    }
+  });
+};
+
+const unwrapElement = (element) => {
+  const parent = element.parentNode;
+  if (!parent) return;
+
+  while (element.firstChild) {
+    parent.insertBefore(element.firstChild, element);
+  }
+
+  parent.removeChild(element);
+};
+
+const stripInlineFormatElements = (
+  root,
+  actions = inlineFormatActions,
+  { includeFontScale = false } = {},
+) => {
+  Array.from(root.childNodes || []).forEach((child) => {
+    stripInlineFormatElements(child, actions, { includeFontScale });
+  });
+
+  if (
+    root.nodeType === ELEMENT_NODE &&
+    root.parentNode &&
+    (actions.some((action) => isInlineFormatElement(root, action)) ||
+      (includeFontScale && isManagedFontScaleElement(root)))
+  ) {
+    unwrapElement(root);
+  }
+};
+
+const cleanupEditorInlineArtifacts = (editor) => {
+  editor
+    ?.querySelectorAll("strong,b,em,i,u,s,strike,del,font,small,big")
+    .forEach((element) => {
+      if (!element.textContent && !element.querySelector("br,img,video,audio")) {
+        element.remove();
+      }
+    });
+  editor?.normalize();
+};
+
+const replaceSelectionWithNode = (
+  range,
+  node,
+  { selectInserted = false } = {},
+) => {
+  const selection = window.getSelection?.();
+  if (!selection || !node) return;
+
+  range.insertNode(node);
+
+  const nextRange = document.createRange();
+  if (selectInserted) {
+    nextRange.selectNodeContents(node);
+  } else {
+    nextRange.setStartAfter(node);
+    nextRange.collapse(true);
+  }
+  selection.removeAllRanges();
+  selection.addRange(nextRange);
+};
+
+const replaceSelectionWithFragment = (
+  range,
+  fragment,
+  { selectInserted = false } = {},
+) => {
+  const selection = window.getSelection?.();
+  if (!selection) return;
+
+  const insertedNodes = Array.from(fragment.childNodes);
+  if (!insertedNodes.length) {
+    selection.removeAllRanges();
+    selection.addRange(range);
+    return;
+  }
+
+  range.insertNode(fragment);
+
+  const nextRange = document.createRange();
+  if (selectInserted) {
+    nextRange.setStartBefore(insertedNodes[0]);
+    nextRange.setEndAfter(insertedNodes[insertedNodes.length - 1]);
+  } else {
+    nextRange.setStartAfter(insertedNodes[insertedNodes.length - 1]);
+    nextRange.collapse(true);
+  }
+  selection.removeAllRanges();
+  selection.addRange(nextRange);
+};
+
+const createPlainTextFragment = (text) => {
+  const fragment = document.createDocumentFragment();
+  const lines = String(text).split(/\r\n|\r|\n/);
+
+  lines.forEach((line, index) => {
+    if (index > 0) {
+      fragment.append(document.createElement("br"));
+    }
+    if (line) {
+      fragment.append(document.createTextNode(line));
+    }
+  });
+
+  return fragment;
+};
+
+const wrapFragmentWithInlineFormats = (fragment, formats) => {
+  let wrappedNode = fragment;
+
+  [...inlineFormatNestingOrder].reverse().forEach((action) => {
+    if (!formats[action]) return;
+
+    const wrapper = document.createElement(
+      inlineFormatDefinitions[action].tagName,
+    );
+    wrapper.append(wrappedNode);
+    wrappedNode = wrapper;
+  });
+
+  return wrappedNode;
 };
 
 const ChatInput = ({
@@ -139,6 +568,7 @@ const ChatInput = ({
   const editorRef = useRef(null);
   const hasHydratedEditorRef = useRef(false);
   const savedSelectionRef = useRef(null);
+  const pendingInlineFormatsRef = useRef(null);
   const fileInputRef = useRef(null);
   const mediaRecorderRef = useRef(null);
   const mediaStreamRef = useRef(null);
@@ -223,6 +653,11 @@ const ChatInput = ({
 
   const updateActiveFormatState = useCallback(() => {
     if (typeof document === "undefined" || !isSelectionInsideEditor()) return;
+    const editor = editorRef.current;
+    const selection = window.getSelection?.();
+    const range = selection?.rangeCount ? selection.getRangeAt(0) : null;
+
+    if (!editor || !range) return;
 
     const queryCommandState = (command) => {
       try {
@@ -231,14 +666,28 @@ const ChatInput = ({
         return false;
       }
     };
+    const queryCommandValue = (command) => {
+      try {
+        return document.queryCommandValue(command);
+      } catch {
+        return "";
+      }
+    };
+    const fontSizeAction = getFontSizeActionFromCommandValue(
+      queryCommandValue("fontSize"),
+    );
+    const inlineFormats =
+      range.collapsed && pendingInlineFormatsRef.current
+        ? pendingInlineFormatsRef.current
+        : getInlineFormatStateForRange(range, editor);
 
     setActiveFormats({
-      bold: queryCommandState("bold"),
-      italic: queryCommandState("italic"),
-      underline: queryCommandState("underline"),
-      strike: queryCommandState("strikeThrough"),
+      ...inlineFormats,
       list: queryCommandState("insertUnorderedList"),
       orderedList: queryCommandState("insertOrderedList"),
+      fontSmall: fontSizeAction === "fontSmall",
+      fontNormal: fontSizeAction === "fontNormal",
+      fontLarge: fontSizeAction === "fontLarge",
     });
   }, [isSelectionInsideEditor]);
 
@@ -254,6 +703,127 @@ const ChatInput = ({
     saveEditorSelection();
     updateActiveFormatState();
   }, [saveEditorSelection, updateActiveFormatState, updateContent]);
+
+  const setEditorSelectionRange = useCallback((range) => {
+    const selection = window.getSelection?.();
+    if (!selection || !range) return;
+
+    selection.removeAllRanges();
+    selection.addRange(range);
+    savedSelectionRef.current = range.cloneRange();
+  }, []);
+
+  const getRestoredEditorRange = useCallback(() => {
+    restoreEditorSelection();
+
+    const editor = editorRef.current;
+    const selection = window.getSelection?.();
+
+    if (!editor || !selection?.rangeCount || !isSelectionInsideEditor()) {
+      return null;
+    }
+
+    return selection.getRangeAt(0);
+  }, [isSelectionInsideEditor, restoreEditorSelection]);
+
+  const refreshEditorFormatState = useCallback(() => {
+    syncContentFromEditor();
+    window.requestAnimationFrame(() => {
+      saveEditorSelection();
+      updateActiveFormatState();
+    });
+  }, [saveEditorSelection, syncContentFromEditor, updateActiveFormatState]);
+
+  const insertFormattedText = useCallback(
+    (value) => {
+      const editor = editorRef.current;
+      const range = getRestoredEditorRange();
+      const formats = pendingInlineFormatsRef.current;
+
+      if (!editor || !range || !formats || !value) return false;
+
+      range.deleteContents();
+      normalizeCollapsedRangeForInlineFormats(range, editor, formats);
+
+      const fragment = createPlainTextFragment(value);
+      const wrappedNode = wrapFragmentWithInlineFormats(fragment, formats);
+
+      if (wrappedNode.nodeType === DOCUMENT_FRAGMENT_NODE) {
+        replaceSelectionWithFragment(range, wrappedNode);
+      } else {
+        replaceSelectionWithNode(range, wrappedNode);
+      }
+
+      cleanupEditorInlineArtifacts(editor);
+      refreshEditorFormatState();
+      return true;
+    },
+    [getRestoredEditorRange, refreshEditorFormatState],
+  );
+
+  const toggleInlineFormat = useCallback(
+    (action) => {
+      const editor = editorRef.current;
+      const range = getRestoredEditorRange();
+
+      if (!editor || !range || !inlineFormatDefinitions[action]) return;
+
+      if (range.collapsed) {
+        const currentFormats =
+          pendingInlineFormatsRef.current ||
+          getInlineFormatStateForRange(range, editor);
+        const nextFormats = {
+          ...currentFormats,
+          [action]: !currentFormats[action],
+        };
+
+        pendingInlineFormatsRef.current = nextFormats;
+        normalizeCollapsedRangeForInlineFormats(range, editor, nextFormats);
+        setEditorSelectionRange(range);
+        setActiveFormats((current) => ({
+          ...current,
+          ...nextFormats,
+        }));
+        return;
+      }
+
+      pendingInlineFormatsRef.current = null;
+
+      const shouldRemove = getInlineFormatStateForRange(range, editor)[action];
+
+      if (shouldRemove) {
+        splitFormatAtSelectionBoundaries(range, action, editor);
+        const fragment = range.extractContents();
+        stripInlineFormatElements(fragment, [action]);
+        replaceSelectionWithFragment(range, fragment, { selectInserted: true });
+      } else {
+        const fragment = range.extractContents();
+        stripInlineFormatElements(fragment, [action]);
+
+        const wrapper = document.createElement(
+          inlineFormatDefinitions[action].tagName,
+        );
+        wrapper.append(fragment);
+        replaceSelectionWithNode(range, wrapper, { selectInserted: true });
+      }
+
+      cleanupEditorInlineArtifacts(editor);
+      refreshEditorFormatState();
+    },
+    [getRestoredEditorRange, refreshEditorFormatState, setEditorSelectionRange],
+  );
+
+  const disableActiveListCommands = () => {
+    ["insertUnorderedList", "insertOrderedList"].forEach((command) => {
+      try {
+        if (document.queryCommandState(command)) {
+          document.execCommand(command, false, null);
+        }
+      } catch {
+        // Ignore unsupported command states.
+      }
+    });
+  };
 
   const stopRecordingTimer = () => {
     if (recordingTimerRef.current) {
@@ -478,6 +1048,7 @@ const ChatInput = ({
       return;
     }
     onSend?.(trimmed, { type: "text", attachments });
+    pendingInlineFormatsRef.current = null;
     setContent("");
     setEditorContentFromMarkdown("");
     setAttachments([]);
@@ -494,6 +1065,40 @@ const ChatInput = ({
       return;
     }
 
+    if (e.key === "Enter" && e.shiftKey) {
+      let isListActive = false;
+
+      try {
+        isListActive =
+          typeof document !== "undefined" &&
+          (document.queryCommandState("insertUnorderedList") ||
+            document.queryCommandState("insertOrderedList"));
+      } catch {
+        isListActive = false;
+      }
+
+      if (isListActive) {
+        e.preventDefault();
+        runEditorCommand("insertParagraph", null, { restoreSelection: false });
+      }
+      return;
+    }
+
+    if (
+      [
+        "ArrowLeft",
+        "ArrowRight",
+        "ArrowUp",
+        "ArrowDown",
+        "Home",
+        "End",
+        "PageUp",
+        "PageDown",
+      ].includes(e.key)
+    ) {
+      pendingInlineFormatsRef.current = null;
+    }
+
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
       handleSend();
@@ -504,10 +1109,33 @@ const ChatInput = ({
     }
   };
 
-  const runEditorCommand = (command, value = null) => {
-    if (typeof document === "undefined" || !command) return;
+  const handleBeforeInput = useCallback((event) => {
+    if (event.defaultPrevented) return;
+    if (!pendingInlineFormatsRef.current) return;
 
-    restoreEditorSelection();
+    const nativeEvent = event.nativeEvent || event;
+    const inputType = nativeEvent.inputType || "";
+
+    if (nativeEvent.isComposing || inputType !== "insertText") return;
+
+    const value = nativeEvent.data || "";
+    if (!value) return;
+
+    event.preventDefault();
+    insertFormattedText(value);
+  }, [insertFormattedText]);
+
+  const runEditorCommand = (
+    command,
+    value = null,
+    { restoreSelection = true } = {},
+  ) => {
+    if (typeof document === "undefined" || !command) return;
+    pendingInlineFormatsRef.current = null;
+
+    if (restoreSelection) {
+      restoreEditorSelection();
+    }
 
     try {
       document.execCommand(command, false, value);
@@ -516,78 +1144,51 @@ const ChatInput = ({
     }
 
     syncContentFromEditor();
+    window.requestAnimationFrame(() => {
+      saveEditorSelection();
+      updateActiveFormatState();
+    });
   };
 
   const clearEditorFormatting = () => {
     if (typeof document === "undefined") return;
 
-    restoreEditorSelection();
+    const editor = editorRef.current;
+    const range = getRestoredEditorRange();
 
-    const commandsToDisable = [
-      "bold",
-      "italic",
-      "underline",
-      "strikeThrough",
-      "insertUnorderedList",
-      "insertOrderedList",
-    ];
+    if (!editor || !range) return;
 
-    commandsToDisable.forEach((command) => {
-      try {
-        if (document.queryCommandState(command)) {
-          document.execCommand(command, false, null);
-        }
-      } catch {
-        // Ignore unsupported command states.
-      }
+    disableActiveListCommands();
+
+    if (range.collapsed) {
+      const nextFormats = createEmptyInlineFormats();
+      pendingInlineFormatsRef.current = nextFormats;
+      normalizeCollapsedRangeForInlineFormats(range, editor, nextFormats);
+      setEditorSelectionRange(range);
+      setActiveFormats((current) => ({
+        ...current,
+        ...nextFormats,
+        fontSmall: false,
+        fontNormal: true,
+        fontLarge: false,
+      }));
+      refreshEditorFormatState();
+      return;
+    }
+
+    pendingInlineFormatsRef.current = null;
+
+    inlineFormatActions.forEach((action) => {
+      splitFormatAtSelectionBoundaries(range, action, editor);
     });
 
-    try {
-      document.execCommand("removeFormat", false, null);
-    } catch (error) {
-      console.error("Failed to clear editor formatting:", error);
-    }
-
-    syncContentFromEditor();
-  };
-
-  const toggleSelectedCase = () => {
-    if (typeof document === "undefined") return;
-
-    restoreEditorSelection();
-
-    const editor = editorRef.current;
-    const selection = window.getSelection?.();
-
-    if (!editor || !selection) return;
-
-    if (!selection.rangeCount || selection.isCollapsed) {
-      if (!content.trim()) {
-        editor.focus();
-        return;
-      }
-
-      const range = document.createRange();
-      range.selectNodeContents(editor);
-      selection.removeAllRanges();
-      selection.addRange(range);
-    }
-
-    const selectedText = selection.toString();
-    if (!selectedText) return;
-
-    const nextText =
-      selectedText === selectedText.toUpperCase()
-        ? selectedText.toLowerCase()
-        : selectedText.toUpperCase();
-
-    try {
-      document.execCommand("insertText", false, nextText);
-    } catch (error) {
-      console.error("Failed to toggle editor text case:", error);
-    }
-
-    syncContentFromEditor();
+    const fragment = range.extractContents();
+    stripInlineFormatElements(fragment, inlineFormatActions, {
+      includeFontScale: true,
+    });
+    replaceSelectionWithFragment(range, fragment);
+    cleanupEditorInlineArtifacts(editor);
+    refreshEditorFormatState();
   };
 
   const handleFormat = (action) => {
@@ -598,8 +1199,13 @@ const ChatInput = ({
       return;
     }
 
-    if (action === "case") {
-      toggleSelectedCase();
+    if (inlineFormatDefinitions[action]) {
+      toggleInlineFormat(action);
+      return;
+    }
+
+    if (fontSizeCommandValueByAction[action]) {
+      runEditorCommand("fontSize", fontSizeCommandValueByAction[action]);
       return;
     }
 
@@ -607,6 +1213,7 @@ const ChatInput = ({
   };
 
   const insertText = (value) => {
+    if (pendingInlineFormatsRef.current && insertFormattedText(value)) return;
     runEditorCommand("insertText", value);
   };
 
@@ -615,6 +1222,7 @@ const ChatInput = ({
     if (!text) return;
 
     event.preventDefault();
+    if (pendingInlineFormatsRef.current && insertFormattedText(text)) return;
     runEditorCommand("insertText", text);
   };
 
@@ -683,6 +1291,7 @@ const ChatInput = ({
     if (hasHydratedEditorRef.current) return;
 
     hasHydratedEditorRef.current = true;
+    pendingInlineFormatsRef.current = null;
     setEditorContentFromMarkdown(initialContent);
   }, [initialContent, setEditorContentFromMarkdown]);
 
@@ -697,6 +1306,17 @@ const ChatInput = ({
   }, [updateActiveFormatState]);
 
   useEffect(() => {
+    const editor = editorRef.current;
+    if (!editor) return undefined;
+
+    editor.addEventListener("beforeinput", handleBeforeInput);
+
+    return () => {
+      editor.removeEventListener("beforeinput", handleBeforeInput);
+    };
+  }, [handleBeforeInput]);
+
+  useEffect(() => {
     const nextDraftIdentity = draftPreview
       ? `${draftPreview.variant}-${draftPreview.id}`
       : `mode-${mode}`;
@@ -704,6 +1324,7 @@ const ChatInput = ({
     if (draftIdentityRef.current !== nextDraftIdentity) {
       draftIdentityRef.current = nextDraftIdentity;
       const nextContent = mode === "edit" ? initialContent : "";
+      pendingInlineFormatsRef.current = null;
       setContent(nextContent);
       setEditorContentFromMarkdown(nextContent);
       setAttachments([]);
@@ -773,7 +1394,7 @@ const ChatInput = ({
           : "border-t border-slate-200"
       }`}
     >
-      <div className="flex flex-col overflow-visible rounded-2xl border border-slate-300 bg-white shadow-sm transition-all focus-within:border-blue-600 focus-within:ring-2 focus-within:ring-blue-600/20">
+      <div className="chat-composer-shell flex flex-col overflow-visible rounded-2xl border border-slate-300 bg-white shadow-sm transition-all focus-within:border-blue-600 focus-within:ring-2 focus-within:ring-blue-600/20">
         {visibleDraftPreview && (
           <div
             className={`chat-draft-toast-slot ${
@@ -861,6 +1482,31 @@ const ChatInput = ({
 
             <button
               type="button"
+              onMouseDown={(event) => {
+                event.preventDefault();
+                saveEditorSelection();
+              }}
+              onClick={() => {
+                setShowFormattingToolbar((value) => !value);
+                editorRef.current?.focus();
+              }}
+              disabled={isRecorderVisible || isVoiceSending}
+              className={`inline-flex h-8 w-8 items-center justify-center rounded-lg transition-colors ${
+                showFormattingToolbar
+                  ? "bg-blue-600 text-white shadow-sm"
+                  : "text-slate-600 hover:bg-blue-50 hover:text-blue-700"
+              } disabled:cursor-not-allowed disabled:text-slate-300`}
+              title="Định dạng tin nhắn"
+              aria-label="Định dạng tin nhắn"
+              aria-pressed={showFormattingToolbar}
+            >
+              <span className="material-symbols-outlined text-[20px]">
+                border_color
+              </span>
+            </button>
+
+            <button
+              type="button"
               onClick={() => setIsPollModalOpen(true)}
               disabled={!canCreatePoll}
               className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-slate-600 transition-colors hover:bg-blue-50 hover:text-blue-700 disabled:cursor-not-allowed disabled:text-slate-300"
@@ -906,30 +1552,6 @@ const ChatInput = ({
               </span>
             </button>
 
-            <button
-              type="button"
-              onMouseDown={(event) => {
-                event.preventDefault();
-                saveEditorSelection();
-              }}
-              onClick={() => {
-                setShowFormattingToolbar((value) => !value);
-                editorRef.current?.focus();
-              }}
-              disabled={isRecorderVisible || isVoiceSending}
-              className={`inline-flex h-8 w-8 items-center justify-center rounded-lg transition-colors ${
-                showFormattingToolbar
-                  ? "bg-blue-600 text-white shadow-sm"
-                  : "text-slate-600 hover:bg-blue-50 hover:text-blue-700"
-              } disabled:cursor-not-allowed disabled:text-slate-300`}
-              title="Định dạng tin nhắn"
-              aria-label="Định dạng tin nhắn"
-              aria-pressed={showFormattingToolbar}
-            >
-              <span className="material-symbols-outlined text-[20px]">
-                border_color
-              </span>
-            </button>
           </div>
         </div>
 
@@ -1061,6 +1683,9 @@ const ChatInput = ({
                   saveEditorSelection();
                   updateActiveFormatState();
                 }}
+                onMouseDown={() => {
+                  pendingInlineFormatsRef.current = null;
+                }}
                 onMouseUp={() => {
                   saveEditorSelection();
                   updateActiveFormatState();
@@ -1102,7 +1727,7 @@ const ChatInput = ({
         </div>
 
         {showFormattingToolbar && (
-          <div className="chat-format-panel border-t border-slate-200 bg-white px-3 py-3 text-slate-700">
+          <div className="chat-format-panel rounded-b-2xl border-t border-slate-200 bg-white px-3 py-3 text-slate-700">
             <div className="flex flex-wrap items-center gap-1">
               {formatToolbarItems.map((item, index) =>
                 item.divider ? (
@@ -1127,7 +1752,8 @@ const ChatInput = ({
                     title={item.title}
                     aria-label={item.title}
                     aria-pressed={
-                      item.action && item.command
+                      item.action &&
+                      (item.command || fontSizeCommandValueByAction[item.action])
                         ? Boolean(activeFormats[item.action])
                         : undefined
                     }

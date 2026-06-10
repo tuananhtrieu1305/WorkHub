@@ -14,6 +14,7 @@ import {
   getMessagePreviewText,
   isAudioAttachment,
 } from "./chatMessagePreview";
+import { parseInlineMarkdown, sanitizeHref } from "./chatComposerUtils";
 import { getAvatarUrl } from "../../utils/avatar";
 import PollMessage, { PollDetailModal } from "./PollMessage";
 import ReminderMessage, { ReminderDetailModal } from "./ReminderMessage";
@@ -672,64 +673,73 @@ const AudioAttachmentPlayer = ({ attachment, isMine }) => {
   );
 };
 
-const sanitizeHref = (href) => {
-  if (!href) return "#";
-  return /^(https?:|mailto:)/i.test(href) ? href : "#";
-};
+const renderInlineNodes = (nodes, keyPrefix = "inline") =>
+  nodes.map((node, index) => {
+    const key = `${keyPrefix}-${index}-${node.type}`;
 
-const renderInlineMarkdown = (text) => {
-  const pattern =
-    /(\*\*([^*]+)\*\*|\*([^*]+)\*|<u>([^<]+)<\/u>|~~([^~]+)~~|`([^`]+)`|\[([^\]]+)\]\(([^)]+)\))/g;
-  const parts = [];
-  let lastIndex = 0;
-  let match;
+    if (node.type === "text") return node.text;
 
-  while ((match = pattern.exec(text)) !== null) {
-    if (match.index > lastIndex) {
-      parts.push(text.slice(lastIndex, match.index));
+    if (node.type === "strong") {
+      return <strong key={key}>{renderInlineNodes(node.children, key)}</strong>;
     }
 
-    const key = `${match.index}-${match[0]}`;
-    if (match[2]) {
-      parts.push(<strong key={key}>{match[2]}</strong>);
-    } else if (match[3]) {
-      parts.push(<em key={key}>{match[3]}</em>);
-    } else if (match[4]) {
-      parts.push(<u key={key}>{match[4]}</u>);
-    } else if (match[5]) {
-      parts.push(<s key={key}>{match[5]}</s>);
-    } else if (match[6]) {
-      parts.push(
+    if (node.type === "emphasis") {
+      return <em key={key}>{renderInlineNodes(node.children, key)}</em>;
+    }
+
+    if (node.type === "underline") {
+      return <u key={key}>{renderInlineNodes(node.children, key)}</u>;
+    }
+
+    if (node.type === "strike") {
+      return <s key={key}>{renderInlineNodes(node.children, key)}</s>;
+    }
+
+    if (node.type === "small") {
+      return (
+        <span key={key} className="text-[0.88em]">
+          {renderInlineNodes(node.children, key)}
+        </span>
+      );
+    }
+
+    if (node.type === "big") {
+      return (
+        <span key={key} className="text-[1.12em]">
+          {renderInlineNodes(node.children, key)}
+        </span>
+      );
+    }
+
+    if (node.type === "code") {
+      return (
         <code
           key={key}
           className="rounded bg-black/10 px-1 py-0.5 font-mono text-[0.9em]"
         >
-          {match[6]}
+          {node.text}
         </code>
       );
-    } else if (match[7]) {
-      parts.push(
+    }
+
+    if (node.type === "link") {
+      return (
         <a
           key={key}
-          href={sanitizeHref(match[8])}
+          href={sanitizeHref(node.href)}
           target="_blank"
           rel="noreferrer"
           className="font-semibold underline underline-offset-2"
         >
-          {match[7]}
+          {renderInlineNodes(node.children, key)}
         </a>
       );
     }
 
-    lastIndex = pattern.lastIndex;
-  }
+    return null;
+  });
 
-  if (lastIndex < text.length) {
-    parts.push(text.slice(lastIndex));
-  }
-
-  return parts;
-};
+const renderInlineMarkdown = (text) => renderInlineNodes(parseInlineMarkdown(text));
 
 const MessageText = ({ content }) => {
   if (!content) return null;

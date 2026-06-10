@@ -2487,6 +2487,11 @@ video.chat-attachment-media {
   margin: 0.125rem 0;
 }
 
+.chat-composer-shell,
+.chat-format-panel {
+  background-clip: padding-box;
+}
+
 .chat-composer-editor strong,
 .chat-composer-editor b {
   font-weight: 700;
@@ -2501,6 +2506,20 @@ video.chat-attachment-media {
 .chat-composer-editor strike,
 .chat-composer-editor del {
   text-decoration: line-through;
+}
+
+.chat-composer-editor small,
+.chat-composer-editor font[size="1"],
+.chat-composer-editor font[size="2"] {
+  font-size: 0.88em;
+}
+
+.chat-composer-editor big,
+.chat-composer-editor font[size="4"],
+.chat-composer-editor font[size="5"],
+.chat-composer-editor font[size="6"],
+.chat-composer-editor font[size="7"] {
+  font-size: 1.12em;
 }
 
 .chat-composer-editor code {
