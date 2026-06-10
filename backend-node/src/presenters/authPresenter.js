@@ -9,6 +9,7 @@ import {
   sendVerificationEmail,
   sendResetPasswordEmail,
 } from "../utils/sendEmail.js";
+import { getFrontendUrl } from "../utils/frontendUrl.js";
 
 const generateOTP = () => {
   return Math.floor(100000 + Math.random() * 900000).toString();
@@ -332,7 +333,7 @@ export const forgotPassword = async (req, res) => {
     user.resetPasswordExpires = new Date(Date.now() + 15 * 60 * 1000);
     await user.save();
 
-    const resetLink = `${process.env.FRONTEND_URL}/reset-password/${resetToken}`;
+    const resetLink = `${getFrontendUrl(req)}/reset-password/${resetToken}`;
 
     await sendResetPasswordEmail(email, user.fullName, resetLink);
 

@@ -1,8 +1,7 @@
 import { useEffect, useMemo } from "react";
 import { io } from "socket.io-client";
 import { getAccessToken } from "../../api/axiosClient";
-
-const API_URL = import.meta.env.VITE_NODE_API_URL || "http://localhost:5000";
+import { API_URL } from "../../config/api";
 
 export const useChatSocket = (enabled = true) => {
   const token = enabled

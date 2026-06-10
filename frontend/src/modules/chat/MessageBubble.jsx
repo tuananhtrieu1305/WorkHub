@@ -15,10 +15,9 @@ import {
   isAudioAttachment,
 } from "./chatMessagePreview";
 import { getAvatarUrl } from "../../utils/avatar";
+import { API_URL } from "../../config/api";
 import PollMessage, { PollDetailModal } from "./PollMessage";
 import ReminderMessage, { ReminderDetailModal } from "./ReminderMessage";
-
-const API_URL = import.meta.env.VITE_NODE_API_URL || "http://localhost:5000";
 
 const getFileUrl = (url) => {
   if (!url) return "#";

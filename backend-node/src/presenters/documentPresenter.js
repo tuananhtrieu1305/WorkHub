@@ -11,6 +11,7 @@ import Folder from "../models/Folder.js";
 import { buildR2ObjectKey, getR2StorageService } from "../services/r2StorageService.js";
 import permission from "../services/documentPermissionService.js";
 import { setFileHeaders } from "../utils/fileResponse.js";
+import { getFrontendUrl } from "../utils/frontendUrl.js";
 import { validateUploadedFile } from "../services/fileValidationService.js";
 
 const cleanupTempFile = async (file) => {
@@ -378,7 +379,7 @@ export const createDocumentShare = async (req, res) => {
     createdBy: req.user._id,
   });
 
-  const baseUrl = process.env.FRONTEND_URL || `${req.protocol}://${req.get("host")}`;
+  const baseUrl = getFrontendUrl(req);
 
   res.status(201).json({
     shareId: share._id,
