@@ -1,9 +1,6 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { EmojiPickerButton } from "../../components/emoji";
-import {
-  markdownToComposerHtml,
-  serializeComposerContent,
-} from "./chatComposerUtils";
+import { applyComposerFormat } from "./chatComposerUtils";
 import { formatAudioDuration } from "./chatMessagePreview";
 import PollCreateModal from "./PollCreateModal";
 import ReminderCreateModal from "./ReminderCreateModal";
@@ -45,67 +42,28 @@ const getAudioExtension = (mimeType = "") => {
 };
 
 const formatToolbarItems = [
-  {
-    label: "B",
-    title: "In đậm",
-    action: "bold",
-    command: "bold",
-    className: "font-bold",
-  },
-  {
-    label: "I",
-    title: "In nghiêng",
-    action: "italic",
-    command: "italic",
-    className: "italic",
-  },
-  {
-    label: "U",
-    title: "Gạch chân",
-    action: "underline",
-    command: "underline",
-    className: "underline",
-  },
-  {
-    label: "S",
-    title: "Gạch ngang",
-    action: "strike",
-    command: "strikeThrough",
-    className: "line-through",
-  },
+  { label: "B", title: "In đậm", action: "bold", className: "font-bold" },
+  { label: "I", title: "In nghiêng", action: "italic", className: "italic" },
+  { label: "U", title: "Gạch chân", action: "underline", className: "underline" },
+  { label: "S", title: "Gạch ngang", action: "strike", className: "line-through" },
   { label: "aA", title: "Đổi kiểu chữ", action: "case", className: "font-semibold" },
+  {
+    label: "A",
+    title: "Màu chữ",
+    disabled: true,
+    className: "underline decoration-2 underline-offset-4",
+  },
   { icon: "ink_eraser", title: "Xóa định dạng", action: "clear" },
   { divider: true },
-  {
-    icon: "format_list_bulleted",
-    title: "Danh sách dấu đầu dòng",
-    action: "list",
-    command: "insertUnorderedList",
-  },
-  {
-    icon: "format_list_numbered",
-    title: "Danh sách đánh số",
-    action: "orderedList",
-    command: "insertOrderedList",
-  },
+  { icon: "format_list_bulleted", title: "Danh sách dấu đầu dòng", action: "list" },
+  { icon: "format_list_numbered", title: "Danh sách đánh số", action: "orderedList" },
   { icon: "format_indent_increase", title: "Tăng thụt lề", action: "indent" },
   { icon: "format_indent_decrease", title: "Giảm thụt lề", action: "outdent" },
-  { icon: "undo", title: "Hoàn tác", action: "undo" },
-  { icon: "redo", title: "Làm lại", action: "redo" },
+  { icon: "undo", title: "Hoàn tác", disabled: true },
+  { icon: "redo", title: "Làm lại", disabled: true },
+  { divider: true },
+  { icon: "open_in_full", title: "Mở rộng trình soạn thảo", disabled: true },
 ];
-
-const commandByFormatAction = {
-  bold: "bold",
-  italic: "italic",
-  underline: "underline",
-  strike: "strikeThrough",
-  list: "insertUnorderedList",
-  orderedList: "insertOrderedList",
-  indent: "indent",
-  outdent: "outdent",
-  undo: "undo",
-  redo: "redo",
-};
 
 const ChatInput = ({
   onSend,
@@ -135,10 +93,7 @@ const ChatInput = ({
   const [renderedDraftPreview, setRenderedDraftPreview] =
     useState(draftPreview);
   const [isDraftExiting, setIsDraftExiting] = useState(false);
-  const [activeFormats, setActiveFormats] = useState({});
-  const editorRef = useRef(null);
-  const hasHydratedEditorRef = useRef(false);
-  const savedSelectionRef = useRef(null);
+  const textareaRef = useRef(null);
   const fileInputRef = useRef(null);
   const mediaRecorderRef = useRef(null);
   const mediaStreamRef = useRef(null);
@@ -153,107 +108,17 @@ const ChatInput = ({
       : `mode-${mode}`
   );
 
-  const updateContent = useCallback((nextContent) => {
+  const focusSelection = (selectionStart, selectionEnd) => {
+    queueMicrotask(() => {
+      textareaRef.current?.focus();
+      textareaRef.current?.setSelectionRange(selectionStart, selectionEnd);
+    });
+  };
+
+  const updateContent = (nextContent) => {
     setContent(nextContent);
     onTypingChange?.(Boolean(nextContent.trim()));
-  }, [onTypingChange]);
-
-  const setEditorContentFromMarkdown = useCallback((nextContent) => {
-    const editor = editorRef.current;
-    if (!editor) return;
-    editor.innerHTML = markdownToComposerHtml(nextContent);
-  }, []);
-
-  const isSelectionInsideEditor = useCallback(() => {
-    const editor = editorRef.current;
-    const selection = window.getSelection?.();
-
-    if (!editor || !selection?.rangeCount) return false;
-
-    return (
-      editor.contains(selection.anchorNode) &&
-      editor.contains(selection.focusNode)
-    );
-  }, []);
-
-  const saveEditorSelection = useCallback(() => {
-    const selection = window.getSelection?.();
-
-    if (!selection?.rangeCount || !isSelectionInsideEditor()) return;
-
-    savedSelectionRef.current = selection.getRangeAt(0).cloneRange();
-  }, [isSelectionInsideEditor]);
-
-  const focusEditorAtEnd = useCallback(() => {
-    const editor = editorRef.current;
-    if (!editor) return;
-
-    editor.focus();
-
-    const range = document.createRange();
-    range.selectNodeContents(editor);
-    range.collapse(false);
-
-    const selection = window.getSelection?.();
-    selection?.removeAllRanges();
-    selection?.addRange(range);
-    savedSelectionRef.current = range.cloneRange();
-  }, []);
-
-  const restoreEditorSelection = useCallback(() => {
-    const editor = editorRef.current;
-    const range = savedSelectionRef.current;
-    const selection = window.getSelection?.();
-
-    if (
-      !editor ||
-      !selection ||
-      !range ||
-      !editor.contains(range.startContainer) ||
-      !editor.contains(range.endContainer)
-    ) {
-      focusEditorAtEnd();
-      return;
-    }
-
-    editor.focus();
-    selection.removeAllRanges();
-    selection.addRange(range);
-  }, [focusEditorAtEnd]);
-
-  const updateActiveFormatState = useCallback(() => {
-    if (typeof document === "undefined" || !isSelectionInsideEditor()) return;
-
-    const queryCommandState = (command) => {
-      try {
-        return document.queryCommandState(command);
-      } catch {
-        return false;
-      }
-    };
-
-    setActiveFormats({
-      bold: queryCommandState("bold"),
-      italic: queryCommandState("italic"),
-      underline: queryCommandState("underline"),
-      strike: queryCommandState("strikeThrough"),
-      list: queryCommandState("insertUnorderedList"),
-      orderedList: queryCommandState("insertOrderedList"),
-    });
-  }, [isSelectionInsideEditor]);
-
-  const syncContentFromEditor = useCallback(() => {
-    const editor = editorRef.current;
-    const nextContent = serializeComposerContent(editor);
-
-    if (!nextContent && editor?.innerHTML === "<br>") {
-      editor.innerHTML = "";
-    }
-
-    updateContent(nextContent);
-    saveEditorSelection();
-    updateActiveFormatState();
-  }, [saveEditorSelection, updateActiveFormatState, updateContent]);
+  };
 
   const stopRecordingTimer = () => {
     if (recordingTimerRef.current) {
@@ -327,7 +192,7 @@ const ChatInput = ({
       setAttachmentError("Không thể gửi tin nhắn thoại.");
     } finally {
       setIsVoiceSending(false);
-      editorRef.current?.focus();
+      textareaRef.current?.focus();
     }
   };
 
@@ -464,9 +329,7 @@ const ChatInput = ({
   };
 
   const handleSend = () => {
-    const currentContent = serializeComposerContent(editorRef.current);
-    const trimmed = currentContent.trim();
-
+    const trimmed = content.trim();
     if (
       (!trimmed && attachments.length === 0) ||
       disabled ||
@@ -479,12 +342,15 @@ const ChatInput = ({
     }
     onSend?.(trimmed, { type: "text", attachments });
     setContent("");
-    setEditorContentFromMarkdown("");
     setAttachments([]);
     setAttachmentError("");
     setRecordingError("");
     onTypingChange?.(false);
-    editorRef.current?.focus();
+    textareaRef.current?.focus();
+  };
+
+  const handleChange = (e) => {
+    updateContent(e.target.value);
   };
 
   const handleKeyDown = (e) => {
@@ -504,118 +370,32 @@ const ChatInput = ({
     }
   };
 
-  const runEditorCommand = (command, value = null) => {
-    if (typeof document === "undefined" || !command) return;
-
-    restoreEditorSelection();
-
-    try {
-      document.execCommand(command, false, value);
-    } catch (error) {
-      console.error("Failed to run editor command:", error);
-    }
-
-    syncContentFromEditor();
-  };
-
-  const clearEditorFormatting = () => {
-    if (typeof document === "undefined") return;
-
-    restoreEditorSelection();
-
-    const commandsToDisable = [
-      "bold",
-      "italic",
-      "underline",
-      "strikeThrough",
-      "insertUnorderedList",
-      "insertOrderedList",
-    ];
-
-    commandsToDisable.forEach((command) => {
-      try {
-        if (document.queryCommandState(command)) {
-          document.execCommand(command, false, null);
-        }
-      } catch {
-        // Ignore unsupported command states.
-      }
-    });
-
-    try {
-      document.execCommand("removeFormat", false, null);
-    } catch (error) {
-      console.error("Failed to clear editor formatting:", error);
-    }
-
-    syncContentFromEditor();
-  };
-
-  const toggleSelectedCase = () => {
-    if (typeof document === "undefined") return;
-
-    restoreEditorSelection();
-
-    const editor = editorRef.current;
-    const selection = window.getSelection?.();
-
-    if (!editor || !selection) return;
-
-    if (!selection.rangeCount || selection.isCollapsed) {
-      if (!content.trim()) {
-        editor.focus();
-        return;
-      }
-
-      const range = document.createRange();
-      range.selectNodeContents(editor);
-      selection.removeAllRanges();
-      selection.addRange(range);
-    }
-
-    const selectedText = selection.toString();
-    if (!selectedText) return;
-
-    const nextText =
-      selectedText === selectedText.toUpperCase()
-        ? selectedText.toLowerCase()
-        : selectedText.toUpperCase();
-
-    try {
-      document.execCommand("insertText", false, nextText);
-    } catch (error) {
-      console.error("Failed to toggle editor text case:", error);
-    }
-
-    syncContentFromEditor();
-  };
-
   const handleFormat = (action) => {
     if (!action) return;
 
-    if (action === "clear") {
-      clearEditorFormatting();
-      return;
-    }
+    const textarea = textareaRef.current;
+    const selectionStart = textarea?.selectionStart ?? content.length;
+    const selectionEnd = textarea?.selectionEnd ?? content.length;
+    const result = applyComposerFormat({
+      text: content,
+      selectionStart,
+      selectionEnd,
+      action,
+    });
 
-    if (action === "case") {
-      toggleSelectedCase();
-      return;
-    }
-
-    runEditorCommand(commandByFormatAction[action]);
+    updateContent(result.text);
+    focusSelection(result.selectionStart, result.selectionEnd);
   };
 
   const insertText = (value) => {
-    runEditorCommand("insertText", value);
-  };
+    const textarea = textareaRef.current;
+    const selectionStart = textarea?.selectionStart ?? content.length;
+    const selectionEnd = textarea?.selectionEnd ?? content.length;
+    const nextContent = `${content.slice(0, selectionStart)}${value}${content.slice(selectionEnd)}`;
+    const cursor = selectionStart + value.length;
 
-  const handlePaste = (event) => {
-    const text = event.clipboardData?.getData("text/plain");
-    if (!text) return;
-
-    event.preventDefault();
-    runEditorCommand("insertText", text);
+    updateContent(nextContent);
+    focusSelection(cursor, cursor);
   };
 
   const handleFileChange = async (e) => {
@@ -680,32 +460,13 @@ const ChatInput = ({
   const visibleDraftPreview = renderedDraftPreview;
 
   useEffect(() => {
-    if (hasHydratedEditorRef.current) return;
-
-    hasHydratedEditorRef.current = true;
-    setEditorContentFromMarkdown(initialContent);
-  }, [initialContent, setEditorContentFromMarkdown]);
-
-  useEffect(() => {
-    if (typeof document === "undefined") return undefined;
-
-    document.addEventListener("selectionchange", updateActiveFormatState);
-
-    return () => {
-      document.removeEventListener("selectionchange", updateActiveFormatState);
-    };
-  }, [updateActiveFormatState]);
-
-  useEffect(() => {
     const nextDraftIdentity = draftPreview
       ? `${draftPreview.variant}-${draftPreview.id}`
       : `mode-${mode}`;
 
     if (draftIdentityRef.current !== nextDraftIdentity) {
       draftIdentityRef.current = nextDraftIdentity;
-      const nextContent = mode === "edit" ? initialContent : "";
-      setContent(nextContent);
-      setEditorContentFromMarkdown(nextContent);
+      setContent(mode === "edit" ? initialContent : "");
       setAttachments([]);
       setAttachmentError("");
       setRecordingError("");
@@ -718,13 +479,7 @@ const ChatInput = ({
       }
       onTypingChange?.(false);
     }
-  }, [
-    draftPreview,
-    initialContent,
-    mode,
-    onTypingChange,
-    setEditorContentFromMarkdown,
-  ]);
+  }, [draftPreview, initialContent, mode, onTypingChange]);
 
   useEffect(() => {
     if (mode !== "send") {
@@ -819,7 +574,7 @@ const ChatInput = ({
         )}
 
         <div
-          className={`flex items-center gap-2 overflow-x-auto bg-slate-50/80 px-3 py-2 ${
+          className={`flex items-center justify-between gap-2 overflow-x-auto bg-slate-50/80 px-3 py-2 ${
             visibleDraftPreview ? "" : "rounded-t-2xl"
           }`}
         >
@@ -905,32 +660,25 @@ const ChatInput = ({
                 {isRecorderVisible ? "graphic_eq" : "mic"}
               </span>
             </button>
-
-            <button
-              type="button"
-              onMouseDown={(event) => {
-                event.preventDefault();
-                saveEditorSelection();
-              }}
-              onClick={() => {
-                setShowFormattingToolbar((value) => !value);
-                editorRef.current?.focus();
-              }}
-              disabled={isRecorderVisible || isVoiceSending}
-              className={`inline-flex h-8 w-8 items-center justify-center rounded-lg transition-colors ${
-                showFormattingToolbar
-                  ? "bg-blue-600 text-white shadow-sm"
-                  : "text-slate-600 hover:bg-blue-50 hover:text-blue-700"
-              } disabled:cursor-not-allowed disabled:text-slate-300`}
-              title="Định dạng tin nhắn"
-              aria-label="Định dạng tin nhắn"
-              aria-pressed={showFormattingToolbar}
-            >
-              <span className="material-symbols-outlined text-[20px]">
-                border_color
-              </span>
-            </button>
           </div>
+
+          <button
+            type="button"
+            onClick={() => setShowFormattingToolbar((value) => !value)}
+            disabled={isRecorderVisible || isVoiceSending}
+            className={`inline-flex h-8 items-center gap-2 rounded-lg px-2.5 text-sm font-semibold transition-colors ${
+              showFormattingToolbar
+                ? "bg-blue-600 text-white shadow-sm"
+                : "text-slate-700 hover:bg-blue-50 hover:text-blue-700"
+            } disabled:cursor-not-allowed disabled:text-slate-300`}
+            title="Định dạng tin nhắn"
+            aria-pressed={showFormattingToolbar}
+          >
+            <span className="material-symbols-outlined text-[20px]">
+              format_bold
+            </span>
+            <span className="hidden sm:inline">Định dạng tin nhắn</span>
+          </button>
         </div>
 
         {(attachments.length > 0 || attachmentError || recordingError) && (
@@ -1046,35 +794,16 @@ const ChatInput = ({
             </div>
           ) : (
             <>
-              <div
-                ref={editorRef}
-                contentEditable={!disabled}
-                suppressContentEditableWarning
-                role="textbox"
-                aria-multiline="true"
-                aria-disabled={disabled}
-                data-disabled={disabled ? "true" : "false"}
-                data-placeholder={placeholder}
-                onInput={syncContentFromEditor}
+              <textarea
+                ref={textareaRef}
+                value={content}
+                onChange={handleChange}
                 onKeyDown={handleKeyDown}
-                onKeyUp={() => {
-                  saveEditorSelection();
-                  updateActiveFormatState();
-                }}
-                onMouseUp={() => {
-                  saveEditorSelection();
-                  updateActiveFormatState();
-                }}
-                onFocus={() => {
-                  saveEditorSelection();
-                  updateActiveFormatState();
-                }}
-                onBlur={() => {
-                  saveEditorSelection();
-                  onTypingChange?.(false);
-                }}
-                onPaste={handlePaste}
-                className="chat-composer-editor w-full overflow-y-auto border-none bg-transparent px-4 py-3.5 pr-24 text-[15px] font-medium text-slate-900 outline-none focus:ring-0"
+                onBlur={() => onTypingChange?.(false)}
+                placeholder={placeholder}
+                disabled={disabled}
+                rows={1}
+                className="chat-composer-textarea w-full resize-none overflow-y-auto border-none bg-transparent px-4 py-3.5 pr-24 text-[15px] font-medium text-slate-900 outline-none placeholder:text-slate-500 focus:ring-0 disabled:text-slate-400"
               />
               <EmojiPickerButton
                 align="right"
@@ -1102,35 +831,26 @@ const ChatInput = ({
         </div>
 
         {showFormattingToolbar && (
-          <div className="chat-format-panel border-t border-slate-200 bg-white px-3 py-3 text-slate-700">
+          <div className="chat-format-panel border-t border-slate-800 bg-slate-950 px-3 py-3 text-slate-300">
+            <p className="mb-3 text-sm font-semibold text-slate-300">
+              Nhấn Ctrl + Shift + X để định dạng tin nhắn
+            </p>
             <div className="flex flex-wrap items-center gap-1">
               {formatToolbarItems.map((item, index) =>
                 item.divider ? (
                   <span
                     key={`format-divider-${index}`}
-                    className="mx-1 h-6 w-px bg-slate-200"
+                    className="mx-1 h-6 w-px bg-slate-600"
                   />
                 ) : (
                   <button
                     key={item.title}
                     type="button"
-                    onMouseDown={(event) => {
-                      event.preventDefault();
-                      saveEditorSelection();
-                    }}
                     onClick={() => handleFormat(item.action)}
-                    className={`inline-flex h-8 min-w-8 items-center justify-center rounded-md px-2 transition-colors ${
-                      item.action && activeFormats[item.action]
-                        ? "bg-blue-600 text-white shadow-sm"
-                        : "text-slate-700 hover:bg-blue-50 hover:text-blue-700"
-                    }`}
+                    disabled={item.disabled}
+                    className="inline-flex h-8 min-w-8 items-center justify-center rounded-md px-2 text-slate-200 transition-colors hover:bg-slate-800 hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
                     title={item.title}
                     aria-label={item.title}
-                    aria-pressed={
-                      item.action && item.command
-                        ? Boolean(activeFormats[item.action])
-                        : undefined
-                    }
                   >
                     {item.icon ? (
                       <span className="material-symbols-outlined text-[20px]">
@@ -1147,7 +867,7 @@ const ChatInput = ({
               <button
                 type="button"
                 onClick={onCancelDraft}
-                className="mt-3 text-sm font-semibold text-slate-600 transition-colors hover:text-blue-700"
+                className="mt-3 text-sm font-semibold text-slate-400 transition-colors hover:text-white"
               >
                 Hủy
               </button>

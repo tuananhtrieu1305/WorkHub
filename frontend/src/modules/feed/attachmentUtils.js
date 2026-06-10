@@ -1,4 +1,4 @@
-import { API_URL } from "../../config/api";
+const DEFAULT_API_URL = "http://localhost:5000";
 
 const IMAGE_EXTENSIONS = new Set(["avif", "gif", "jpeg", "jpg", "png", "webp"]);
 const VIDEO_EXTENSIONS = new Set(["avi", "m4v", "mkv", "mov", "mp4", "mpeg", "ogg", "webm"]);
@@ -9,7 +9,7 @@ const ARCHIVE_EXTENSIONS = new Set(["7z", "gz", "rar", "tar", "zip"]);
 const TEXT_EXTENSIONS = new Set(["log", "md", "rtf", "txt"]);
 
 export const getFeedApiUrl = () =>
-  API_URL;
+  import.meta.env?.VITE_NODE_API_URL || DEFAULT_API_URL;
 
 export const getFileExtension = (fileName = "") => {
   const normalized = String(fileName).trim().toLowerCase();

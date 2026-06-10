@@ -1,5 +1,4 @@
 import axiosClient from "./axiosClient";
-import { API_URL } from "../config/api";
 
 export const uploadDocument = async (folderId, formData) => {
   const { data } = await axiosClient.post(
@@ -21,7 +20,8 @@ export const deleteDocument = async (documentId) => {
 };
 
 export const getDocumentPreviewUrl = (documentId) => {
-  return `${API_URL}/api/documents/${documentId}/preview`;
+  const baseURL = import.meta.env.VITE_NODE_API_URL || "http://localhost:5000";
+  return `${baseURL}/api/documents/${documentId}/preview`;
 };
 
 export const shareDocument = async (documentId, payload) => {

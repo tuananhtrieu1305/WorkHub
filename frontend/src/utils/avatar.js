@@ -1,4 +1,7 @@
-import { API_URL, normalizeApiUrl } from "../config/api";
+const DEFAULT_API_URL = "http://localhost:5000";
+
+const getDefaultApiUrl = () =>
+  import.meta.env?.VITE_NODE_API_URL || DEFAULT_API_URL;
 
 const isHttpUrl = (value) => {
   try {
@@ -10,10 +13,10 @@ const isHttpUrl = (value) => {
 };
 
 const getApiUrl = (apiUrl) =>
-  normalizeApiUrl(typeof apiUrl === "string" && apiUrl.trim()
+  (typeof apiUrl === "string" && apiUrl.trim()
     ? apiUrl.trim()
-    : API_URL
-  );
+    : DEFAULT_API_URL
+  ).replace(/\/+$/, "");
 
 const getR2AvatarProxyPath = (avatar) => {
   try {
@@ -43,7 +46,7 @@ const getLocalAvatarPath = (avatar) => {
   return "";
 };
 
-export const getAvatarUrl = (avatar, apiUrl = API_URL) => {
+export const getAvatarUrl = (avatar, apiUrl = getDefaultApiUrl()) => {
   if (!avatar || typeof avatar !== "string") return null;
   const trimmedAvatar = avatar.trim();
   if (!trimmedAvatar) return null;

@@ -15,9 +15,10 @@ import {
   isAudioAttachment,
 } from "./chatMessagePreview";
 import { getAvatarUrl } from "../../utils/avatar";
-import { API_URL } from "../../config/api";
 import PollMessage, { PollDetailModal } from "./PollMessage";
 import ReminderMessage, { ReminderDetailModal } from "./ReminderMessage";
+
+const API_URL = import.meta.env.VITE_NODE_API_URL || "http://localhost:5000";
 
 const getFileUrl = (url) => {
   if (!url) return "#";
@@ -734,86 +735,45 @@ const MessageText = ({ content }) => {
   if (!content) return null;
 
   const lines = content.split(/\r?\n/);
-  const blocks = [];
-  let textLines = [];
-  let listLines = [];
-  let listType = "";
+  const isList =
+    lines.length > 1 && lines.every((line) => line.trim().startsWith("- "));
+  const isOrderedList =
+    lines.length > 1 && lines.every((line) => /^\d+\.\s/.test(line.trim()));
 
-  const flushText = () => {
-    if (!textLines.length) return;
-
-    const blockLines = textLines;
-    const blockIndex = blocks.length;
-    blocks.push(
-      <span
-        key={`text-${blockIndex}`}
-        className="whitespace-pre-wrap break-words"
-      >
-        {blockLines.map((line, index) => (
-          <span key={`${line}-${index}`}>
-            {index > 0 ? "\n" : ""}
-            {renderInlineMarkdown(line)}
-          </span>
-        ))}
-      </span>,
-    );
-    textLines = [];
-  };
-
-  const flushList = () => {
-    if (!listLines.length) return;
-
-    const ListTag = listType === "ordered" ? "ol" : "ul";
-    const listClassName =
-      listType === "ordered"
-        ? "list-decimal space-y-1 pl-4"
-        : "list-disc space-y-1 pl-4";
-    const markerPattern = listType === "ordered" ? /^\d+\.\s/ : /^-\s/;
-    const blockIndex = blocks.length;
-
-    blocks.push(
-      <ListTag key={`${listType}-${blockIndex}`} className={listClassName}>
-        {listLines.map((line, index) => (
+  if (isList) {
+    return (
+      <ul className="list-disc space-y-1 pl-4">
+        {lines.map((line, index) => (
           <li key={`${line}-${index}`}>
-            {renderInlineMarkdown(line.trim().replace(markerPattern, ""))}
+            {renderInlineMarkdown(line.trim().slice(2))}
           </li>
         ))}
-      </ListTag>,
+      </ul>
     );
-    listLines = [];
-    listType = "";
-  };
+  }
 
-  lines.forEach((line) => {
-    const trimmedLine = line.trim();
-    const nextListType = trimmedLine.startsWith("- ")
-      ? "bullet"
-      : /^\d+\.\s/.test(trimmedLine)
-        ? "ordered"
-        : "";
+  if (isOrderedList) {
+    return (
+      <ol className="list-decimal space-y-1 pl-4">
+        {lines.map((line, index) => (
+          <li key={`${line}-${index}`}>
+            {renderInlineMarkdown(line.trim().replace(/^\d+\.\s/, ""))}
+          </li>
+        ))}
+      </ol>
+    );
+  }
 
-    if (!nextListType) {
-      flushList();
-      textLines.push(line);
-      return;
-    }
-
-    flushText();
-
-    if (listType && listType !== nextListType) {
-      flushList();
-    }
-
-    listType = nextListType;
-    listLines.push(line);
-  });
-
-  flushText();
-  flushList();
-
-  if (blocks.length === 1) return blocks[0];
-
-  return <div className="space-y-1">{blocks}</div>;
+  return (
+    <span className="whitespace-pre-wrap break-words">
+      {lines.map((line, index) => (
+        <span key={`${line}-${index}`}>
+          {index > 0 ? "\n" : ""}
+          {renderInlineMarkdown(line)}
+        </span>
+      ))}
+    </span>
+  );
 };
 
 const MessageAttachments = ({

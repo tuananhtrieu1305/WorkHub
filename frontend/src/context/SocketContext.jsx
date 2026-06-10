@@ -1,8 +1,9 @@
-import { createContext, useContext, useEffect, useMemo } from "react";
+import { createContext, useContext, useEffect, useMemo, useCallback } from "react";
 import { io } from "socket.io-client";
 import { getAccessToken } from "../api/axiosClient";
-import { API_URL } from "../config/api";
 import { useAuth } from "./AuthContext";
+
+const API_URL = import.meta.env.VITE_NODE_API_URL || "http://localhost:5000";
 
 const SocketContext = createContext(null);
 
