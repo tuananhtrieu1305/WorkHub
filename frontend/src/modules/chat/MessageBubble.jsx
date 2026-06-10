@@ -7,6 +7,7 @@ import {
   formatMessageTimestamp,
   getHoverTimestampPlacement,
   isPollActivityEventType,
+  isReminderActivityEventType,
 } from "./messageTimeline";
 import {
   formatAudioDuration,
@@ -15,6 +16,7 @@ import {
 } from "./chatMessagePreview";
 import { getAvatarUrl } from "../../utils/avatar";
 import PollMessage, { PollDetailModal } from "./PollMessage";
+import ReminderMessage, { ReminderDetailModal } from "./ReminderMessage";
 
 const API_URL = import.meta.env.VITE_NODE_API_URL || "http://localhost:5000";
 
@@ -62,7 +64,12 @@ const getReplyParticipantName = (
   return participant?.fullName || fallback;
 };
 
-const getMenuItems = ({ isMine, isDeleted, isPinned, isPoll = false }) => {
+const getMenuItems = ({
+  isMine,
+  isDeleted,
+  isPinned,
+  isStructured = false,
+}) => {
   if (isDeleted) return [];
 
   const pinItem = {
@@ -80,7 +87,7 @@ const getMenuItems = ({ isMine, isDeleted, isPinned, isPoll = false }) => {
 
   return [
     { key: "copy", icon: "content_copy", label: "Sao chép tin nhắn" },
-    ...(!isPoll
+    ...(!isStructured
       ? [{ key: "edit", icon: "edit", label: "Chỉnh sửa tin nhắn" }]
       : []),
     pinItem,
@@ -1132,6 +1139,133 @@ const PollActivitySystemMessage = ({
   );
 };
 
+const ReminderActivitySystemMessage = ({
+  message,
+  currentUserId,
+  onRespondReminder,
+  onCancelReminder,
+  onEditReminder,
+  showReminderCard = false,
+}) => {
+  const [isDetailOpen, setIsDetailOpen] = useState(false);
+  const reminderMessage = message.metadata?.reminderMessage;
+  const actorName = getPinSystemActorName(message.sender, currentUserId);
+  const reminderTitle =
+    message.metadata?.reminderTitle ||
+    reminderMessage?.reminder?.title ||
+    reminderMessage?.content ||
+    "Nhắc hẹn";
+  const reminderEventType = message.metadata?.eventType;
+  const isCreated = reminderEventType === "reminder_created";
+  const isDue = reminderEventType === "reminder_due";
+  const isCancelled = reminderEventType === "reminder_cancelled";
+  const isResponse = reminderEventType === "reminder_response";
+  const isDeclinedResponse =
+    message.metadata?.reminderResponseStatus === "declined";
+  const noticeIcon = isCancelled
+    ? "event_busy"
+    : isDue
+      ? "alarm"
+      : isResponse
+        ? isDeclinedResponse
+          ? "event_busy"
+          : "event_available"
+        : "alarm_add";
+
+  const renderNoticeText = () => {
+    if (isDue) {
+      return (
+        <>
+          Đến giờ nhắc hẹn: <strong>{reminderTitle}</strong>
+        </>
+      );
+    }
+
+    if (isCancelled) {
+      return (
+        <>
+          <strong>{actorName || "Người dùng"}</strong> đã hủy nhắc hẹn:{" "}
+          <strong>{reminderTitle}</strong>
+        </>
+      );
+    }
+
+    if (isCreated) {
+      return (
+        <>
+          <strong>{actorName || "Người dùng"}</strong> đã tạo nhắc hẹn mới:{" "}
+          <strong>{reminderTitle}</strong>
+        </>
+      );
+    }
+
+    if (isResponse) {
+      return (
+        <>
+          <strong>{actorName || "Người dùng"}</strong> xác nhận:{" "}
+          {isDeclinedResponse ? "không tham gia" : "tham gia"}{" "}
+          <strong>{reminderTitle}</strong>.
+        </>
+      );
+    }
+
+    return <span>{message.content}</span>;
+  };
+
+  if (!reminderMessage?.reminder) {
+    return (
+      <div className="chat-reminder-activity my-3 flex justify-center px-3">
+        <div className="chat-reminder-activity-notice">
+          <span className="material-symbols-outlined" aria-hidden="true">
+            {noticeIcon}
+          </span>
+          <span>{message.content}</span>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="chat-reminder-activity my-3 flex flex-col items-center gap-3 px-3">
+      <div className="chat-reminder-activity-notice">
+        <span className="material-symbols-outlined" aria-hidden="true">
+          {noticeIcon}
+        </span>
+        <span className="min-w-0 truncate">{renderNoticeText()}</span>
+        <button
+          type="button"
+          onClick={() => setIsDetailOpen(true)}
+          className="chat-reminder-activity-detail-button"
+        >
+          Xem
+        </button>
+      </div>
+
+      {showReminderCard && (
+        <div className="chat-message-reminder-surface chat-reminder-activity-surface">
+          <ReminderMessage
+            message={reminderMessage}
+            onRespond={onRespondReminder}
+            onCancelReminder={onCancelReminder}
+            onEditReminder={onEditReminder}
+          />
+        </div>
+      )}
+
+      {isDetailOpen && (
+        <ReminderDetailModal
+          message={reminderMessage}
+          reminder={reminderMessage.reminder}
+          onRespond={onRespondReminder}
+          onCancelReminder={onCancelReminder}
+          onEditReminder={onEditReminder}
+          onClose={() => setIsDetailOpen(false)}
+        />
+      )}
+    </div>
+  );
+};
+
 const MessageBubble = ({
   message,
   showAvatar = true,
@@ -1141,6 +1275,7 @@ const MessageBubble = ({
   hasTightNext = false,
   isHighlighted = false,
   showPollActivityCard = false,
+  showReminderActivityCard = false,
   onReply,
   onEdit,
   onDelete,
@@ -1151,6 +1286,9 @@ const MessageBubble = ({
   onAddPollOption,
   onSharePoll,
   onClosePoll,
+  onRespondReminder,
+  onCancelReminder,
+  onEditReminder,
   onJumpToMessage,
   onOpenPinnedList,
 }) => {
@@ -1175,8 +1313,11 @@ const MessageBubble = ({
   const reactionGroups = [...groupReactions(message.reactions || []).values()];
   const isDeleted = Boolean(message.deletedAt);
   const isPollMessage = !isDeleted && message.type === "poll" && message.poll;
-  const messageAttachments = isPollMessage ? [] : message.attachments || [];
-  const hasMessageContent = !isPollMessage && Boolean(message.content);
+  const isReminderMessage =
+    !isDeleted && message.type === "reminder" && message.reminder;
+  const isStructuredMessage = isPollMessage || isReminderMessage;
+  const messageAttachments = isStructuredMessage ? [] : message.attachments || [];
+  const hasMessageContent = !isStructuredMessage && Boolean(message.content);
   const hasMessageAttachments = messageAttachments.length > 0;
   const hasMixedContent = hasMessageContent && hasMessageAttachments;
   const isAttachmentOnlyMessage =
@@ -1185,7 +1326,7 @@ const MessageBubble = ({
     isMine,
     isDeleted,
     isPinned: message.isPinned,
-    isPoll: isPollMessage,
+    isStructured: isStructuredMessage,
   });
   const deletedById = getComparableId(message.deletedBy || message.sender?._id);
   const deletedByName =
@@ -1212,11 +1353,15 @@ const MessageBubble = ({
     .filter(Boolean)
     .join(" ");
   const getMessageSurfaceClassName = (mine) => {
-    if (isPollMessage) {
+    if (isPollMessage || isReminderMessage) {
       return [
-        "chat-message-poll-surface",
+        isPollMessage ? "chat-message-poll-surface" : "chat-message-reminder-surface",
         mine ? "ml-auto" : "",
-        isHighlighted ? "chat-message-poll-surface-highlighted" : "",
+        isHighlighted
+          ? isPollMessage
+            ? "chat-message-poll-surface-highlighted"
+            : "chat-message-reminder-surface-highlighted"
+          : "",
       ]
         .filter(Boolean)
         .join(" ");
@@ -1402,6 +1547,19 @@ const MessageBubble = ({
           onSharePoll={onSharePoll}
           onClosePoll={onClosePoll}
           showPollCard={showPollActivityCard}
+        />
+      );
+    }
+
+    if (isReminderActivityEventType(systemEventType)) {
+      return (
+        <ReminderActivitySystemMessage
+          message={message}
+          currentUserId={currentUserId}
+          onRespondReminder={onRespondReminder}
+          onCancelReminder={onCancelReminder}
+          onEditReminder={onEditReminder}
+          showReminderCard={showReminderActivityCard}
         />
       );
     }
@@ -1634,6 +1792,54 @@ const MessageBubble = ({
                   onTogglePin={onTogglePin}
                   onSharePoll={onSharePoll}
                   onClosePoll={onClosePoll}
+                />
+              </div>
+              {renderActions()}
+              {renderReactions()}
+            </div>
+          </div>
+        </div>
+        {renderHoverTimestamp()}
+      </>
+    );
+  }
+
+  if (isReminderMessage) {
+    return (
+      <>
+        <div
+          className={`chat-message-group chat-reminder-message-group my-3 flex justify-center px-3 group ${
+            isTightGroup ? "chat-message-group-tight" : ""
+          }`}
+          onPointerLeave={() => {
+            hideHoverTime();
+          }}
+        >
+          <div className="chat-reminder-message-frame flex w-full flex-col items-center gap-1">
+            {shouldShowSenderHeader && (
+              <div className="chat-reminder-message-author">
+                <span>{isMine ? "Bạn" : senderName}</span>
+                {renderPinnedLabel()}
+              </div>
+            )}
+            <div
+              ref={stackRef}
+              className={`chat-message-stack relative ${
+                reactionGroups.length ? "pb-4" : ""
+              }`}
+            >
+              <div
+                ref={bubbleRef}
+                className={getMessageSurfaceClassName(false)}
+                onPointerLeave={hideHoverTime}
+                onPointerMove={updateHoverTimePosition}
+              >
+                {renderPinMarker()}
+                <ReminderMessage
+                  message={message}
+                  onRespond={onRespondReminder}
+                  onCancelReminder={onCancelReminder}
+                  onEditReminder={onEditReminder}
                 />
               </div>
               {renderActions()}

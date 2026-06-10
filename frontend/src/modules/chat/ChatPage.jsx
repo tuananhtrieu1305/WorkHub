@@ -3,6 +3,7 @@ import { App } from "antd";
 import { useNavigate, useParams } from "react-router-dom";
 import {
   addPollOption as addConversationPollOption,
+  cancelReminder as cancelConversationReminder,
   addMessageReaction,
   closePoll as closeConversationPoll,
   deleteMessage as deleteConversationMessage,
@@ -12,6 +13,7 @@ import {
   getPinnedMessages,
   markConversationAsRead as markConversationReadRequest,
   removeMessageReaction,
+  respondReminder as respondConversationReminder,
   sendMessage as sendConversationMessage,
   sharePoll as shareConversationPoll,
   uploadConversationAttachment,
@@ -891,6 +893,53 @@ const ChatPage = () => {
     ]
   );
 
+  const handleCreateReminder = useCallback(
+    async (reminder) => {
+      if (!selectedConversationId) return;
+
+      try {
+        const createReminderResult = await sendConversationMessage(
+          selectedConversationId,
+          {
+            type: "reminder",
+            content: reminder.title,
+            reminder,
+            metadata: {},
+          }
+        );
+        const message = createReminderResult.message || createReminderResult;
+        const systemMessage = createReminderResult.systemMessage || null;
+
+        upsertSelectedMessages(message, systemMessage);
+        applySelectedPinnedMessagesUpdate((prev) =>
+          upsertPinnedMessage(prev, message)
+        );
+        setConversations((prev) =>
+          updateConversationPreview(prev, systemMessage || message, {
+            currentUserId: user?._id || user?.id,
+            selectedConversationId,
+          })
+        );
+        setReplyToMessage(null);
+        setEditingMessage(null);
+        handleTypingChange(false);
+      } catch (err) {
+        console.error("Failed to create reminder:", err);
+        toast.error("Không thể tạo nhắc hẹn");
+        throw err;
+      }
+    },
+    [
+      handleTypingChange,
+      applySelectedPinnedMessagesUpdate,
+      selectedConversationId,
+      toast,
+      upsertSelectedMessages,
+      user?._id,
+      user?.id,
+    ]
+  );
+
   const handleReplyMessage = useCallback((message) => {
     setEditingMessage(null);
     setReplyToMessage(message);
@@ -1299,6 +1348,144 @@ const ChatPage = () => {
     ]
   );
 
+  const handleRespondReminder = useCallback(
+    async (message, status) => {
+      if (!selectedConversationId || !message?.id) return;
+
+      try {
+        const responseResult = await respondConversationReminder(
+          selectedConversationId,
+          message.id,
+          status
+        );
+        const updatedMessage = responseResult.message || responseResult;
+        const systemMessage = responseResult.systemMessage || null;
+
+        upsertSelectedMessages(updatedMessage, systemMessage);
+        applySelectedPinnedMessagesUpdate((prev) =>
+          upsertPinnedMessage(prev, updatedMessage)
+        );
+        if (responseResult.conversation) {
+          setConversations((prev) =>
+            mergeConversationUpdate(prev, responseResult.conversation)
+          );
+        } else {
+          setConversations((prev) =>
+            updateConversationPreview(prev, systemMessage || updatedMessage, {
+              currentUserId: user?._id || user?.id,
+              selectedConversationId,
+            })
+          );
+        }
+      } catch (err) {
+        console.error("Failed to update reminder response:", err);
+        toast.error("Không thể cập nhật nhắc hẹn");
+        throw err;
+      }
+    },
+    [
+      applySelectedPinnedMessagesUpdate,
+      selectedConversationId,
+      toast,
+      upsertSelectedMessages,
+      user?._id,
+      user?.id,
+    ]
+  );
+
+  const handleEditReminder = useCallback(
+    async (message, reminder) => {
+      if (!selectedConversationId || !message?.id) return;
+
+      try {
+        const updateResult = await updateConversationMessage(
+          selectedConversationId,
+          message.id,
+          {
+            content: reminder.title,
+            reminder,
+          }
+        );
+        const updatedMessage = updateResult.message || updateResult;
+
+        upsertSelectedMessages(updatedMessage);
+        applySelectedPinnedMessagesUpdate((prev) =>
+          upsertPinnedMessage(prev, updatedMessage)
+        );
+        const lastMessageId = toComparableId(
+          selectedConversation?.lastMessage?.id ||
+            selectedConversation?.lastMessage?.messageId,
+        );
+        if (lastMessageId === toComparableId(message.id)) {
+          setConversations((prev) =>
+            updateConversationPreview(prev, updatedMessage, {
+              currentUserId: user?._id || user?.id,
+              selectedConversationId,
+            })
+          );
+        }
+      } catch (err) {
+        console.error("Failed to edit reminder:", err);
+        toast.error("Không thể chỉnh sửa nhắc hẹn");
+        throw err;
+      }
+    },
+    [
+      applySelectedPinnedMessagesUpdate,
+      selectedConversationId,
+      selectedConversation?.lastMessage?.id,
+      selectedConversation?.lastMessage?.messageId,
+      toast,
+      upsertSelectedMessages,
+      user?._id,
+      user?.id,
+    ]
+  );
+
+  const handleCancelReminder = useCallback(
+    async (message) => {
+      if (!selectedConversationId || !message?.id) return;
+
+      try {
+        const cancelResult = await cancelConversationReminder(
+          selectedConversationId,
+          message.id
+        );
+        const updatedMessage = cancelResult.message || message;
+        const systemMessage = cancelResult.systemMessage || null;
+
+        upsertSelectedMessages(updatedMessage, systemMessage);
+        applySelectedPinnedMessagesUpdate((prev) =>
+          upsertPinnedMessage(prev, updatedMessage)
+        );
+        if (cancelResult.conversation) {
+          setConversations((prev) =>
+            mergeConversationUpdate(prev, cancelResult.conversation)
+          );
+        } else {
+          setConversations((prev) =>
+            updateConversationPreview(prev, systemMessage || updatedMessage, {
+              currentUserId: user?._id || user?.id,
+              selectedConversationId,
+            })
+          );
+        }
+      } catch (err) {
+        console.error("Failed to cancel reminder:", err);
+        toast.error("Không thể hủy nhắc hẹn");
+        throw err;
+      }
+    },
+    [
+      applySelectedPinnedMessagesUpdate,
+      selectedConversationId,
+      toast,
+      upsertSelectedMessages,
+      user?._id,
+      user?.id,
+    ]
+  );
+
   const handleCreateConversation = async (newConv) => {
     const newConversationId = getConversationId(newConv);
     let nextConversation = newConv;
@@ -1380,6 +1567,7 @@ const ChatPage = () => {
           onSendMessage={handleSendMessage}
           onUploadAttachment={handleUploadAttachment}
           onCreatePoll={handleCreatePoll}
+          onCreateReminder={handleCreateReminder}
           onTypingChange={handleTypingChange}
           onReplyMessage={handleReplyMessage}
           onEditMessage={handleEditMessage}
@@ -1392,6 +1580,9 @@ const ChatPage = () => {
           onAddPollOption={handleAddPollOption}
           onSharePoll={handleSharePoll}
           onClosePoll={handleClosePoll}
+          onRespondReminder={handleRespondReminder}
+          onCancelReminder={handleCancelReminder}
+          onEditReminder={handleEditReminder}
           onCancelDraft={handleCancelDraft}
           onStartCall={startCall}
           onBack={handleBackToList}

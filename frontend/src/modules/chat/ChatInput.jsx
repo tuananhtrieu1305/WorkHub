@@ -3,6 +3,7 @@ import { EmojiPickerButton } from "../../components/emoji";
 import { applyComposerFormat } from "./chatComposerUtils";
 import { formatAudioDuration } from "./chatMessagePreview";
 import PollCreateModal from "./PollCreateModal";
+import ReminderCreateModal from "./ReminderCreateModal";
 
 const secondaryComposerActions = [
   { icon: "contact_page", title: "Gửi danh thiếp" },
@@ -68,6 +69,7 @@ const ChatInput = ({
   onSend,
   onUploadAttachment,
   onCreatePoll,
+  onCreateReminder,
   onTypingChange,
   onCancelDraft,
   initialContent = "",
@@ -80,6 +82,7 @@ const ChatInput = ({
   const [showFormattingToolbar, setShowFormattingToolbar] = useState(false);
   const [attachments, setAttachments] = useState([]);
   const [isPollModalOpen, setIsPollModalOpen] = useState(false);
+  const [isReminderModalOpen, setIsReminderModalOpen] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const [isVoiceSending, setIsVoiceSending] = useState(false);
   const [isPreparingRecording, setIsPreparingRecording] = useState(false);
@@ -439,6 +442,14 @@ const ChatInput = ({
     !isPreparingRecording &&
     !isRecording &&
     !isVoiceSending;
+  const canCreateReminder =
+    Boolean(onCreateReminder) &&
+    mode === "send" &&
+    !disabled &&
+    !isUploading &&
+    !isPreparingRecording &&
+    !isRecording &&
+    !isVoiceSending;
   const canSend =
     hasComposerContent && !composerBusy && !isRecording;
   const isRecorderVisible = isPreparingRecording || isRecording;
@@ -473,6 +484,7 @@ const ChatInput = ({
   useEffect(() => {
     if (mode !== "send") {
       setIsPollModalOpen(false);
+      setIsReminderModalOpen(false);
     }
   }, [mode]);
 
@@ -612,6 +624,19 @@ const ChatInput = ({
             >
               <span className="material-symbols-outlined text-[20px]">
                 bar_chart
+              </span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setIsReminderModalOpen(true)}
+              disabled={!canCreateReminder}
+              className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-slate-600 transition-colors hover:bg-blue-50 hover:text-blue-700 disabled:cursor-not-allowed disabled:text-slate-300"
+              title="Tạo nhắc hẹn"
+              aria-label="Tạo nhắc hẹn"
+            >
+              <span className="material-symbols-outlined text-[20px]">
+                alarm
               </span>
             </button>
 
@@ -856,6 +881,12 @@ const ChatInput = ({
       onClose={() => setIsPollModalOpen(false)}
       onCreatePoll={onCreatePoll}
       disabled={!canCreatePoll}
+    />
+    <ReminderCreateModal
+      isOpen={isReminderModalOpen}
+      onClose={() => setIsReminderModalOpen(false)}
+      onCreateReminder={onCreateReminder}
+      disabled={!canCreateReminder}
     />
     </>
   );

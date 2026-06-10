@@ -6,6 +6,37 @@ import {
   markUserConnected,
   markUserDisconnected,
 } from "../services/presenceService.js";
+import {
+  getConversationParticipantUserRoomName,
+  getConversationRoomName,
+} from "../utils/conversationRealtime.js";
+
+const toComparableId = (value) => {
+  if (value == null) return "";
+  return String(value._id || value.id || value);
+};
+
+const joinConversationRooms = (socket, conversationId) => {
+  const targetConversationId = toComparableId(conversationId);
+  const currentUserId = toComparableId(socket.user?._id);
+  if (!targetConversationId || !currentUserId) return;
+
+  socket.join(getConversationRoomName(targetConversationId));
+  socket.join(
+    getConversationParticipantUserRoomName(targetConversationId, currentUserId),
+  );
+};
+
+const leaveConversationRooms = (socket, conversationId) => {
+  const targetConversationId = toComparableId(conversationId);
+  const currentUserId = toComparableId(socket.user?._id);
+  if (!targetConversationId || !currentUserId) return;
+
+  socket.leave(getConversationRoomName(targetConversationId));
+  socket.leave(
+    getConversationParticipantUserRoomName(targetConversationId, currentUserId),
+  );
+};
 
 const emitPresenceChanged = async (io, userId) => {
   const freshUser = await User.findById(userId).select(
@@ -43,6 +74,7 @@ export const setupSocket = (io) => {
         return next(new Error("User not found"));
       }
       socket.user = user;
+      socket.data.userId = toComparableId(user._id);
       next();
     } catch (error) {
       next(new Error("Invalid token"));
@@ -60,9 +92,7 @@ export const setupSocket = (io) => {
         "participants.userId": socket.user._id,
       }).select("_id");
 
-      conversations.forEach((conv) => {
-        socket.join(`conversation:${conv._id}`);
-      });
+      conversations.forEach((conv) => joinConversationRooms(socket, conv._id));
 
       if (becameOnline) {
         await emitPresenceChanged(io, socket.user._id);
@@ -72,13 +102,27 @@ export const setupSocket = (io) => {
     }
 
     // Join a specific conversation room (when user opens a conversation)
-    socket.on("join_conversation", (conversationId) => {
-      socket.join(`conversation:${conversationId}`);
+    socket.on("join_conversation", async (conversationId) => {
+      try {
+        const conversation = await Conversation.findById(conversationId).select(
+          "participants",
+        );
+        if (!conversation) return;
+
+        const isMember = conversation.participants.some(
+          (p) => p.userId.toString() === socket.user._id.toString()
+        );
+        if (!isMember) return;
+
+        joinConversationRooms(socket, conversation._id);
+      } catch (error) {
+        console.error("Join conversation error:", error.message);
+      }
     });
 
     // Leave a specific conversation room
     socket.on("leave_conversation", (conversationId) => {
-      socket.leave(`conversation:${conversationId}`);
+      leaveConversationRooms(socket, conversationId);
     });
 
     // #65 - Typing status: báo hiệu đang gõ / ngừng gõ

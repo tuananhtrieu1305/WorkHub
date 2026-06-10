@@ -3,6 +3,7 @@ import Message from "../models/Message.js";
 import User from "../models/User.js";
 import { getPresenceFields } from "../services/presenceService.js";
 import {
+  getConversationParticipantUserRoomName,
   getConversationRealtimeRoomNames,
   joinParticipantSocketsToConversationRoom,
 } from "../utils/conversationRealtime.js";
@@ -25,6 +26,17 @@ import {
   normalizePollPayload,
   sortPollOptionsByVotesAndText,
 } from "../utils/pollPolicy.js";
+import {
+  REMINDER_RESPONSE_ACCEPTED,
+  REMINDER_RESPONSE_DECLINED,
+  REMINDER_STATUS_ACTIVE,
+  REMINDER_STATUS_CANCELLED,
+  applyReminderResponse,
+  cancelReminder,
+  getCurrentUserReminderStatus,
+  markReminderTriggered,
+  normalizeReminderPayload,
+} from "../utils/reminderPolicy.js";
 import { contentDisposition } from "../utils/fileResponse.js";
 
 // Helper: get io instance
@@ -33,7 +45,14 @@ export const setIo = (io) => {
   ioInstance = io;
 };
 
-const USER_MESSAGE_TYPES = new Set(["text", "image", "file", "audio", "poll"]);
+const USER_MESSAGE_TYPES = new Set([
+  "text",
+  "image",
+  "file",
+  "audio",
+  "poll",
+  "reminder",
+]);
 const MAX_MESSAGE_ATTACHMENTS = 10;
 const MAX_VOICE_DURATION_SECONDS = 5 * 60;
 const VOICE_ATTACHMENT_FILE_SIZE_LIMIT = 20 * 1024 * 1024;
@@ -48,6 +67,16 @@ const POLL_ACTIVITY_EVENT_TYPES = new Set([
   POLL_CREATED_EVENT_TYPE,
   POLL_SHARED_EVENT_TYPE,
   POLL_CLOSED_EVENT_TYPE,
+]);
+const REMINDER_CREATED_EVENT_TYPE = "reminder_created";
+const REMINDER_DUE_EVENT_TYPE = "reminder_due";
+const REMINDER_CANCELLED_EVENT_TYPE = "reminder_cancelled";
+const REMINDER_RESPONSE_EVENT_TYPE = "reminder_response";
+const REMINDER_ACTIVITY_EVENT_TYPES = new Set([
+  REMINDER_CREATED_EVENT_TYPE,
+  REMINDER_DUE_EVENT_TYPE,
+  REMINDER_CANCELLED_EVENT_TYPE,
+  REMINDER_RESPONSE_EVENT_TYPE,
 ]);
 const ALLOWED_AUDIO_MIMES = new Set([
   "audio/aac",
@@ -143,6 +172,10 @@ const getMessagePreviewContent = ({ type, content, attachments = [] } = {}) => {
   const trimmedContent = typeof content === "string" ? content.trim() : "";
   if (type === "poll") {
     return trimmedContent ? `Bình chọn: ${trimmedContent}` : "Bình chọn";
+  }
+
+  if (type === "reminder") {
+    return trimmedContent ? `Nhắc hẹn: ${trimmedContent}` : "Nhắc hẹn";
   }
 
   if (trimmedContent) return trimmedContent;
@@ -288,6 +321,16 @@ const formatPollVoter = (user) =>
       }
     : null;
 
+const formatReminderParticipant = (user) =>
+  user
+    ? {
+        _id: user._id,
+        id: user._id,
+        fullName: user.fullName,
+        avatar: user.avatar,
+      }
+    : null;
+
 const collectPollVoterIds = (poll) => {
   const voterIds = new Set();
   (poll?.options || []).forEach((option) => {
@@ -297,6 +340,17 @@ const collectPollVoterIds = (poll) => {
     });
   });
   return [...voterIds];
+};
+
+const collectReminderUserIds = (reminder) => {
+  const userIds = new Set();
+  (reminder?.responses || []).forEach((response) => {
+    const userId = toComparableId(response.userId);
+    if (userId) userIds.add(userId);
+  });
+  const cancelledBy = toComparableId(reminder?.cancelledBy);
+  if (cancelledBy) userIds.add(cancelledBy);
+  return [...userIds];
 };
 
 const getUserFromFormatContext = async (
@@ -342,11 +396,13 @@ const collectMessageFormatReferences = (message, references) => {
   addMessageId(message.replyTo);
 
   collectPollVoterIds(message.poll).forEach(addUserId);
+  collectReminderUserIds(message.reminder).forEach(addUserId);
 
   const metadata = getSystemMessageMetadata(message);
   if (
     message.type === "system" &&
-    POLL_ACTIVITY_EVENT_TYPES.has(metadata.eventType)
+    (POLL_ACTIVITY_EVENT_TYPES.has(metadata.eventType) ||
+      REMINDER_ACTIVITY_EVENT_TYPES.has(metadata.eventType))
   ) {
     addMessageId(metadata.targetMessageId);
   }
@@ -472,6 +528,71 @@ const formatPoll = async (
   };
 };
 
+const formatReminder = async (
+  reminder,
+  { currentUserId = null, context = null } = {},
+) => {
+  if (!reminder) return null;
+
+  const plain = reminder.toObject?.() || reminder;
+  const responseUserIds = collectReminderUserIds(plain);
+  const missingUserIds = context?.userById
+    ? responseUserIds.filter((userId) => !context.userById.has(userId))
+    : responseUserIds;
+  const users =
+    missingUserIds.length > 0
+      ? await User.find({ _id: { $in: missingUserIds } }).select(
+          "_id fullName avatar",
+        )
+      : [];
+  const userById = new Map(context?.userById || []);
+  users.forEach((user) => {
+    userById.set(toComparableId(user._id || user.id), user);
+  });
+
+  const responses = (plain.responses || []).map((response) => {
+    const user = formatReminderParticipant(
+      userById.get(toComparableId(response.userId)),
+    );
+
+    return {
+      userId: response.userId,
+      status: response.status,
+      respondedAt: response.respondedAt || null,
+      user,
+    };
+  });
+  const accepted = responses.filter(
+    (response) => response.status === REMINDER_RESPONSE_ACCEPTED,
+  );
+  const declined = responses.filter(
+    (response) => response.status === REMINDER_RESPONSE_DECLINED,
+  );
+  const cancelledBy = formatReminderParticipant(
+    userById.get(toComparableId(plain.cancelledBy)),
+  );
+
+  return {
+    title: plain.title || "",
+    scheduledAt: plain.scheduledAt || null,
+    nextTriggerAt: plain.nextTriggerAt || null,
+    recurrence: plain.recurrence || "none",
+    status: plain.status || REMINDER_STATUS_ACTIVE,
+    isCancelled: plain.status === REMINDER_STATUS_CANCELLED,
+    isCompleted: plain.status === "completed",
+    responses,
+    accepted,
+    declined,
+    acceptedCount: accepted.length,
+    declinedCount: declined.length,
+    currentUserStatus: getCurrentUserReminderStatus(plain, currentUserId),
+    triggerCount: Number(plain.triggerCount || 0),
+    lastTriggeredAt: plain.lastTriggeredAt || null,
+    cancelledAt: plain.cancelledAt || null,
+    cancelledBy,
+  };
+};
+
 const getSystemMessageMetadata = (message) => {
   const metadata = message.metadata?.toObject?.() || message.metadata || {};
   return metadata && typeof metadata === "object" ? metadata : {};
@@ -527,25 +648,87 @@ const formatPollActivityTargetMessage = async (
   };
 };
 
+const formatReminderActivityTargetMessage = async (
+  metadata,
+  { currentUserId = null, context = null } = {},
+) => {
+  const targetMessageId = metadata?.targetMessageId;
+  if (!targetMessageId) return null;
+
+  const reminderMessage = await getMessageFromFormatContext(targetMessageId, {
+    context,
+  });
+  if (
+    !reminderMessage ||
+    reminderMessage.deletedAt ||
+    reminderMessage.type !== "reminder" ||
+    !reminderMessage.reminder
+  ) {
+    return null;
+  }
+
+  const [sender, pinnedBy, reminderData] = await Promise.all([
+    getUserFromFormatContext(reminderMessage.senderId, { context }),
+    reminderMessage.pinnedBy
+      ? getUserFromFormatContext(reminderMessage.pinnedBy, { context })
+      : null,
+    formatReminder(reminderMessage.reminder, { currentUserId, context }),
+  ]);
+
+  return {
+    id: reminderMessage._id,
+    conversationId: reminderMessage.conversationId,
+    sender: formatConversationUser(sender),
+    type: reminderMessage.type,
+    content: reminderMessage.content,
+    metadata: reminderMessage.metadata || {},
+    poll: null,
+    reminder: reminderData,
+    attachments: [],
+    mentions: reminderMessage.mentions || [],
+    replyTo: null,
+    reactions: reminderMessage.reactions || [],
+    editedAt: reminderMessage.editedAt,
+    isPinned: Boolean(reminderMessage.isPinned),
+    pinnedAt: reminderMessage.pinnedAt,
+    pinnedBy: formatConversationUser(pinnedBy),
+    deletedAt: null,
+    deletedBy: null,
+    createdAt: reminderMessage.createdAt,
+    updatedAt: reminderMessage.updatedAt,
+  };
+};
+
 const formatMessageMetadata = async (
   message,
   { currentUserId = null, context = null } = {},
 ) => {
   const metadata = getSystemMessageMetadata(message);
-  if (
-    message.type !== "system" ||
-    !POLL_ACTIVITY_EVENT_TYPES.has(metadata.eventType)
-  ) {
+  if (message.type !== "system") {
     return metadata;
   }
 
-  return {
-    ...metadata,
-    pollMessage: await formatPollActivityTargetMessage(metadata, {
-      currentUserId,
-      context,
-    }),
-  };
+  if (POLL_ACTIVITY_EVENT_TYPES.has(metadata.eventType)) {
+    return {
+      ...metadata,
+      pollMessage: await formatPollActivityTargetMessage(metadata, {
+        currentUserId,
+        context,
+      }),
+    };
+  }
+
+  if (REMINDER_ACTIVITY_EVENT_TYPES.has(metadata.eventType)) {
+    return {
+      ...metadata,
+      reminderMessage: await formatReminderActivityTargetMessage(metadata, {
+        currentUserId,
+        context,
+      }),
+    };
+  }
+
+  return metadata;
 };
 
 const formatReplyMessage = async (
@@ -581,6 +764,9 @@ const formatReplyMessage = async (
     poll: isDeleted
       ? null
       : await formatPoll(replyMessage.poll, { currentUserId, context }),
+    reminder: isDeleted
+      ? null
+      : await formatReminder(replyMessage.reminder, { currentUserId, context }),
     attachments: isDeleted
       ? []
       : serializeConversationAttachments(
@@ -615,6 +801,9 @@ const formatMessageFromContext = async (
   const poll = isDeleted
     ? null
     : await formatPoll(message.poll, { currentUserId, context });
+  const reminder = isDeleted
+    ? null
+    : await formatReminder(message.reminder, { currentUserId, context });
   const replyTo = await formatReplyMessage(message.replyTo, {
     currentUserId,
     context,
@@ -628,6 +817,7 @@ const formatMessageFromContext = async (
     content: isDeleted ? "" : message.content,
     metadata,
     poll,
+    reminder,
     attachments: isDeleted
       ? []
       : serializeConversationAttachments(
@@ -673,16 +863,24 @@ const emitPersonalizedMessageUpdated = async (
   await Promise.all(
     (conversation.participants || []).map(async (participant) => {
       const participantUserId = participant.userId;
+      const participantUserRoom = `user:${toComparableId(participantUserId)}`;
+      const conversationParticipantRoom =
+        getConversationParticipantUserRoomName(
+          conversation._id || conversation.id,
+          participantUserId,
+        );
       const [messageData, conversationData] = await Promise.all([
         formatMessage(message, { currentUserId: participantUserId }),
         formatConversation(conversation, { currentUserId: participantUserId }),
       ]);
 
-      ioInstance.to(`user:${participantUserId}`).emit("message_updated", {
-        ...messageData,
-        ...extraPayload,
-        conversation: conversationData,
-      });
+      ioInstance
+        .to([participantUserRoom, conversationParticipantRoom].filter(Boolean))
+        .emit("message_updated", {
+          ...messageData,
+          ...extraPayload,
+          conversation: conversationData,
+        });
     }),
   );
 };
@@ -697,16 +895,24 @@ const emitPersonalizedNewMessage = async (
   await Promise.all(
     (conversation.participants || []).map(async (participant) => {
       const participantUserId = participant.userId;
+      const participantUserRoom = `user:${toComparableId(participantUserId)}`;
+      const conversationParticipantRoom =
+        getConversationParticipantUserRoomName(
+          conversation._id || conversation.id,
+          participantUserId,
+        );
       const [messageData, conversationData] = await Promise.all([
         formatMessage(message, { currentUserId: participantUserId }),
         formatConversation(conversation, { currentUserId: participantUserId }),
       ]);
 
-      ioInstance.to(`user:${participantUserId}`).emit("new_message", {
-        ...messageData,
-        ...extraPayload,
-        conversation: conversationData,
-      });
+      ioInstance
+        .to([participantUserRoom, conversationParticipantRoom].filter(Boolean))
+        .emit("new_message", {
+          ...messageData,
+          ...extraPayload,
+          conversation: conversationData,
+        });
     }),
   );
 };
@@ -1492,14 +1698,23 @@ export const sendMessage = async (req, res) => {
         .json({ message: "You are not a participant of this conversation" });
     }
 
-    const { type, content, attachments, mentions, replyTo, metadata, poll } =
-      req.body;
+    const {
+      type,
+      content,
+      attachments,
+      mentions,
+      replyTo,
+      metadata,
+      poll,
+      reminder,
+    } = req.body;
     const messageType = type || "text";
     const normalizedContent =
       typeof content === "string" ? content.trim() : "";
     const normalizedAttachments = normalizeMessageAttachments(attachments);
     let normalizedPoll = null;
     let pinPollOnCreate = false;
+    let normalizedReminder = null;
 
     if (!USER_MESSAGE_TYPES.has(messageType)) {
       return res.status(400).json({ message: "Invalid message type" });
@@ -1518,8 +1733,23 @@ export const sendMessage = async (req, res) => {
       }
     }
 
+    if (messageType === "reminder") {
+      try {
+        normalizedReminder = normalizeReminderPayload(
+          reminder || metadata?.reminder || { title: normalizedContent },
+          {
+            creatorId: req.user._id,
+            now: new Date(),
+          },
+        );
+      } catch (error) {
+        return res.status(400).json({ message: error.message });
+      }
+    }
+
     if (
       messageType !== "poll" &&
+      messageType !== "reminder" &&
       !normalizedContent &&
       normalizedAttachments.length === 0
     ) {
@@ -1533,6 +1763,10 @@ export const sendMessage = async (req, res) => {
       (!normalizedPoll?.question || normalizedPoll.options.length < 2)
     ) {
       return res.status(400).json({ message: "Poll content is required" });
+    }
+
+    if (messageType === "reminder" && !normalizedReminder?.title) {
+      return res.status(400).json({ message: "Reminder content is required" });
     }
 
     if (messageType === "audio") {
@@ -1570,9 +1804,15 @@ export const sendMessage = async (req, res) => {
       conversationId: conversation._id,
       senderId: req.user._id,
       type: messageType,
-      content: messageType === "poll" ? normalizedPoll.question : normalizedContent,
+      content:
+        messageType === "poll"
+          ? normalizedPoll.question
+          : messageType === "reminder"
+            ? normalizedReminder.title
+            : normalizedContent,
       metadata: metadata || {},
       poll: normalizedPoll,
+      reminder: normalizedReminder,
       attachments: normalizedAttachments,
       mentions: mentions || [],
       replyTo: replyTo || null,
@@ -1586,7 +1826,12 @@ export const sendMessage = async (req, res) => {
     let conversationPreviewMessage = message;
     const previewContent = getMessagePreviewContent({
       type: messageType,
-      content: messageType === "poll" ? normalizedPoll.question : normalizedContent,
+      content:
+        messageType === "poll"
+          ? normalizedPoll.question
+          : messageType === "reminder"
+            ? normalizedReminder.title
+            : normalizedContent,
       attachments: normalizedAttachments,
     });
     let conversationPreviewContent = previewContent;
@@ -1609,6 +1854,32 @@ export const sendMessage = async (req, res) => {
           pollQuestion,
           pollCreatorId: req.user._id,
           pollCreatedAt: message.createdAt,
+        },
+      });
+      conversationPreviewMessage = systemMessage;
+      conversationPreviewContent = systemContent;
+    }
+
+    if (messageType === "reminder") {
+      const reminderTitle =
+        normalizedReminder.title || message.content || "Nhắc hẹn";
+      const systemContent = `${
+        req.user.fullName || "Người dùng"
+      } đã tạo nhắc hẹn mới: ${reminderTitle}`;
+      systemMessage = await Message.create({
+        conversationId: conversation._id,
+        senderId: req.user._id,
+        type: "system",
+        content: systemContent,
+        metadata: {
+          eventType: REMINDER_CREATED_EVENT_TYPE,
+          action: "create",
+          targetMessageId: message._id,
+          actorId: req.user._id,
+          reminderTitle,
+          reminderScheduledAt: normalizedReminder.scheduledAt,
+          reminderRecurrence: normalizedReminder.recurrence,
+          reminderCreatedAt: message.createdAt,
         },
       });
       conversationPreviewMessage = systemMessage;
@@ -1701,13 +1972,43 @@ export const updateMessage = async (req, res) => {
       return res.status(400).json({ message: "Cannot edit a deleted message" });
     }
 
-    const { content } = req.body;
+    const { content, reminder } = req.body;
     const nextContent = typeof content === "string" ? content.trim() : "";
     if (!nextContent) {
       return res.status(400).json({ message: "Message content is required" });
     }
 
     message.content = nextContent;
+
+    if (message.type === "reminder" && reminder) {
+      if (message.reminder?.status === REMINDER_STATUS_CANCELLED) {
+        return res
+          .status(400)
+          .json({ message: "Cannot edit a cancelled reminder" });
+      }
+
+      try {
+        const normalizedReminder = normalizeReminderPayload(
+          {
+            ...reminder,
+            title: reminder.title || nextContent,
+          },
+          {
+            creatorId: message.senderId,
+            now: new Date(),
+          },
+        );
+        message.reminder.title = normalizedReminder.title;
+        message.reminder.scheduledAt = normalizedReminder.scheduledAt;
+        message.reminder.nextTriggerAt = normalizedReminder.nextTriggerAt;
+        message.reminder.recurrence = normalizedReminder.recurrence;
+      } catch (error) {
+        return res.status(400).json({ message: error.message });
+      }
+
+      message.markModified("reminder");
+    }
+
     message.editedAt = new Date();
     await message.save();
 
@@ -1731,12 +2032,16 @@ export const updateMessage = async (req, res) => {
     ]);
 
     if (ioInstance) {
-      ioInstance
-        .to(getConversationRealtimeRoomNames(conversation))
-        .emit("message_updated", {
-          ...messageData,
-          conversation: conversationData,
-        });
+      if (message.type === "poll" || message.type === "reminder") {
+        await emitPersonalizedMessageUpdated(conversation, message);
+      } else {
+        ioInstance
+          .to(getConversationRealtimeRoomNames(conversation))
+          .emit("message_updated", {
+            ...messageData,
+            conversation: conversationData,
+          });
+      }
     }
 
     res.status(200).json(messageData);
@@ -1917,7 +2222,7 @@ export const updateMessagePin = async (req, res) => {
 
     if (ioInstance) {
       joinParticipantSocketsToConversationRoom(ioInstance, conversation);
-      if (message.type === "poll") {
+      if (message.type === "poll" || message.type === "reminder") {
         await emitPersonalizedMessageUpdated(conversation, message, {
           pinEvent,
         });
@@ -2352,6 +2657,316 @@ export const closePollInMessage = async (req, res) => {
     }
     res.status(500).json({ message: "Server error, please try again" });
   }
+};
+
+// POST /conversations/:id/messages/:messageId/reminder/response
+export const updateReminderResponse = async (req, res) => {
+  try {
+    const conversation = await Conversation.findById(req.params.id);
+    if (!conversation) {
+      return res.status(404).json({ message: "Conversation not found" });
+    }
+
+    if (!isParticipant(conversation, req.user._id)) {
+      return res
+        .status(403)
+        .json({ message: "You are not a participant of this conversation" });
+    }
+
+    const message = await Message.findById(req.params.messageId);
+    if (
+      !message ||
+      message.conversationId.toString() !== conversation._id.toString()
+    ) {
+      return res.status(404).json({ message: "Message not found" });
+    }
+
+    if (message.deletedAt) {
+      return res
+        .status(400)
+        .json({ message: "Cannot respond to a deleted reminder" });
+    }
+
+    if (message.type !== "reminder" || !message.reminder) {
+      return res.status(400).json({ message: "Message is not a reminder" });
+    }
+
+    const changedAt = new Date();
+    const responseStatus = String(req.body?.status || "");
+
+    try {
+      applyReminderResponse(message.reminder, req.body?.status, {
+        userId: req.user._id,
+        now: changedAt,
+      });
+    } catch (error) {
+      return res.status(400).json({ message: error.message });
+    }
+
+    message.markModified("reminder");
+    await message.save();
+
+    const reminderTitle =
+      message.reminder?.title || message.content || "Nhắc hẹn";
+    const responseText =
+      responseStatus === REMINDER_RESPONSE_DECLINED
+        ? "không tham gia"
+        : "tham gia";
+    const systemContent = `${
+      req.user.fullName || "Người dùng"
+    } xác nhận: ${responseText} ${reminderTitle}.`;
+    const systemMessage = await Message.create({
+      conversationId: conversation._id,
+      senderId: req.user._id,
+      type: "system",
+      content: systemContent,
+      metadata: {
+        eventType: REMINDER_RESPONSE_EVENT_TYPE,
+        action: "response",
+        targetMessageId: message._id,
+        actorId: req.user._id,
+        reminderTitle,
+        reminderResponseStatus: responseStatus,
+        reminderRespondedAt: changedAt,
+        reminderCreatedAt: message.createdAt,
+      },
+    });
+
+    conversation.lastMessage = {
+      messageId: systemMessage._id,
+      content: systemContent,
+      senderId: req.user._id,
+      createdAt: systemMessage.createdAt,
+      deletedAt: null,
+      deletedBy: null,
+    };
+    await conversation.save();
+
+    const [messageData, systemMessageData, conversationData] =
+      await Promise.all([
+        formatMessage(message, { currentUserId: req.user._id }),
+        formatMessage(systemMessage, { currentUserId: req.user._id }),
+        formatConversation(conversation, { currentUserId: req.user._id }),
+      ]);
+
+    if (ioInstance) {
+      joinParticipantSocketsToConversationRoom(ioInstance, conversation);
+      await emitPersonalizedMessageUpdated(conversation, message);
+      await emitPersonalizedNewMessage(conversation, systemMessage);
+    }
+
+    res.status(200).json({
+      message: messageData,
+      systemMessage: systemMessageData,
+      conversation: conversationData,
+    });
+  } catch (error) {
+    console.error("UpdateReminderResponse error:", error.message);
+    if (error.kind === "ObjectId") {
+      return res.status(400).json({ message: "Invalid ID" });
+    }
+    res.status(500).json({ message: "Server error, please try again" });
+  }
+};
+
+// PATCH /conversations/:id/messages/:messageId/reminder/cancel
+export const cancelReminderInMessage = async (req, res) => {
+  try {
+    const conversation = await Conversation.findById(req.params.id);
+    if (!conversation) {
+      return res.status(404).json({ message: "Conversation not found" });
+    }
+
+    if (!isParticipant(conversation, req.user._id)) {
+      return res
+        .status(403)
+        .json({ message: "You are not a participant of this conversation" });
+    }
+
+    const message = await Message.findById(req.params.messageId);
+    if (
+      !message ||
+      message.conversationId.toString() !== conversation._id.toString()
+    ) {
+      return res.status(404).json({ message: "Message not found" });
+    }
+
+    if (message.deletedAt) {
+      return res.status(400).json({ message: "Cannot cancel a deleted reminder" });
+    }
+
+    if (message.type !== "reminder" || !message.reminder) {
+      return res.status(400).json({ message: "Message is not a reminder" });
+    }
+
+    if (message.senderId.toString() !== req.user._id.toString()) {
+      return res
+        .status(403)
+        .json({ message: "Only the reminder creator can cancel this reminder" });
+    }
+
+    const changedAt = new Date();
+
+    try {
+      cancelReminder(message.reminder, {
+        userId: req.user._id,
+        now: changedAt,
+      });
+    } catch (error) {
+      return res.status(400).json({ message: error.message });
+    }
+
+    message.markModified("reminder");
+    await message.save();
+
+    const reminderTitle =
+      message.reminder?.title || message.content || "Nhắc hẹn";
+    const systemContent = `${
+      req.user.fullName || "Người dùng"
+    } đã hủy nhắc hẹn: ${reminderTitle}`;
+    const systemMessage = await Message.create({
+      conversationId: conversation._id,
+      senderId: req.user._id,
+      type: "system",
+      content: systemContent,
+      metadata: {
+        eventType: REMINDER_CANCELLED_EVENT_TYPE,
+        action: "cancel",
+        targetMessageId: message._id,
+        actorId: req.user._id,
+        reminderTitle,
+        reminderCancelledAt: changedAt,
+        reminderCreatedAt: message.createdAt,
+      },
+    });
+
+    conversation.lastMessage = {
+      messageId: systemMessage._id,
+      content: systemContent,
+      senderId: req.user._id,
+      createdAt: systemMessage.createdAt,
+      deletedAt: null,
+      deletedBy: null,
+    };
+    await conversation.save();
+
+    const [messageData, systemMessageData, conversationData] =
+      await Promise.all([
+        formatMessage(message, { currentUserId: req.user._id }),
+        formatMessage(systemMessage, { currentUserId: req.user._id }),
+        formatConversation(conversation, { currentUserId: req.user._id }),
+      ]);
+
+    if (ioInstance) {
+      joinParticipantSocketsToConversationRoom(ioInstance, conversation);
+      await emitPersonalizedMessageUpdated(conversation, message);
+      await emitPersonalizedNewMessage(conversation, systemMessage);
+    }
+
+    res.status(200).json({
+      message: messageData,
+      systemMessage: systemMessageData,
+      conversation: conversationData,
+    });
+  } catch (error) {
+    console.error("CancelReminder error:", error.message);
+    if (error.kind === "ObjectId") {
+      return res.status(400).json({ message: "Invalid ID" });
+    }
+    res.status(500).json({ message: "Server error, please try again" });
+  }
+};
+
+let reminderSchedulerIntervalId = null;
+let isReminderSchedulerTickRunning = false;
+const REMINDER_SCHEDULER_INTERVAL_MS = 30 * 1000;
+const REMINDER_SCHEDULER_BATCH_SIZE = 50;
+
+const processDueReminderMessage = async (message, now = new Date()) => {
+  const conversation = await Conversation.findById(message.conversationId);
+  if (!conversation || !message.reminder) return;
+
+  const reminderTitle = message.reminder.title || message.content || "Nhắc hẹn";
+  const dueAt = message.reminder.nextTriggerAt || now;
+
+  markReminderTriggered(message.reminder, { now });
+  message.markModified("reminder");
+  await message.save();
+
+  const systemContent = `Đến giờ nhắc hẹn: ${reminderTitle}`;
+  const systemMessage = await Message.create({
+    conversationId: conversation._id,
+    senderId: message.senderId,
+    type: "system",
+    content: systemContent,
+    metadata: {
+      eventType: REMINDER_DUE_EVENT_TYPE,
+      action: "trigger",
+      targetMessageId: message._id,
+      actorId: message.senderId,
+      reminderTitle,
+      reminderDueAt: dueAt,
+      reminderTriggeredAt: now,
+      reminderRecurrence: message.reminder.recurrence,
+      reminderNextTriggerAt: message.reminder.nextTriggerAt,
+    },
+  });
+
+  conversation.lastMessage = {
+    messageId: systemMessage._id,
+    content: systemContent,
+    senderId: message.senderId,
+    createdAt: systemMessage.createdAt,
+    deletedAt: null,
+    deletedBy: null,
+  };
+  await conversation.save();
+
+  if (ioInstance) {
+    joinParticipantSocketsToConversationRoom(ioInstance, conversation);
+    await emitPersonalizedMessageUpdated(conversation, message);
+    await emitPersonalizedNewMessage(conversation, systemMessage);
+  }
+};
+
+export const processDueReminders = async (now = new Date()) => {
+  const dueMessages = await Message.find({
+    type: "reminder",
+    deletedAt: null,
+    "reminder.status": REMINDER_STATUS_ACTIVE,
+    "reminder.nextTriggerAt": { $lte: now },
+  })
+    .sort({ "reminder.nextTriggerAt": 1 })
+    .limit(REMINDER_SCHEDULER_BATCH_SIZE);
+
+  for (const message of dueMessages) {
+    await processDueReminderMessage(message, now);
+  }
+
+  return dueMessages.length;
+};
+
+export const startReminderScheduler = () => {
+  if (reminderSchedulerIntervalId) return reminderSchedulerIntervalId;
+
+  const runTick = async () => {
+    if (isReminderSchedulerTickRunning) return;
+    isReminderSchedulerTickRunning = true;
+    try {
+      await processDueReminders(new Date());
+    } catch (error) {
+      console.error("ReminderScheduler error:", error.message);
+    } finally {
+      isReminderSchedulerTickRunning = false;
+    }
+  };
+
+  void runTick();
+  reminderSchedulerIntervalId = setInterval(
+    runTick,
+    REMINDER_SCHEDULER_INTERVAL_MS,
+  );
+  return reminderSchedulerIntervalId;
 };
 
 // POST /conversations/:id/messages/:messageId/reactions

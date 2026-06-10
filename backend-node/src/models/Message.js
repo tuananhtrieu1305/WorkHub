@@ -82,6 +82,78 @@ const pollSchema = new mongoose.Schema(
   { _id: false },
 );
 
+const reminderResponseSchema = new mongoose.Schema(
+  {
+    userId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      required: true,
+    },
+    status: {
+      type: String,
+      enum: ["accepted", "declined"],
+      required: true,
+    },
+    respondedAt: {
+      type: Date,
+      default: Date.now,
+    },
+  },
+  { _id: false },
+);
+
+const reminderSchema = new mongoose.Schema(
+  {
+    title: {
+      type: String,
+      trim: true,
+      maxlength: 500,
+      required: true,
+    },
+    scheduledAt: {
+      type: Date,
+      required: true,
+    },
+    nextTriggerAt: {
+      type: Date,
+      default: null,
+    },
+    recurrence: {
+      type: String,
+      enum: ["none", "daily", "weekly", "monthly"],
+      default: "none",
+    },
+    status: {
+      type: String,
+      enum: ["active", "completed", "cancelled"],
+      default: "active",
+    },
+    responses: {
+      type: [reminderResponseSchema],
+      default: [],
+    },
+    triggerCount: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
+    lastTriggeredAt: {
+      type: Date,
+      default: null,
+    },
+    cancelledAt: {
+      type: Date,
+      default: null,
+    },
+    cancelledBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      default: null,
+    },
+  },
+  { _id: false },
+);
+
 const messageSchema = new mongoose.Schema(
   {
     conversationId: {
@@ -96,7 +168,7 @@ const messageSchema = new mongoose.Schema(
     },
     type: {
       type: String,
-      enum: ["text", "image", "file", "audio", "poll", "system"],
+      enum: ["text", "image", "file", "audio", "poll", "reminder", "system"],
       default: "text",
     },
     content: {
@@ -109,6 +181,10 @@ const messageSchema = new mongoose.Schema(
     },
     poll: {
       type: pollSchema,
+      default: null,
+    },
+    reminder: {
+      type: reminderSchema,
       default: null,
     },
     attachments: [
@@ -188,6 +264,11 @@ const messageSchema = new mongoose.Schema(
 
 messageSchema.index({ conversationId: 1, createdAt: -1 });
 messageSchema.index({ conversationId: 1, isPinned: -1, pinnedAt: -1 });
+messageSchema.index({
+  type: 1,
+  "reminder.status": 1,
+  "reminder.nextTriggerAt": 1,
+});
 
 const Message = mongoose.model("Message", messageSchema);
 export default Message;

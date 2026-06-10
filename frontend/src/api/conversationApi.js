@@ -134,6 +134,21 @@ export const closePoll = async (conversationId, messageId) => {
   return data;
 };
 
+export const respondReminder = async (conversationId, messageId, status) => {
+  const { data } = await axiosClient.post(
+    `/conversations/${conversationId}/messages/${messageId}/reminder/response`,
+    { status }
+  );
+  return data;
+};
+
+export const cancelReminder = async (conversationId, messageId) => {
+  const { data } = await axiosClient.patch(
+    `/conversations/${conversationId}/messages/${messageId}/reminder/cancel`
+  );
+  return data;
+};
+
 export const addMessageReaction = async (conversationId, messageId, reaction) => {
   const { data } = await axiosClient.post(
     `/conversations/${conversationId}/messages/${messageId}/reactions`,

@@ -7,7 +7,10 @@ import { createServer } from "node:http";
 import { Server } from "socket.io";
 import connectDB from "./config/db.js";
 import { setupSocket } from "./config/socketHandler.js";
-import { setIo } from "./presenters/conversationPresenter.js";
+import {
+  setIo,
+  startReminderScheduler,
+} from "./presenters/conversationPresenter.js";
 import { setUserIo } from "./presenters/userPresenter.js";
 import authRoutes from "./views/authView.js";
 import userRoutes from "./views/userView.js";
@@ -91,6 +94,7 @@ if (process.env.NODE_ENV !== "test") {
 
   setupSocket(io);
   setIo(io);
+  startReminderScheduler();
   setCommentIo(io);
   setUserIo(io);
   setMeetingIo(io);

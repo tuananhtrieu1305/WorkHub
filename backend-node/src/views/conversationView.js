@@ -20,6 +20,8 @@ import {
   addPollOptionToMessage,
   sharePollToConversation,
   closePollInMessage,
+  updateReminderResponse,
+  cancelReminderInMessage,
   addReaction,
   removeReaction,
 } from "../presenters/conversationPresenter.js";
@@ -68,6 +70,16 @@ router.patch(
   "/:id/messages/:messageId/poll/close",
   protect,
   closePollInMessage,
+);
+router.post(
+  "/:id/messages/:messageId/reminder/response",
+  protect,
+  updateReminderResponse,
+);
+router.patch(
+  "/:id/messages/:messageId/reminder/cancel",
+  protect,
+  cancelReminderInMessage,
 );
 router.post("/:id/messages/:messageId/reactions", protect, addReaction);
 router.delete("/:id/messages/:messageId/reactions", protect, removeReaction);

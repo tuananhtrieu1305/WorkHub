@@ -30,17 +30,33 @@ export const pollActivityEventTypes = new Set([
 export const isPollActivityEventType = (eventType) =>
   pollActivityEventTypes.has(eventType);
 
-const getPollActivityTargetId = (message) => {
+export const reminderActivityEventTypes = new Set([
+  "reminder_created",
+  "reminder_due",
+  "reminder_cancelled",
+  "reminder_response",
+]);
+
+export const isReminderActivityEventType = (eventType) =>
+  reminderActivityEventTypes.has(eventType);
+
+const getActivityTargetId = (message, isActivityEventType) => {
   const metadata = message?.metadata || {};
   if (
     message?.type !== "system" ||
-    !isPollActivityEventType(metadata.eventType)
+    !isActivityEventType(metadata.eventType)
   ) {
     return "";
   }
 
   return getComparableId(metadata.targetMessageId);
 };
+
+const getPollActivityTargetId = (message) =>
+  getActivityTargetId(message, isPollActivityEventType);
+
+const getReminderActivityTargetId = (message) =>
+  getActivityTargetId(message, isReminderActivityEventType);
 
 export const getPollActivityTargetMessageIds = (messages = []) => {
   const targetMessageIds = new Set();
@@ -55,11 +71,24 @@ export const getPollActivityTargetMessageIds = (messages = []) => {
   return targetMessageIds;
 };
 
-export const getLatestPollActivityMessageIds = (messages = []) => {
+export const getReminderActivityTargetMessageIds = (messages = []) => {
+  const targetMessageIds = new Set();
+
+  messages.forEach((message) => {
+    const targetMessageId = getReminderActivityTargetId(message);
+    if (targetMessageId) {
+      targetMessageIds.add(targetMessageId);
+    }
+  });
+
+  return targetMessageIds;
+};
+
+const getLatestActivityMessageIds = (messages = [], getTargetId) => {
   const latestMessageIdsByTarget = new Map();
 
   messages.forEach((message, index) => {
-    const targetMessageId = getPollActivityTargetId(message);
+    const targetMessageId = getTargetId(message);
     if (!targetMessageId) return;
 
     latestMessageIdsByTarget.set(targetMessageId, getMessageId(message, index));
@@ -69,6 +98,12 @@ export const getLatestPollActivityMessageIds = (messages = []) => {
     [...latestMessageIdsByTarget.values()].filter((messageId) => messageId),
   );
 };
+
+export const getLatestPollActivityMessageIds = (messages = []) =>
+  getLatestActivityMessageIds(messages, getPollActivityTargetId);
+
+export const getLatestReminderActivityMessageIds = (messages = []) =>
+  getLatestActivityMessageIds(messages, getReminderActivityTargetId);
 
 const toValidDate = (value) => {
   if (!value) return null;
@@ -114,16 +149,23 @@ const formatTimeSeparatorLabel = (
 export const buildMessageTimeline = (messages = [], { now = new Date() } = {}) => {
   const timeline = [];
   const pollActivityTargetMessageIds = getPollActivityTargetMessageIds(messages);
+  const reminderActivityTargetMessageIds =
+    getReminderActivityTargetMessageIds(messages);
   const visibleMessages = messages.filter((message, index) => {
     const messageId = getMessageId(message, index);
     return !(
-      message?.type === "poll" &&
-      message?.poll &&
-      pollActivityTargetMessageIds.has(messageId)
+      (message?.type === "poll" &&
+        message?.poll &&
+        pollActivityTargetMessageIds.has(messageId)) ||
+      (message?.type === "reminder" &&
+        message?.reminder &&
+        reminderActivityTargetMessageIds.has(messageId))
     );
   });
   const latestPollActivityMessageIds =
     getLatestPollActivityMessageIds(visibleMessages);
+  const latestReminderActivityMessageIds =
+    getLatestReminderActivityMessageIds(visibleMessages);
 
   visibleMessages.forEach((message, index) => {
     const previousMessage = index > 0 ? visibleMessages[index - 1] : null;
@@ -180,6 +222,7 @@ export const buildMessageTimeline = (messages = [], { now = new Date() } = {}) =
     const messageId = getMessageId(message, index);
     const timestampLabel = formatMessageTimestamp(message?.createdAt, { now });
     const pollActivityTargetMessageId = getPollActivityTargetId(message);
+    const reminderActivityTargetMessageId = getReminderActivityTargetId(message);
 
     if (hasTimeSeparator) {
       timeline.push({
@@ -199,7 +242,10 @@ export const buildMessageTimeline = (messages = [], { now = new Date() } = {}) =
       hasTightNext,
       timestampLabel,
       showPollActivityCard: latestPollActivityMessageIds.has(messageId),
+      showReminderActivityCard:
+        latestReminderActivityMessageIds.has(messageId),
       pollActivityTargetMessageId,
+      reminderActivityTargetMessageId,
     });
   });
 

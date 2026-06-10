@@ -24,6 +24,10 @@ export const getMessagePreviewText = (
     const question = message.poll?.question || message.content;
     return question ? `Bình chọn: ${question}` : "Bình chọn";
   }
+  if (message.type === "reminder") {
+    const title = message.reminder?.title || message.content;
+    return title ? `Nhắc hẹn: ${title}` : "Nhắc hẹn";
+  }
   if (message.content) return message.content.replace(/\s+/g, " ").trim();
 
   const attachments = message.attachments || [];

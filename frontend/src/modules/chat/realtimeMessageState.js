@@ -1,6 +1,9 @@
 import { sortConversationsByActivity } from "./conversationListState.js";
 import { getMessagePreviewText } from "./chatMessagePreview.js";
-import { isPollActivityEventType } from "./messageTimeline.js";
+import {
+  isPollActivityEventType,
+  isReminderActivityEventType,
+} from "./messageTimeline.js";
 
 const toComparableId = (value) => {
   if (value == null) return "";
@@ -47,6 +50,37 @@ const syncPollActivityMessages = (messages, incomingMessage) => {
   });
 };
 
+const syncReminderActivityMessages = (messages, incomingMessage) => {
+  if (incomingMessage?.type !== "reminder" || !incomingMessage?.reminder) {
+    return messages;
+  }
+
+  const incomingId = toComparableId(incomingMessage.id || incomingMessage._id);
+  if (!incomingId) return messages;
+
+  return messages.map((message) => {
+    const metadata = message?.metadata || {};
+    const targetMessageId = toComparableId(metadata.targetMessageId);
+    const isReminderActivity =
+      message?.type === "system" &&
+      isReminderActivityEventType(metadata.eventType) &&
+      targetMessageId === incomingId;
+
+    if (!isReminderActivity) return message;
+
+    return {
+      ...message,
+      metadata: {
+        ...metadata,
+        reminderMessage: {
+          ...(metadata.reminderMessage || {}),
+          ...incomingMessage,
+        },
+      },
+    };
+  });
+};
+
 export const upsertMessageById = (messages, incomingMessage) => {
   if (!incomingMessage?.id) return messages;
 
@@ -57,7 +91,10 @@ export const upsertMessageById = (messages, incomingMessage) => {
 
   if (existingIndex === -1) {
     return sortMessagesByCreatedAt(
-      syncPollActivityMessages([...messages, incomingMessage], incomingMessage),
+      syncReminderActivityMessages(
+        syncPollActivityMessages([...messages, incomingMessage], incomingMessage),
+        incomingMessage,
+      ),
     );
   }
 
@@ -68,7 +105,10 @@ export const upsertMessageById = (messages, incomingMessage) => {
   };
 
   return sortMessagesByCreatedAt(
-    syncPollActivityMessages(nextMessages, incomingMessage),
+    syncReminderActivityMessages(
+      syncPollActivityMessages(nextMessages, incomingMessage),
+      incomingMessage,
+    ),
   );
 };
 

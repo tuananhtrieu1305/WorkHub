@@ -301,6 +301,7 @@ const ChatWindow = ({
   onSendMessage,
   onUploadAttachment,
   onCreatePoll,
+  onCreateReminder,
   onTypingChange,
   onReplyMessage,
   onEditMessage,
@@ -313,6 +314,9 @@ const ChatWindow = ({
   onAddPollOption,
   onSharePoll,
   onClosePoll,
+  onRespondReminder,
+  onCancelReminder,
+  onEditReminder,
   onCancelDraft,
   onStartCall,
   onBack,
@@ -832,6 +836,9 @@ const ChatWindow = ({
               const pollActivityTargetMessageId = item.showPollActivityCard
                 ? getComparableId(item.pollActivityTargetMessageId)
                 : "";
+              const reminderActivityTargetMessageId = item.showReminderActivityCard
+                ? getComparableId(item.reminderActivityTargetMessageId)
+                : "";
               const registerTimelineNode = (node) => {
                 registerMessageNode(itemMessageId, node);
                 if (
@@ -839,6 +846,12 @@ const ChatWindow = ({
                   pollActivityTargetMessageId !== itemMessageId
                 ) {
                   registerMessageNode(pollActivityTargetMessageId, node);
+                }
+                if (
+                  reminderActivityTargetMessageId &&
+                  reminderActivityTargetMessageId !== itemMessageId
+                ) {
+                  registerMessageNode(reminderActivityTargetMessageId, node);
                 }
               };
 
@@ -861,6 +874,7 @@ const ChatWindow = ({
                     hasTightNext={item.hasTightNext}
                     isHighlighted={highlightedMessageId === itemMessageId}
                     showPollActivityCard={item.showPollActivityCard}
+                    showReminderActivityCard={item.showReminderActivityCard}
                     onReply={onReplyMessage}
                     onEdit={onEditMessage}
                     onDelete={onDeleteMessage}
@@ -871,6 +885,9 @@ const ChatWindow = ({
                     onAddPollOption={onAddPollOption}
                     onSharePoll={onSharePoll}
                     onClosePoll={onClosePoll}
+                    onRespondReminder={onRespondReminder}
+                    onCancelReminder={onCancelReminder}
+                    onEditReminder={onEditReminder}
                     onJumpToMessage={handleJumpToMessage}
                     onOpenPinnedList={() => setIsPinnedListOpen(true)}
                   />
@@ -917,6 +934,7 @@ const ChatWindow = ({
           onSend={onSendMessage}
           onUploadAttachment={onUploadAttachment}
           onCreatePoll={onCreatePoll}
+          onCreateReminder={onCreateReminder}
           onTypingChange={onTypingChange}
           onCancelDraft={onCancelDraft}
           initialContent={editingMessage?.content || ""}
