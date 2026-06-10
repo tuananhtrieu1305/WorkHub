@@ -33,5 +33,8 @@ services:
     restart: always
     ports:
       - "5173:80"
+    environment:
+      - BACKEND_UPSTREAM=${BACKEND_UPSTREAM:-http://backend-node:5000}
+      - NGINX_RESOLVER=${NGINX_RESOLVER:-127.0.0.11}
     depends_on:
       - backend-node

@@ -734,45 +734,86 @@ const MessageText = ({ content }) => {
   if (!content) return null;
 
   const lines = content.split(/\r?\n/);
-  const isList =
-    lines.length > 1 && lines.every((line) => line.trim().startsWith("- "));
-  const isOrderedList =
-    lines.length > 1 && lines.every((line) => /^\d+\.\s/.test(line.trim()));
+  const blocks = [];
+  let textLines = [];
+  let listLines = [];
+  let listType = "";
 
-  if (isList) {
-    return (
-      <ul className="list-disc space-y-1 pl-4">
-        {lines.map((line, index) => (
+  const flushText = () => {
+    if (!textLines.length) return;
+
+    const blockLines = textLines;
+    const blockIndex = blocks.length;
+    blocks.push(
+      <span
+        key={`text-${blockIndex}`}
+        className="whitespace-pre-wrap break-words"
+      >
+        {blockLines.map((line, index) => (
+          <span key={`${line}-${index}`}>
+            {index > 0 ? "\n" : ""}
+            {renderInlineMarkdown(line)}
+          </span>
+        ))}
+      </span>,
+    );
+    textLines = [];
+  };
+
+  const flushList = () => {
+    if (!listLines.length) return;
+
+    const ListTag = listType === "ordered" ? "ol" : "ul";
+    const listClassName =
+      listType === "ordered"
+        ? "list-decimal space-y-1 pl-4"
+        : "list-disc space-y-1 pl-4";
+    const markerPattern = listType === "ordered" ? /^\d+\.\s/ : /^-\s/;
+    const blockIndex = blocks.length;
+
+    blocks.push(
+      <ListTag key={`${listType}-${blockIndex}`} className={listClassName}>
+        {listLines.map((line, index) => (
           <li key={`${line}-${index}`}>
-            {renderInlineMarkdown(line.trim().slice(2))}
+            {renderInlineMarkdown(line.trim().replace(markerPattern, ""))}
           </li>
         ))}
-      </ul>
+      </ListTag>,
     );
-  }
+    listLines = [];
+    listType = "";
+  };
 
-  if (isOrderedList) {
-    return (
-      <ol className="list-decimal space-y-1 pl-4">
-        {lines.map((line, index) => (
-          <li key={`${line}-${index}`}>
-            {renderInlineMarkdown(line.trim().replace(/^\d+\.\s/, ""))}
-          </li>
-        ))}
-      </ol>
-    );
-  }
+  lines.forEach((line) => {
+    const trimmedLine = line.trim();
+    const nextListType = trimmedLine.startsWith("- ")
+      ? "bullet"
+      : /^\d+\.\s/.test(trimmedLine)
+        ? "ordered"
+        : "";
 
-  return (
-    <span className="whitespace-pre-wrap break-words">
-      {lines.map((line, index) => (
-        <span key={`${line}-${index}`}>
-          {index > 0 ? "\n" : ""}
-          {renderInlineMarkdown(line)}
-        </span>
-      ))}
-    </span>
-  );
+    if (!nextListType) {
+      flushList();
+      textLines.push(line);
+      return;
+    }
+
+    flushText();
+
+    if (listType && listType !== nextListType) {
+      flushList();
+    }
+
+    listType = nextListType;
+    listLines.push(line);
+  });
+
+  flushText();
+  flushList();
+
+  if (blocks.length === 1) return blocks[0];
+
+  return <div className="space-y-1">{blocks}</div>;
 };
 
 const MessageAttachments = ({
