@@ -120,6 +120,20 @@ export const addPollOption = async (conversationId, messageId, text) => {
   return data;
 };
 
+export const sharePoll = async (conversationId, messageId) => {
+  const { data } = await axiosClient.post(
+    `/conversations/${conversationId}/messages/${messageId}/poll/share`
+  );
+  return data;
+};
+
+export const closePoll = async (conversationId, messageId) => {
+  const { data } = await axiosClient.patch(
+    `/conversations/${conversationId}/messages/${messageId}/poll/close`
+  );
+  return data;
+};
+
 export const addMessageReaction = async (conversationId, messageId, reaction) => {
   const { data } = await axiosClient.post(
     `/conversations/${conversationId}/messages/${messageId}/reactions`,

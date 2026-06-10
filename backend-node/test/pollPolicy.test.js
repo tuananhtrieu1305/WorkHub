@@ -3,6 +3,7 @@ import test from "node:test";
 import {
   addPollOption,
   applyPollVote,
+  closePoll,
   sortPollOptionsByVotesAndText,
   getCurrentUserPollOptionIds,
   isPollClosed,
@@ -121,6 +122,24 @@ test("poll closes after expiration time", () => {
     }, now),
     true,
   );
+});
+
+test("closing a poll records closedAt and blocks future votes", () => {
+  const poll = {
+    options: [optionId("a"), optionId("b")],
+    settings: { multiple: false },
+    closedAt: null,
+  };
+
+  closePoll(poll, { now });
+
+  assert.equal(poll.closedAt, now);
+  assert.equal(isPollClosed(poll, now), true);
+  assert.throws(
+    () => applyPollVote(poll, ["a"], { userId: "user-1", now }),
+    /Poll is closed/,
+  );
+  assert.throws(() => closePoll(poll, { now }), /already closed/);
 });
 
 test("sorts poll options by vote count descending then text", () => {

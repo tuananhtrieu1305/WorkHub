@@ -18,6 +18,7 @@ import {
 import { normalizePinnedState } from "../utils/messageActionPolicy.js";
 import {
   addPollOption,
+  closePoll,
   applyPollVote,
   getCurrentUserPollOptionIds,
   isPollClosed,
@@ -38,9 +39,15 @@ const MAX_VOICE_DURATION_SECONDS = 5 * 60;
 const VOICE_ATTACHMENT_FILE_SIZE_LIMIT = 20 * 1024 * 1024;
 const POLL_VOTED_EVENT_TYPE = "poll_voted";
 const POLL_OPTION_ADDED_EVENT_TYPE = "poll_option_added";
+const POLL_CREATED_EVENT_TYPE = "poll_created";
+const POLL_SHARED_EVENT_TYPE = "poll_shared";
+const POLL_CLOSED_EVENT_TYPE = "poll_closed";
 const POLL_ACTIVITY_EVENT_TYPES = new Set([
   POLL_VOTED_EVENT_TYPE,
   POLL_OPTION_ADDED_EVENT_TYPE,
+  POLL_CREATED_EVENT_TYPE,
+  POLL_SHARED_EVENT_TYPE,
+  POLL_CLOSED_EVENT_TYPE,
 ]);
 const ALLOWED_AUDIO_MIMES = new Set([
   "audio/aac",
@@ -299,10 +306,10 @@ const formatPoll = async (poll, { currentUserId = null } = {}) => {
     currentUserId,
   );
   const hasCurrentUserVoted = currentUserOptionIds.length > 0;
-  const resultsVisible =
-    !plain.settings?.hideResultsUntilVoted || hasCurrentUserVoted;
-  const hideVoters = Boolean(plain.settings?.hideVoters);
   const pollClosed = isPollClosed(plain);
+  const resultsVisible =
+    pollClosed || !plain.settings?.hideResultsUntilVoted || hasCurrentUserVoted;
+  const hideVoters = Boolean(plain.settings?.hideVoters);
   const voterIds = collectPollVoterIds(plain);
   const users =
     resultsVisible && !hideVoters && voterIds.length
@@ -1453,40 +1460,84 @@ export const sendMessage = async (req, res) => {
         messageType === "poll" && pinPollOnCreate ? new Date() : null,
     });
 
+    let systemMessage = null;
+    let conversationPreviewMessage = message;
     const previewContent = getMessagePreviewContent({
       type: messageType,
       content: messageType === "poll" ? normalizedPoll.question : normalizedContent,
       attachments: normalizedAttachments,
     });
+    let conversationPreviewContent = previewContent;
+
+    if (messageType === "poll") {
+      const pollQuestion = normalizedPoll.question || message.content || "Bình chọn";
+      const systemContent = `${
+        req.user.fullName || "Người dùng"
+      } đã tạo cuộc bình chọn mới: ${pollQuestion}`;
+      systemMessage = await Message.create({
+        conversationId: conversation._id,
+        senderId: req.user._id,
+        type: "system",
+        content: systemContent,
+        metadata: {
+          eventType: POLL_CREATED_EVENT_TYPE,
+          action: "create",
+          targetMessageId: message._id,
+          actorId: req.user._id,
+          pollQuestion,
+          pollCreatorId: req.user._id,
+          pollCreatedAt: message.createdAt,
+        },
+      });
+      conversationPreviewMessage = systemMessage;
+      conversationPreviewContent = systemContent;
+    }
 
     // Update lastMessage on conversation
     conversation.lastMessage = {
-      messageId: message._id,
-      content: previewContent,
+      messageId: conversationPreviewMessage._id,
+      content: conversationPreviewContent,
       senderId: req.user._id,
-      createdAt: message.createdAt,
+      createdAt: conversationPreviewMessage.createdAt,
       deletedAt: null,
       deletedBy: null,
     };
     await conversation.save();
 
-    const [messageData, conversationData] = await Promise.all([
-      formatMessage(message, { currentUserId: req.user._id }),
-      formatConversation(conversation, { currentUserId: req.user._id }),
-    ]);
+    const [messageData, systemMessageData, conversationData] =
+      await Promise.all([
+        formatMessage(message, { currentUserId: req.user._id }),
+        systemMessage
+          ? formatMessage(systemMessage, { currentUserId: req.user._id })
+          : null,
+        formatConversation(conversation, { currentUserId: req.user._id }),
+      ]);
 
     // Emit Socket.IO event
     if (ioInstance) {
       joinParticipantSocketsToConversationRoom(ioInstance, conversation);
-      ioInstance
-        .to(getConversationRealtimeRoomNames(conversation))
-        .emit("new_message", {
-          ...messageData,
-          conversation: conversationData,
-        });
+      if (systemMessage) {
+        await emitPersonalizedNewMessage(conversation, message);
+        await emitPersonalizedNewMessage(conversation, systemMessage);
+      } else {
+        ioInstance
+          .to(getConversationRealtimeRoomNames(conversation))
+          .emit("new_message", {
+            ...messageData,
+            conversation: conversationData,
+          });
+      }
     }
 
-    res.status(201).json(messageData);
+    res.status(201).json(
+      systemMessageData
+        ? {
+            message: messageData,
+            systemMessage: systemMessageData,
+            conversation: conversationData,
+          }
+        : messageData,
+    );
   } catch (error) {
     console.error("SendMessage error:", error.message);
     if (error.kind === "ObjectId") {
@@ -1983,6 +2034,197 @@ export const addPollOptionToMessage = async (req, res) => {
     });
   } catch (error) {
     console.error("AddPollOption error:", error.message);
+    if (error.kind === "ObjectId") {
+      return res.status(400).json({ message: "Invalid ID" });
+    }
+    res.status(500).json({ message: "Server error, please try again" });
+  }
+};
+
+// POST /conversations/:id/messages/:messageId/poll/share
+export const sharePollToConversation = async (req, res) => {
+  try {
+    const conversation = await Conversation.findById(req.params.id);
+    if (!conversation) {
+      return res.status(404).json({ message: "Conversation not found" });
+    }
+
+    if (!isParticipant(conversation, req.user._id)) {
+      return res
+        .status(403)
+        .json({ message: "You are not a participant of this conversation" });
+    }
+
+    const message = await Message.findById(req.params.messageId);
+    if (
+      !message ||
+      message.conversationId.toString() !== conversation._id.toString()
+    ) {
+      return res.status(404).json({ message: "Message not found" });
+    }
+
+    if (message.deletedAt) {
+      return res.status(400).json({ message: "Cannot share a deleted poll" });
+    }
+
+    if (message.type !== "poll" || !message.poll) {
+      return res.status(400).json({ message: "Message is not a poll" });
+    }
+
+    const pollQuestion = message.poll?.question || message.content || "Bình chọn";
+    const systemContent = `${
+      req.user.fullName || "Người dùng"
+    } đã gửi bình chọn vào nhóm: ${pollQuestion}`;
+    const systemMessage = await Message.create({
+      conversationId: conversation._id,
+      senderId: req.user._id,
+      type: "system",
+      content: systemContent,
+      metadata: {
+        eventType: POLL_SHARED_EVENT_TYPE,
+        action: "share",
+        targetMessageId: message._id,
+        actorId: req.user._id,
+        pollQuestion,
+        pollCreatorId: message.senderId,
+        pollCreatedAt: message.createdAt,
+      },
+    });
+
+    conversation.lastMessage = {
+      messageId: systemMessage._id,
+      content: systemContent,
+      senderId: req.user._id,
+      createdAt: systemMessage.createdAt,
+      deletedAt: null,
+      deletedBy: null,
+    };
+    await conversation.save();
+
+    const [messageData, systemMessageData, conversationData] =
+      await Promise.all([
+        formatMessage(message, { currentUserId: req.user._id }),
+        formatMessage(systemMessage, { currentUserId: req.user._id }),
+        formatConversation(conversation, { currentUserId: req.user._id }),
+      ]);
+
+    if (ioInstance) {
+      joinParticipantSocketsToConversationRoom(ioInstance, conversation);
+      await emitPersonalizedNewMessage(conversation, systemMessage);
+    }
+
+    res.status(200).json({
+      message: messageData,
+      systemMessage: systemMessageData,
+      conversation: conversationData,
+    });
+  } catch (error) {
+    console.error("SharePoll error:", error.message);
+    if (error.kind === "ObjectId") {
+      return res.status(400).json({ message: "Invalid ID" });
+    }
+    res.status(500).json({ message: "Server error, please try again" });
+  }
+};
+
+// PATCH /conversations/:id/messages/:messageId/poll/close
+export const closePollInMessage = async (req, res) => {
+  try {
+    const conversation = await Conversation.findById(req.params.id);
+    if (!conversation) {
+      return res.status(404).json({ message: "Conversation not found" });
+    }
+
+    if (!isParticipant(conversation, req.user._id)) {
+      return res
+        .status(403)
+        .json({ message: "You are not a participant of this conversation" });
+    }
+
+    const message = await Message.findById(req.params.messageId);
+    if (
+      !message ||
+      message.conversationId.toString() !== conversation._id.toString()
+    ) {
+      return res.status(404).json({ message: "Message not found" });
+    }
+
+    if (message.deletedAt) {
+      return res.status(400).json({ message: "Cannot close a deleted poll" });
+    }
+
+    if (message.type !== "poll" || !message.poll) {
+      return res.status(400).json({ message: "Message is not a poll" });
+    }
+
+    if (message.senderId.toString() !== req.user._id.toString()) {
+      return res
+        .status(403)
+        .json({ message: "Only the poll creator can close this poll" });
+    }
+
+    const changedAt = new Date();
+
+    try {
+      closePoll(message.poll, { now: changedAt });
+    } catch (error) {
+      return res.status(400).json({ message: error.message });
+    }
+
+    message.markModified("poll");
+    await message.save();
+
+    const pollQuestion = message.poll?.question || message.content || "Bình chọn";
+    const systemContent = `${
+      req.user.fullName || "Người dùng"
+    } đã khóa bình chọn: ${pollQuestion}`;
+    const systemMessage = await Message.create({
+      conversationId: conversation._id,
+      senderId: req.user._id,
+      type: "system",
+      content: systemContent,
+      metadata: {
+        eventType: POLL_CLOSED_EVENT_TYPE,
+        action: "close",
+        targetMessageId: message._id,
+        actorId: req.user._id,
+        pollQuestion,
+        pollCreatorId: message.senderId,
+        pollClosedAt: changedAt,
+        pollCreatedAt: message.createdAt,
+      },
+    });
+
+    conversation.lastMessage = {
+      messageId: systemMessage._id,
+      content: systemContent,
+      senderId: req.user._id,
+      createdAt: systemMessage.createdAt,
+      deletedAt: null,
+      deletedBy: null,
+    };
+    await conversation.save();
+
+    const [messageData, systemMessageData, conversationData] =
+      await Promise.all([
+        formatMessage(message, { currentUserId: req.user._id }),
+        formatMessage(systemMessage, { currentUserId: req.user._id }),
+        formatConversation(conversation, { currentUserId: req.user._id }),
+      ]);
+
+    if (ioInstance) {
+      joinParticipantSocketsToConversationRoom(ioInstance, conversation);
+      await emitPersonalizedMessageUpdated(conversation, message);
+      await emitPersonalizedNewMessage(conversation, systemMessage);
+    }
+
+    res.status(200).json({
+      message: messageData,
+      systemMessage: systemMessageData,
+      conversation: conversationData,
+    });
+  } catch (error) {
+    console.error("ClosePoll error:", error.message);
     if (error.kind === "ObjectId") {
       return res.status(400).json({ message: "Invalid ID" });
     }

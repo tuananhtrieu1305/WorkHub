@@ -18,6 +18,8 @@ import {
   updateMessagePin,
   votePoll,
   addPollOptionToMessage,
+  sharePollToConversation,
+  closePollInMessage,
   addReaction,
   removeReaction,
 } from "../presenters/conversationPresenter.js";
@@ -56,6 +58,16 @@ router.post(
   "/:id/messages/:messageId/poll/options",
   protect,
   addPollOptionToMessage,
+);
+router.post(
+  "/:id/messages/:messageId/poll/share",
+  protect,
+  sharePollToConversation,
+);
+router.patch(
+  "/:id/messages/:messageId/poll/close",
+  protect,
+  closePollInMessage,
 );
 router.post("/:id/messages/:messageId/reactions", protect, addReaction);
 router.delete("/:id/messages/:messageId/reactions", protect, removeReaction);

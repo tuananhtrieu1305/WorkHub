@@ -3707,3 +3707,201 @@ video.chat-attachment-media {
   color: #64748b !important;
   cursor: not-allowed;
 }
+
+.poll-detail-ended-row {
+  display: inline-flex;
+  width: fit-content;
+  max-width: 100%;
+  align-items: center;
+  gap: 0.4rem;
+  margin-top: 0.7rem;
+  border: 1px solid #e2e8f0;
+  border-radius: 0.5rem;
+  background: #f8fafc;
+  color: #475569;
+  font-size: 0.8rem;
+  font-weight: 800;
+  line-height: 1.35;
+  padding: 0.42rem 0.58rem;
+}
+
+.poll-detail-ended-row .material-symbols-outlined,
+.poll-detail-closed-note .material-symbols-outlined,
+.poll-detail-close-confirm .material-symbols-outlined {
+  font-variation-settings:
+    "FILL" 1,
+    "wght" 700,
+    "GRAD" 0,
+    "opsz" 20;
+}
+
+.poll-detail-ended-row .material-symbols-outlined {
+  color: #64748b;
+  font-size: 1rem;
+  line-height: 1;
+}
+
+.poll-detail-closed-note {
+  display: inline-flex;
+  width: fit-content;
+  max-width: 100%;
+  align-items: center;
+  gap: 0.4rem;
+  margin-top: 0.78rem;
+  border-radius: 0.55rem;
+  background: #f1f5f9;
+  color: #475569;
+  font-size: 0.88rem;
+  font-weight: 850;
+  line-height: 1.3;
+  padding: 0.58rem 0.72rem;
+}
+
+.poll-detail-closed-note .material-symbols-outlined {
+  color: #334155;
+  font-size: 1.08rem;
+  line-height: 1;
+}
+
+.poll-detail-close-confirm {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.72rem;
+  margin: -0.1rem 1rem 1rem;
+  border: 1px solid #fecaca;
+  border-radius: 0.65rem;
+  background: #fef2f2;
+  color: #991b1b;
+  padding: 0.78rem 0.85rem;
+}
+
+.poll-detail-close-confirm .material-symbols-outlined {
+  flex: 0 0 auto;
+  color: #dc2626;
+  font-size: 1.25rem;
+  line-height: 1.2;
+}
+
+.poll-detail-close-confirm p {
+  margin: 0;
+  font-size: 0.86rem;
+  font-weight: 780;
+  line-height: 1.45;
+}
+
+.poll-detail-actions-root {
+  position: relative;
+  display: inline-flex;
+  width: fit-content;
+  justify-self: start;
+}
+
+.poll-detail-settings-button {
+  display: inline-flex;
+  min-width: 2.45rem !important;
+  width: 2.45rem;
+  height: 2.45rem;
+  align-items: center;
+  justify-content: center;
+  border-radius: 0.5rem !important;
+  background: transparent !important;
+  color: #2563eb !important;
+  padding: 0 !important;
+}
+
+.poll-detail-settings-button:hover:not(:disabled) {
+  background: #eaf2ff !important;
+  color: #1d4ed8 !important;
+}
+
+.poll-detail-settings-button:disabled {
+  color: #94a3b8 !important;
+  cursor: not-allowed;
+}
+
+.poll-detail-action-menu {
+  position: absolute;
+  bottom: calc(100% + 0.5rem);
+  left: 0;
+  z-index: 2;
+  display: grid;
+  min-width: 12.5rem;
+  overflow: hidden;
+  border: 1px solid #dbe4ef;
+  border-radius: 0.55rem;
+  background: #ffffff;
+  box-shadow:
+    0 18px 44px rgba(15, 23, 42, 0.2),
+    0 4px 12px rgba(15, 23, 42, 0.1);
+}
+
+.poll-detail-action-menu button {
+  display: flex;
+  width: 100%;
+  min-width: 0 !important;
+  min-height: 2.45rem;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 0.55rem;
+  border-radius: 0 !important;
+  background: #ffffff !important;
+  color: #334155 !important;
+  font-size: 0.86rem;
+  font-weight: 820;
+  padding: 0 0.78rem !important;
+  text-align: left;
+}
+
+.poll-detail-action-menu button:hover:not(:disabled) {
+  background: #f8fafc !important;
+  color: #0f172a !important;
+}
+
+.poll-detail-action-menu button:disabled {
+  color: #94a3b8 !important;
+  cursor: not-allowed;
+}
+
+.poll-detail-action-menu button .material-symbols-outlined {
+  flex: 0 0 auto;
+  color: currentColor;
+  font-size: 1.08rem;
+  line-height: 1;
+}
+
+.poll-detail-action-menu button.is-danger {
+  color: #dc2626 !important;
+}
+
+.poll-detail-action-menu button.is-danger:hover:not(:disabled) {
+  background: #fef2f2 !important;
+  color: #b91c1c !important;
+}
+
+.poll-detail-danger-confirm {
+  background: #dc2626 !important;
+  color: #ffffff !important;
+}
+
+.poll-detail-danger-confirm:not(:disabled):hover {
+  background: #b91c1c !important;
+  color: #ffffff !important;
+}
+
+.poll-detail-settings-button:focus-visible,
+.poll-detail-action-menu button:focus-visible,
+.poll-detail-danger-confirm:focus-visible {
+  outline: 2px solid rgba(37, 99, 235, 0.62);
+  outline-offset: 2px;
+}
+
+@media (max-width: 640px) {
+  .poll-detail-action-menu {
+    left: 0;
+    min-width: min(12.5rem, calc(100vw - 2rem));
+  }
+
+  .poll-detail-close-confirm {
+    margin-inline: 0.85rem;
+  }
+}

@@ -4,6 +4,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import {
   addPollOption as addConversationPollOption,
   addMessageReaction,
+  closePoll as closeConversationPoll,
   deleteMessage as deleteConversationMessage,
   getConversationById,
   getConversations,
@@ -12,6 +13,7 @@ import {
   markConversationAsRead as markConversationReadRequest,
   removeMessageReaction,
   sendMessage as sendConversationMessage,
+  sharePoll as shareConversationPoll,
   uploadConversationAttachment,
   updateMessage as updateConversationMessage,
   updateMessagePin,
@@ -568,16 +570,27 @@ const ChatPage = () => {
 
       setIsSending(true);
       try {
-        const message = await sendConversationMessage(selectedConversationId, {
-          type: "poll",
-          content: poll.question,
-          poll,
-          metadata: {},
+        const createPollResult = await sendConversationMessage(
+          selectedConversationId,
+          {
+            type: "poll",
+            content: poll.question,
+            poll,
+            metadata: {},
+          }
+        );
+        const message = createPollResult.message || createPollResult;
+        const systemMessage = createPollResult.systemMessage || null;
+
+        setMessages((prev) => {
+          const withPoll = upsertMessageById(prev, message);
+          return systemMessage
+            ? upsertMessageById(withPoll, systemMessage)
+            : withPoll;
         });
-        setMessages((prev) => upsertMessageById(prev, message));
         setPinnedMessages((prev) => upsertPinnedMessage(prev, message));
         setConversations((prev) =>
-          updateConversationPreview(prev, message, {
+          updateConversationPreview(prev, systemMessage || message, {
             currentUserId: user?._id || user?.id,
             selectedConversationId,
           })
@@ -902,6 +915,86 @@ const ChatPage = () => {
     [selectedConversationId, toast, user?._id, user?.id]
   );
 
+  const handleSharePoll = useCallback(
+    async (message) => {
+      if (!selectedConversationId || !message?.id) return;
+
+      try {
+        const shareResult = await shareConversationPoll(
+          selectedConversationId,
+          message.id
+        );
+        const updatedMessage = shareResult.message || message;
+        const systemMessage = shareResult.systemMessage || null;
+
+        setMessages((prev) => {
+          const withPoll = upsertMessageById(prev, updatedMessage);
+          return systemMessage
+            ? upsertMessageById(withPoll, systemMessage)
+            : withPoll;
+        });
+        setPinnedMessages((prev) => upsertPinnedMessage(prev, updatedMessage));
+        if (shareResult.conversation) {
+          setConversations((prev) =>
+            mergeConversationUpdate(prev, shareResult.conversation)
+          );
+        } else {
+          setConversations((prev) =>
+            updateConversationPreview(prev, systemMessage || updatedMessage, {
+              currentUserId: user?._id || user?.id,
+              selectedConversationId,
+            })
+          );
+        }
+      } catch (err) {
+        console.error("Failed to send poll to group:", err);
+        toast.error("Không thể gửi bình chọn vào nhóm");
+        throw err;
+      }
+    },
+    [selectedConversationId, toast, user?._id, user?.id]
+  );
+
+  const handleClosePoll = useCallback(
+    async (message) => {
+      if (!selectedConversationId || !message?.id) return;
+
+      try {
+        const closeResult = await closeConversationPoll(
+          selectedConversationId,
+          message.id
+        );
+        const updatedMessage = closeResult.message || message;
+        const systemMessage = closeResult.systemMessage || null;
+
+        setMessages((prev) => {
+          const withPoll = upsertMessageById(prev, updatedMessage);
+          return systemMessage
+            ? upsertMessageById(withPoll, systemMessage)
+            : withPoll;
+        });
+        setPinnedMessages((prev) => upsertPinnedMessage(prev, updatedMessage));
+        if (closeResult.conversation) {
+          setConversations((prev) =>
+            mergeConversationUpdate(prev, closeResult.conversation)
+          );
+        } else {
+          setConversations((prev) =>
+            updateConversationPreview(prev, systemMessage || updatedMessage, {
+              currentUserId: user?._id || user?.id,
+              selectedConversationId,
+            })
+          );
+        }
+      } catch (err) {
+        console.error("Failed to close poll:", err);
+        toast.error("Không thể khóa bình chọn");
+        throw err;
+      }
+    },
+    [selectedConversationId, toast, user?._id, user?.id]
+  );
+
   const handleCreateConversation = async (newConv) => {
     const newConversationId = getConversationId(newConv);
     let nextConversation = newConv;
@@ -968,6 +1061,8 @@ const ChatPage = () => {
           onToggleReaction={handleToggleReaction}
           onVotePoll={handleVotePoll}
           onAddPollOption={handleAddPollOption}
+          onSharePoll={handleSharePoll}
+          onClosePoll={handleClosePoll}
           onCancelDraft={handleCancelDraft}
           onStartCall={startCall}
           onBack={handleBackToList}

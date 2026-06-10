@@ -22,6 +22,9 @@ const getMessageSenderId = (message) => {
 export const pollActivityEventTypes = new Set([
   "poll_voted",
   "poll_option_added",
+  "poll_created",
+  "poll_shared",
+  "poll_closed",
 ]);
 
 export const isPollActivityEventType = (eventType) =>
@@ -39,17 +42,32 @@ const getPollActivityTargetId = (message) => {
   return getComparableId(metadata.targetMessageId);
 };
 
+export const getPollActivityTargetMessageIds = (messages = []) => {
+  const targetMessageIds = new Set();
+
+  messages.forEach((message) => {
+    const targetMessageId = getPollActivityTargetId(message);
+    if (targetMessageId) {
+      targetMessageIds.add(targetMessageId);
+    }
+  });
+
+  return targetMessageIds;
+};
+
 export const getLatestPollActivityMessageIds = (messages = []) => {
-  let latestMessageId = "";
+  const latestMessageIdsByTarget = new Map();
 
   messages.forEach((message, index) => {
     const targetMessageId = getPollActivityTargetId(message);
     if (!targetMessageId) return;
 
-    latestMessageId = getMessageId(message, index);
+    latestMessageIdsByTarget.set(targetMessageId, getMessageId(message, index));
   });
 
-  return new Set(latestMessageId ? [latestMessageId] : []);
+  return new Set(
+    [...latestMessageIdsByTarget.values()].filter((messageId) => messageId),
+  );
 };
 
 const toValidDate = (value) => {
@@ -95,11 +113,22 @@ const formatTimeSeparatorLabel = (
 
 export const buildMessageTimeline = (messages = [], { now = new Date() } = {}) => {
   const timeline = [];
-  const latestPollActivityMessageIds = getLatestPollActivityMessageIds(messages);
+  const pollActivityTargetMessageIds = getPollActivityTargetMessageIds(messages);
+  const visibleMessages = messages.filter((message, index) => {
+    const messageId = getMessageId(message, index);
+    return !(
+      message?.type === "poll" &&
+      message?.poll &&
+      pollActivityTargetMessageIds.has(messageId)
+    );
+  });
+  const latestPollActivityMessageIds =
+    getLatestPollActivityMessageIds(visibleMessages);
 
-  messages.forEach((message, index) => {
-    const previousMessage = index > 0 ? messages[index - 1] : null;
-    const nextMessage = index < messages.length - 1 ? messages[index + 1] : null;
+  visibleMessages.forEach((message, index) => {
+    const previousMessage = index > 0 ? visibleMessages[index - 1] : null;
+    const nextMessage =
+      index < visibleMessages.length - 1 ? visibleMessages[index + 1] : null;
     const messageDate = toValidDate(message?.createdAt);
     const previousDate = toValidDate(previousMessage?.createdAt);
     const nextDate = toValidDate(nextMessage?.createdAt);
@@ -150,6 +179,7 @@ export const buildMessageTimeline = (messages = [], { now = new Date() } = {}) =
           : "default";
     const messageId = getMessageId(message, index);
     const timestampLabel = formatMessageTimestamp(message?.createdAt, { now });
+    const pollActivityTargetMessageId = getPollActivityTargetId(message);
 
     if (hasTimeSeparator) {
       timeline.push({
@@ -169,6 +199,7 @@ export const buildMessageTimeline = (messages = [], { now = new Date() } = {}) =
       hasTightNext,
       timestampLabel,
       showPollActivityCard: latestPollActivityMessageIds.has(messageId),
+      pollActivityTargetMessageId,
     });
   });
 

@@ -1002,6 +1002,9 @@ const PollActivitySystemMessage = ({
   currentUserId,
   onVotePoll,
   onAddPollOption,
+  onTogglePin,
+  onSharePoll,
+  onClosePoll,
   showPollCard = false,
 }) => {
   const [isDetailOpen, setIsDetailOpen] = useState(false);
@@ -1012,15 +1015,70 @@ const PollActivitySystemMessage = ({
     pollMessage?.poll?.question ||
     pollMessage?.content ||
     "Bình chọn";
-  const isOptionAdded = message.metadata?.eventType === "poll_option_added";
+  const pollEventType = message.metadata?.eventType;
+  const isPollCreated = pollEventType === "poll_created";
+  const isOptionAdded = pollEventType === "poll_option_added";
+  const isPollShared = pollEventType === "poll_shared";
+  const isPollClosed = pollEventType === "poll_closed";
   const pollOptionText = message.metadata?.pollOptionText || "";
+  const noticeIcon = isPollClosed
+    ? "lock"
+    : isPollCreated
+      ? "add_chart"
+      : "bar_chart";
+
+  const renderNoticeText = () => {
+    if (isPollCreated) {
+      return (
+        <>
+          <strong>{actorName || "Người dùng"}</strong> đã tạo cuộc bình chọn
+          mới: <strong>{pollQuestion}</strong>
+        </>
+      );
+    }
+
+    if (isPollClosed) {
+      return (
+        <>
+          <strong>{actorName || "Người dùng"}</strong> đã khóa bình chọn:{" "}
+          <strong>{pollQuestion}</strong>
+        </>
+      );
+    }
+
+    if (isPollShared) {
+      return (
+        <>
+          <strong>{actorName || "Người dùng"}</strong> đã gửi bình chọn vào
+          nhóm: <strong>{pollQuestion}</strong>
+        </>
+      );
+    }
+
+    if (isOptionAdded) {
+      return (
+        <>
+          <strong>{actorName || "Người dùng"}</strong> đã thêm lựa chọn{" "}
+          {pollOptionText ? <strong>{pollOptionText}</strong> : "mới"} vào cuộc
+          bình chọn: <strong>{pollQuestion}</strong>
+        </>
+      );
+    }
+
+    return (
+      <>
+        <strong>{actorName || "Người dùng"}</strong> tham gia cuộc bình chọn:{" "}
+        <strong>{pollQuestion}</strong>
+      </>
+    );
+  };
 
   if (!pollMessage?.poll) {
     return (
       <div className="chat-poll-activity my-3 flex justify-center px-3">
         <div className="chat-poll-activity-notice">
           <span className="material-symbols-outlined" aria-hidden="true">
-            bar_chart
+            {noticeIcon}
           </span>
           <span>{message.content}</span>
         </div>
@@ -1032,22 +1090,9 @@ const PollActivitySystemMessage = ({
     <div className="chat-poll-activity my-3 flex flex-col items-center gap-3 px-3">
       <div className="chat-poll-activity-notice">
         <span className="material-symbols-outlined" aria-hidden="true">
-          bar_chart
+          {noticeIcon}
         </span>
-        <span className="min-w-0 truncate">
-          {isOptionAdded ? (
-            <>
-              <strong>{actorName || "Người dùng"}</strong> đã thêm lựa chọn{" "}
-              {pollOptionText ? <strong>{pollOptionText}</strong> : "mới"} vào
-              cuộc bình chọn: <strong>{pollQuestion}</strong>
-            </>
-          ) : (
-            <>
-              <strong>{actorName || "Người dùng"}</strong> tham gia cuộc bình
-              chọn: <strong>{pollQuestion}</strong>
-            </>
-          )}
-        </span>
+        <span className="min-w-0 truncate">{renderNoticeText()}</span>
         <button
           type="button"
           onClick={() => setIsDetailOpen(true)}
@@ -1064,6 +1109,9 @@ const PollActivitySystemMessage = ({
             isMine={false}
             onVote={onVotePoll}
             onAddOption={onAddPollOption}
+            onTogglePin={onTogglePin}
+            onSharePoll={onSharePoll}
+            onClosePoll={onClosePoll}
           />
         </div>
       )}
@@ -1074,6 +1122,9 @@ const PollActivitySystemMessage = ({
           poll={pollMessage.poll}
           onVote={onVotePoll}
           onAddOption={onAddPollOption}
+          onTogglePin={onTogglePin}
+          onSharePoll={onSharePoll}
+          onClosePoll={onClosePoll}
           onClose={() => setIsDetailOpen(false)}
         />
       )}
@@ -1098,6 +1149,8 @@ const MessageBubble = ({
   onToggleReaction,
   onVotePoll,
   onAddPollOption,
+  onSharePoll,
+  onClosePoll,
   onJumpToMessage,
   onOpenPinnedList,
 }) => {
@@ -1345,6 +1398,9 @@ const MessageBubble = ({
           currentUserId={currentUserId}
           onVotePoll={onVotePoll}
           onAddPollOption={onAddPollOption}
+          onTogglePin={onTogglePin}
+          onSharePoll={onSharePoll}
+          onClosePoll={onClosePoll}
           showPollCard={showPollActivityCard}
         />
       );
@@ -1575,6 +1631,9 @@ const MessageBubble = ({
                   isMine={false}
                   onVote={onVotePoll}
                   onAddOption={onAddPollOption}
+                  onTogglePin={onTogglePin}
+                  onSharePoll={onSharePoll}
+                  onClosePoll={onClosePoll}
                 />
               </div>
               {renderActions()}
@@ -1635,6 +1694,9 @@ const MessageBubble = ({
                   isMine
                   onVote={onVotePoll}
                   onAddOption={onAddPollOption}
+                  onTogglePin={onTogglePin}
+                  onSharePoll={onSharePoll}
+                  onClosePoll={onClosePoll}
                 />
               ) : (
                 <>
@@ -1713,6 +1775,9 @@ const MessageBubble = ({
                 isMine={false}
                 onVote={onVotePoll}
                 onAddOption={onAddPollOption}
+                onTogglePin={onTogglePin}
+                onSharePoll={onSharePoll}
+                onClosePoll={onClosePoll}
               />
             ) : (
               <>

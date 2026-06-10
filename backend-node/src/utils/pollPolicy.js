@@ -81,6 +81,19 @@ export const isPollClosed = (poll, now = new Date()) => {
   return !Number.isNaN(expiresAt.getTime()) && expiresAt.getTime() <= now.getTime();
 };
 
+export const closePoll = (poll, { now = new Date() } = {}) => {
+  if (!poll) {
+    throw new Error("Poll not found");
+  }
+
+  if (isPollClosed(poll, now)) {
+    throw new Error("Poll is already closed");
+  }
+
+  poll.closedAt = now;
+  return poll;
+};
+
 export const normalizePollPayload = (
   payload = {},
   { creatorId, now = new Date() } = {},

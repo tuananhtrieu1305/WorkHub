@@ -91,7 +91,7 @@ test("upserting an updated poll refreshes poll option activity snapshots", () =>
   assert.equal(nextActivity.metadata.pollMessage.poll.options[1].text, "Thứ 4");
 });
 
-test("message timeline shows the poll card only on the latest poll activity", () => {
+test("message timeline shows the latest poll card for each independent poll", () => {
   const firstActivity = {
     id: "activity-1",
     type: "system",
@@ -116,8 +116,94 @@ test("message timeline shows the poll card only on the latest poll activity", ()
   const timeline = buildMessageTimeline([firstActivity, latestActivity]);
   const activityItems = timeline.filter((item) => item.type === "message");
 
-  assert.equal(activityItems[0].showPollActivityCard, false);
+  assert.equal(activityItems[0].showPollActivityCard, true);
   assert.equal(activityItems[1].showPollActivityCard, true);
+  assert.equal(activityItems[0].pollActivityTargetMessageId, "poll-1");
+  assert.equal(activityItems[1].pollActivityTargetMessageId, "poll-2");
+});
+
+test("message timeline hides the original poll card after poll activity notices exist", () => {
+  const originalPoll = {
+    id: "poll-1",
+    type: "poll",
+    content: "Chọn lịch?",
+    poll: {
+      question: "Chọn lịch?",
+      options: [{ id: "yes", text: "Có", voteCount: 0, voters: [] }],
+    },
+    createdAt: "2026-06-09T10:00:00.000Z",
+  };
+  const firstActivity = {
+    id: "activity-1",
+    type: "system",
+    content: "An tham gia cuộc bình chọn: Chọn lịch?",
+    metadata: {
+      eventType: "poll_voted",
+      targetMessageId: "poll-1",
+      pollMessage: originalPoll,
+    },
+    createdAt: "2026-06-09T10:01:00.000Z",
+  };
+  const latestActivity = {
+    id: "activity-2",
+    type: "system",
+    content: 'Binh đã thêm lựa chọn "Thứ 4" vào cuộc bình chọn: Chọn lịch?',
+    metadata: {
+      eventType: "poll_option_added",
+      targetMessageId: "poll-1",
+      pollMessage: originalPoll,
+    },
+    createdAt: "2026-06-09T10:02:00.000Z",
+  };
+
+  const timeline = buildMessageTimeline([
+    originalPoll,
+    firstActivity,
+    latestActivity,
+  ]);
+  const messageItems = timeline.filter((item) => item.type === "message");
+
+  assert.deepEqual(
+    messageItems.map((item) => item.id),
+    ["activity-1", "activity-2"],
+  );
+  assert.equal(messageItems[0].showPollActivityCard, false);
+  assert.equal(messageItems[1].showPollActivityCard, true);
+  assert.equal(messageItems[1].pollActivityTargetMessageId, "poll-1");
+});
+
+test("message timeline treats poll creation notices as poll activity", () => {
+  const originalPoll = {
+    id: "poll-1",
+    type: "poll",
+    content: "Chọn lịch?",
+    poll: {
+      question: "Chọn lịch?",
+      options: [{ id: "yes", text: "Có", voteCount: 0, voters: [] }],
+    },
+    createdAt: "2026-06-09T10:00:00.000Z",
+  };
+  const createdActivity = {
+    id: "activity-1",
+    type: "system",
+    content: "An đã tạo cuộc bình chọn mới: Chọn lịch?",
+    metadata: {
+      eventType: "poll_created",
+      targetMessageId: "poll-1",
+      pollMessage: originalPoll,
+    },
+    createdAt: "2026-06-09T10:00:01.000Z",
+  };
+
+  const timeline = buildMessageTimeline([originalPoll, createdActivity]);
+  const messageItems = timeline.filter((item) => item.type === "message");
+
+  assert.deepEqual(
+    messageItems.map((item) => item.id),
+    ["activity-1"],
+  );
+  assert.equal(messageItems[0].showPollActivityCard, true);
+  assert.equal(messageItems[0].pollActivityTargetMessageId, "poll-1");
 });
 
 test("message timeline treats added poll options as poll activity", () => {
@@ -143,6 +229,35 @@ test("message timeline treats added poll options as poll activity", () => {
   };
 
   const timeline = buildMessageTimeline([voteActivity, optionActivity]);
+  const activityItems = timeline.filter((item) => item.type === "message");
+
+  assert.equal(activityItems[0].showPollActivityCard, false);
+  assert.equal(activityItems[1].showPollActivityCard, true);
+});
+
+test("message timeline treats poll share and close notices as poll activity", () => {
+  const sharedActivity = {
+    id: "activity-1",
+    type: "system",
+    content: "An đã gửi bình chọn vào nhóm: Chọn lịch?",
+    metadata: {
+      eventType: "poll_shared",
+      targetMessageId: "poll-1",
+    },
+    createdAt: "2026-06-09T10:01:00.000Z",
+  };
+  const closedActivity = {
+    id: "activity-2",
+    type: "system",
+    content: "An đã khóa bình chọn: Chọn lịch?",
+    metadata: {
+      eventType: "poll_closed",
+      targetMessageId: "poll-1",
+    },
+    createdAt: "2026-06-09T10:02:00.000Z",
+  };
+
+  const timeline = buildMessageTimeline([sharedActivity, closedActivity]);
   const activityItems = timeline.filter((item) => item.type === "message");
 
   assert.equal(activityItems[0].showPollActivityCard, false);

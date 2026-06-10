@@ -4,16 +4,45 @@ import { useAuth } from "../../context/AuthContext";
 import { getAvatarUrl } from "../../utils/avatar";
 import { sortPollOptionsByVotesAndText } from "./pollOptionSorting";
 
-const formatPollExpiry = (expiresAt, isClosed) => {
-  if (isClosed) return "Đã kết thúc";
+const toValidDate = (dateValue) => {
+  if (!dateValue) return null;
+
+  const date = new Date(dateValue);
+  return Number.isNaN(date.getTime()) ? null : date;
+};
+
+const isSameCalendarDay = (date, otherDate) =>
+  date.getFullYear() === otherDate.getFullYear() &&
+  date.getMonth() === otherDate.getMonth() &&
+  date.getDate() === otherDate.getDate();
+
+const formatClockTime = (date) =>
+  `${String(date.getHours()).padStart(2, "0")}:${String(
+    date.getMinutes(),
+  ).padStart(2, "0")}`;
+
+const formatPollEndDate = (dateValue, { now = new Date() } = {}) => {
+  const date = toValidDate(dateValue);
+  if (!date) return "Đã kết thúc";
+
+  const time = formatClockTime(date);
+  if (isSameCalendarDay(date, now)) {
+    return `Kết thúc lúc ${time} Hôm nay`;
+  }
+
+  return `Kết thúc lúc ${time} ${date.getDate()} Tháng ${
+    date.getMonth() + 1
+  }, ${date.getFullYear()}`;
+};
+
+const formatPollExpiry = (expiresAt, isClosed, closedAt) => {
+  if (isClosed) return formatPollEndDate(closedAt || expiresAt);
   if (!expiresAt) return "Không thời hạn";
 
-  const date = new Date(expiresAt);
-  if (Number.isNaN(date.getTime())) return "Không thời hạn";
+  const date = toValidDate(expiresAt);
+  if (!date) return "Không thời hạn";
 
-  return `Kết thúc ${String(date.getHours()).padStart(2, "0")}:${String(
-    date.getMinutes(),
-  ).padStart(2, "0")} ${date.getDate()} Tháng ${
+  return `Kết thúc ${formatClockTime(date)} ${date.getDate()} Tháng ${
     date.getMonth() + 1
   }, ${date.getFullYear()}`;
 };
@@ -161,6 +190,9 @@ export const PollDetailModal = ({
   onClose,
   onVote,
   onAddOption,
+  onTogglePin,
+  onSharePoll,
+  onClosePoll,
 }) => {
   const { user } = useAuth();
   const options = useMemo(
@@ -207,6 +239,9 @@ export const PollDetailModal = ({
   const [isAddOptionOpen, setIsAddOptionOpen] = useState(false);
   const [newOptionText, setNewOptionText] = useState("");
   const [isAddingOption, setIsAddingOption] = useState(false);
+  const [isActionMenuOpen, setIsActionMenuOpen] = useState(false);
+  const [isCloseConfirmOpen, setIsCloseConfirmOpen] = useState(false);
+  const [pendingAction, setPendingAction] = useState("");
 
   useEffect(() => {
     if (typeof document === "undefined") return undefined;
@@ -244,12 +279,22 @@ export const PollDetailModal = ({
   const draftSelectionKey = getSelectionKey(draftOptionIds);
   const selectedDraftOptionSet = new Set(draftOptionIds);
   const currentUserId = getVoterId(currentUser);
+  const pollCreatorId = getVoterId(message?.sender);
+  const isPollCreator =
+    Boolean(currentUserId) &&
+    Boolean(pollCreatorId) &&
+    currentUserId === pollCreatorId;
   const hasSelectionChanged = draftSelectionKey !== currentSelectionKey;
   const isMultiple = Boolean(poll.settings?.multiple);
   const canVote = !poll.isClosed && Boolean(onVote);
   const canAddOption =
     !poll.isClosed && Boolean(poll.settings?.allowOptions) && Boolean(onAddOption);
+  const canClosePoll =
+    !poll.isClosed && isPollCreator && Boolean(onClosePoll);
   const canInspectVoters = poll.resultsVisible && !poll.settings?.hideVoters;
+  const pollEndLabel = poll.isClosed
+    ? formatPollEndDate(poll.closedAt || poll.expiresAt)
+    : "";
   const displayTotalVotes = Math.max(
     0,
     totalVotes + draftOptionIds.length - currentOptionIds.length,
@@ -264,7 +309,7 @@ export const PollDetailModal = ({
     ? `${displayTotalVoters} người bình chọn, ${displayTotalVotes} lượt bình chọn`
     : "Kết quả sẽ hiển thị sau khi bạn bình chọn";
   const footerConfirmDisabled =
-    !canVote || !hasSelectionChanged || isSubmitting;
+    !canVote || !hasSelectionChanged || isSubmitting || Boolean(pendingAction);
   const getDisplayedOptionVoteCount = (option) => {
     const optionId = getOptionId(option);
     const voteCount = getOptionVoteCount(option);
@@ -359,6 +404,62 @@ export const PollDetailModal = ({
     }
   };
 
+  const runPollAction = async (
+    action,
+    callback,
+    { closeAfterSuccess = false, failureMessage = "Không thể thực hiện thao tác." } = {},
+  ) => {
+    if (!callback || pendingAction) return;
+
+    setPendingAction(action);
+    setError("");
+    let didClose = false;
+
+    try {
+      await callback(message);
+      setIsActionMenuOpen(false);
+      setIsCloseConfirmOpen(false);
+      if (closeAfterSuccess) {
+        setPendingAction("");
+        didClose = true;
+        onClose?.();
+      }
+    } catch {
+      setError(failureMessage);
+    } finally {
+      if (!didClose) setPendingAction("");
+    }
+  };
+
+  const handleTogglePin = () => {
+    runPollAction("pin", onTogglePin, {
+      failureMessage: "Không thể cập nhật ghim bình chọn.",
+    });
+  };
+
+  const handleSharePoll = () => {
+    runPollAction("share", onSharePoll, {
+      closeAfterSuccess: true,
+      failureMessage: "Không thể gửi bình chọn vào nhóm.",
+    });
+  };
+
+  const handleOpenCloseConfirm = () => {
+    if (!canClosePoll || pendingAction) return;
+    setIsActionMenuOpen(false);
+    setIsCloseConfirmOpen(true);
+    setError("");
+  };
+
+  const handleClosePoll = () => {
+    if (!canClosePoll) return;
+
+    runPollAction("close", onClosePoll, {
+      closeAfterSuccess: true,
+      failureMessage: "Không thể khóa bình chọn.",
+    });
+  };
+
   const renderVoteView = () => (
     <>
       <div className="poll-detail-question-block">
@@ -375,6 +476,15 @@ export const PollDetailModal = ({
         </span>
         <span>{pollTypeLabel}</span>
       </div>
+
+      {poll.isClosed && (
+        <div className="poll-detail-ended-row">
+          <span className="material-symbols-outlined" aria-hidden="true">
+            lock
+          </span>
+          <span>{pollEndLabel}</span>
+        </div>
+      )}
 
       <button
         type="button"
@@ -450,7 +560,14 @@ export const PollDetailModal = ({
         })}
       </div>
 
-      {canAddOption && (
+      {poll.isClosed ? (
+        <div className="poll-detail-closed-note">
+          <span className="material-symbols-outlined" aria-hidden="true">
+            lock
+          </span>
+          <span>Bình chọn đã đóng</span>
+        </div>
+      ) : canAddOption ? (
         <div className="poll-detail-add-option">
           {isAddOptionOpen ? (
             <div className="poll-detail-add-option-form">
@@ -493,7 +610,7 @@ export const PollDetailModal = ({
             </button>
           )}
         </div>
-      )}
+      ) : null}
     </>
   );
 
@@ -603,28 +720,113 @@ export const PollDetailModal = ({
           )}
         </div>
 
+        {isCloseConfirmOpen && (
+          <div className="poll-detail-close-confirm">
+            <span className="material-symbols-outlined" aria-hidden="true">
+              lock
+            </span>
+            <p>
+              Sau khi khóa, bạn & các thành viên khác sẽ không thể tiếp tục tham
+              gia bình chọn
+            </p>
+          </div>
+        )}
+
         <footer className="poll-detail-footer">
-          <span
-            className="poll-detail-footer-icon material-symbols-outlined"
-            aria-hidden="true"
-          >
-            settings
-          </span>
-          <button
-            type="button"
-            className="poll-detail-cancel"
-            onClick={onClose}
-          >
-            Hủy
-          </button>
-          <button
-            type="button"
-            className="poll-detail-confirm"
-            onClick={handleConfirm}
-            disabled={footerConfirmDisabled}
-          >
-            {isSubmitting ? "Đang lưu..." : "Xác nhận"}
-          </button>
+          {isCloseConfirmOpen ? (
+            <>
+              <span aria-hidden="true" />
+              <button
+                type="button"
+                className="poll-detail-cancel"
+                onClick={() => setIsCloseConfirmOpen(false)}
+                disabled={pendingAction === "close"}
+              >
+                Hủy
+              </button>
+              <button
+                type="button"
+                className="poll-detail-confirm poll-detail-danger-confirm"
+                onClick={handleClosePoll}
+                disabled={pendingAction === "close"}
+              >
+                {pendingAction === "close" ? "Đang khóa..." : "Khóa bình chọn"}
+              </button>
+            </>
+          ) : (
+            <>
+              <span className="poll-detail-actions-root">
+                <button
+                  type="button"
+                  className="poll-detail-settings-button"
+                  onClick={() => setIsActionMenuOpen((open) => !open)}
+                  aria-label="Mở tùy chọn bình chọn"
+                  aria-expanded={isActionMenuOpen}
+                  title="Tùy chọn bình chọn"
+                  disabled={Boolean(pendingAction)}
+                >
+                  <span
+                    className="poll-detail-footer-icon material-symbols-outlined"
+                    aria-hidden="true"
+                  >
+                    settings
+                  </span>
+                </button>
+                {isActionMenuOpen && (
+                  <span className="poll-detail-action-menu">
+                    <button
+                      type="button"
+                      onClick={handleTogglePin}
+                      disabled={!onTogglePin || Boolean(pendingAction)}
+                    >
+                      <span className="material-symbols-outlined">
+                        push_pin
+                      </span>
+                      <span>{message?.isPinned ? "Bỏ ghim" : "Ghim"}</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleSharePoll}
+                      disabled={!onSharePoll || Boolean(pendingAction)}
+                    >
+                      <span className="material-symbols-outlined">
+                        send
+                      </span>
+                      <span>Gửi vào nhóm</span>
+                    </button>
+                    {canClosePoll && (
+                      <button
+                        type="button"
+                        className="is-danger"
+                        onClick={handleOpenCloseConfirm}
+                        disabled={Boolean(pendingAction)}
+                      >
+                        <span className="material-symbols-outlined">
+                          lock
+                        </span>
+                        <span>Khóa bình chọn</span>
+                      </button>
+                    )}
+                  </span>
+                )}
+              </span>
+              <button
+                type="button"
+                className="poll-detail-cancel"
+                onClick={onClose}
+              >
+                Hủy
+              </button>
+              <button
+                type="button"
+                className="poll-detail-confirm"
+                onClick={handleConfirm}
+                disabled={footerConfirmDisabled}
+              >
+                {isSubmitting ? "Đang lưu..." : "Xác nhận"}
+              </button>
+            </>
+          )}
         </footer>
       </section>
     </div>,
@@ -632,7 +834,15 @@ export const PollDetailModal = ({
   );
 };
 
-const PollMessage = ({ message, isMine, onVote, onAddOption }) => {
+const PollMessage = ({
+  message,
+  isMine,
+  onVote,
+  onAddOption,
+  onTogglePin,
+  onSharePoll,
+  onClosePoll,
+}) => {
   const poll = message?.poll;
   const [isDetailOpen, setIsDetailOpen] = useState(false);
   const selectedOptionIds = useMemo(() => getSelectedOptionIds(poll), [poll]);
@@ -642,7 +852,11 @@ const PollMessage = ({ message, isMine, onVote, onAddOption }) => {
   );
   const totalVotes = getTotalVotes(poll);
   const isMultiple = Boolean(poll?.settings?.multiple);
-  const expiresLabel = formatPollExpiry(poll?.expiresAt, poll?.isClosed);
+  const expiresLabel = formatPollExpiry(
+    poll?.expiresAt,
+    poll?.isClosed,
+    poll?.closedAt,
+  );
   const previewOptions = useMemo(
     () =>
       sortPollOptionsByVotesAndText(poll?.options || [], {
@@ -765,6 +979,9 @@ const PollMessage = ({ message, isMine, onVote, onAddOption }) => {
           poll={poll}
           onVote={onVote}
           onAddOption={onAddOption}
+          onTogglePin={onTogglePin}
+          onSharePoll={onSharePoll}
+          onClosePoll={onClosePoll}
           onClose={() => setIsDetailOpen(false)}
         />
       )}

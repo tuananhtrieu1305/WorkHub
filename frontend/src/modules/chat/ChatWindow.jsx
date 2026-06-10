@@ -311,6 +311,8 @@ const ChatWindow = ({
   onToggleReaction,
   onVotePoll,
   onAddPollOption,
+  onSharePoll,
+  onClosePoll,
   onCancelDraft,
   onStartCall,
   onBack,
@@ -827,11 +829,23 @@ const ChatWindow = ({
               const itemMessageId = getComparableId(
                 item.message?.id || item.message?._id,
               );
+              const pollActivityTargetMessageId = item.showPollActivityCard
+                ? getComparableId(item.pollActivityTargetMessageId)
+                : "";
+              const registerTimelineNode = (node) => {
+                registerMessageNode(itemMessageId, node);
+                if (
+                  pollActivityTargetMessageId &&
+                  pollActivityTargetMessageId !== itemMessageId
+                ) {
+                  registerMessageNode(pollActivityTargetMessageId, node);
+                }
+              };
 
               return (
                 <div
                   key={item.id}
-                  ref={(node) => registerMessageNode(itemMessageId, node)}
+                  ref={registerTimelineNode}
                   data-message-id={itemMessageId}
                   className={
                     messageSpacingClassNames[item.spacing] ||
@@ -855,6 +869,8 @@ const ChatWindow = ({
                     onToggleReaction={onToggleReaction}
                     onVotePoll={onVotePoll}
                     onAddPollOption={onAddPollOption}
+                    onSharePoll={onSharePoll}
+                    onClosePoll={onClosePoll}
                     onJumpToMessage={handleJumpToMessage}
                     onOpenPinnedList={() => setIsPinnedListOpen(true)}
                   />
