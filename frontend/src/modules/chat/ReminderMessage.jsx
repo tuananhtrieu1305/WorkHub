@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useAuth } from "../../context/AuthContext";
 import { getAvatarUrl } from "../../utils/avatar";
@@ -15,6 +15,11 @@ const responseLabels = {
   accepted: "Tham gia",
   declined: "Từ chối",
 };
+
+const quickResponseOptions = [
+  { status: "accepted", label: responseLabels.accepted },
+  { status: "declined", label: responseLabels.declined },
+];
 
 const getComparableId = (value) => {
   if (value == null) return "";
@@ -120,6 +125,44 @@ const getCurrentReminderStatus = (reminder, currentUserId) => {
 const getParticipantKey = (participant, index) => {
   const user = getParticipantUser(participant);
   return user.id || user._id || participant?.userId || `participant-${index}`;
+};
+
+const clamp = (value, min, max) => Math.min(Math.max(value, min), max);
+
+const getQuickResponseMenuLayout = (buttonElement, menuElement) => {
+  if (!buttonElement || typeof window === "undefined") {
+    return { placement: "bottom", style: undefined };
+  }
+
+  const margin = 12;
+  const gap = 8;
+  const buttonRect = buttonElement.getBoundingClientRect();
+  const width = Math.min(168, window.innerWidth - margin * 2);
+  const estimatedHeight =
+    menuElement?.offsetHeight ||
+    Math.min(8 + quickResponseOptions.length * 44, window.innerHeight - margin * 2);
+  const spaceBelow = window.innerHeight - margin - buttonRect.bottom - gap;
+  const spaceAbove = buttonRect.top - margin - gap;
+  const placement =
+    spaceBelow >= estimatedHeight || spaceBelow >= spaceAbove ? "bottom" : "top";
+  const maxHeight = Math.max(
+    0,
+    placement === "bottom" ? spaceBelow : spaceAbove,
+  );
+  const maxLeft = Math.max(margin, window.innerWidth - width - margin);
+  const left = clamp(buttonRect.right - width, margin, maxLeft);
+
+  return {
+    placement,
+    style: {
+      left,
+      width,
+      maxHeight,
+      ...(placement === "bottom"
+        ? { top: buttonRect.bottom + gap }
+        : { bottom: window.innerHeight - buttonRect.top + gap }),
+    },
+  };
 };
 
 const ParticipantAvatar = ({ participant }) => {
@@ -452,6 +495,15 @@ const ReminderMessage = ({
   onEditReminder,
 }) => {
   const [isDetailOpen, setIsDetailOpen] = useState(false);
+  const [isResponseMenuOpen, setIsResponseMenuOpen] = useState(false);
+  const [responseMenuLayout, setResponseMenuLayout] = useState({
+    placement: "bottom",
+    style: undefined,
+  });
+  const [pendingResponse, setPendingResponse] = useState("");
+  const [quickActionError, setQuickActionError] = useState("");
+  const responseMenuButtonRef = useRef(null);
+  const responseMenuRef = useRef(null);
   const { user } = useAuth();
   const reminder = message?.reminder;
   const dateTile = getDateTile(reminder?.scheduledAt);
@@ -459,6 +511,11 @@ const ReminderMessage = ({
   const currentUserId = getComparableId(user?._id || user?.id);
   const currentStatus = getCurrentReminderStatus(reminder, currentUserId);
   const acceptedCount = reminder?.acceptedCount || reminder?.accepted?.length || 0;
+  const canQuickRespond =
+    Boolean(reminder) &&
+    !reminder?.isCancelled &&
+    reminder?.status !== "completed" &&
+    Boolean(onRespond);
   const scheduleLabel = formatReminderSchedule(reminder?.scheduledAt);
   const recurrenceLabel =
     recurrenceLabels[reminder?.recurrence] || recurrenceLabels.none;
@@ -495,6 +552,62 @@ const ReminderMessage = ({
     };
   }, [currentStatus, reminder?.isCancelled]);
 
+  const updateResponseMenuLayout = useCallback(() => {
+    setResponseMenuLayout(
+      getQuickResponseMenuLayout(
+        responseMenuButtonRef.current,
+        responseMenuRef.current,
+      ),
+    );
+  }, []);
+
+  useEffect(() => {
+    if (!canQuickRespond && isResponseMenuOpen) {
+      setIsResponseMenuOpen(false);
+    }
+  }, [canQuickRespond, isResponseMenuOpen]);
+
+  useEffect(() => {
+    if (!isResponseMenuOpen || typeof document === "undefined") return undefined;
+
+    const handlePointerDown = (event) => {
+      if (
+        !responseMenuButtonRef.current?.contains(event.target) &&
+        !responseMenuRef.current?.contains(event.target)
+      ) {
+        setIsResponseMenuOpen(false);
+      }
+    };
+
+    const handleKeyDown = (event) => {
+      if (event.key === "Escape") {
+        setIsResponseMenuOpen(false);
+      }
+    };
+
+    document.addEventListener("mousedown", handlePointerDown, true);
+    document.addEventListener("keydown", handleKeyDown);
+
+    return () => {
+      document.removeEventListener("mousedown", handlePointerDown, true);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [isResponseMenuOpen]);
+
+  useEffect(() => {
+    if (!isResponseMenuOpen || typeof window === "undefined") return undefined;
+
+    const frameId = window.requestAnimationFrame(updateResponseMenuLayout);
+    window.addEventListener("resize", updateResponseMenuLayout);
+    window.addEventListener("scroll", updateResponseMenuLayout, true);
+
+    return () => {
+      window.cancelAnimationFrame(frameId);
+      window.removeEventListener("resize", updateResponseMenuLayout);
+      window.removeEventListener("scroll", updateResponseMenuLayout, true);
+    };
+  }, [isResponseMenuOpen, updateResponseMenuLayout]);
+
   if (!reminder) return null;
 
   const handleCardKeyDown = (event) => {
@@ -505,6 +618,35 @@ const ReminderMessage = ({
 
     event.preventDefault();
     setIsDetailOpen(true);
+  };
+
+  const handleToggleResponseMenu = (event) => {
+    event.stopPropagation();
+    if (!canQuickRespond || pendingResponse) return;
+
+    setQuickActionError("");
+    if (!isResponseMenuOpen) {
+      setResponseMenuLayout(
+        getQuickResponseMenuLayout(responseMenuButtonRef.current, null),
+      );
+    }
+    setIsResponseMenuOpen((open) => !open);
+  };
+
+  const handleQuickRespond = async (event, status) => {
+    event.stopPropagation();
+    if (!canQuickRespond || pendingResponse) return;
+
+    setPendingResponse(status);
+    setQuickActionError("");
+    try {
+      await onRespond?.(message, status);
+      setIsResponseMenuOpen(false);
+    } catch {
+      setQuickActionError("Không thể cập nhật xác nhận.");
+    } finally {
+      setPendingResponse("");
+    }
   };
 
   return (
@@ -550,19 +692,61 @@ const ReminderMessage = ({
       <div className={`chat-reminder-response ${statusMeta.className}`}>
         <span className="material-symbols-outlined">{statusMeta.icon}</span>
         <strong>{statusMeta.text}</strong>
-        {!reminder.isCancelled && (
+        {canQuickRespond && (
           <button
+            ref={responseMenuButtonRef}
             type="button"
             data-reminder-interactive
-            onClick={(event) => {
-              event.stopPropagation();
-              setIsDetailOpen(true);
-            }}
+            onClick={handleToggleResponseMenu}
+            aria-haspopup="menu"
+            aria-expanded={isResponseMenuOpen}
+            disabled={Boolean(pendingResponse)}
           >
             Thay đổi
           </button>
         )}
       </div>
+      {quickActionError && (
+        <p className="chat-reminder-response-error" role="status">
+          {quickActionError}
+        </p>
+      )}
+
+      {isResponseMenuOpen &&
+        typeof document !== "undefined" &&
+        createPortal(
+          <span
+            ref={responseMenuRef}
+            className="chat-reminder-response-menu-portal"
+            data-placement={responseMenuLayout.placement}
+            style={responseMenuLayout.style}
+            role="menu"
+            aria-label="Thay đổi xác nhận nhắc hẹn"
+            onMouseDown={(event) => event.stopPropagation()}
+            onClick={(event) => event.stopPropagation()}
+          >
+            {quickResponseOptions.map((option) => {
+              const isActive = currentStatus === option.status;
+              return (
+                <button
+                  key={option.status}
+                  type="button"
+                  className={isActive ? "is-active" : ""}
+                  onClick={(event) => handleQuickRespond(event, option.status)}
+                  disabled={!canQuickRespond || Boolean(pendingResponse)}
+                  role="menuitemradio"
+                  aria-checked={isActive}
+                >
+                  <span>{option.label}</span>
+                  <span className="material-symbols-outlined" aria-hidden="true">
+                    check
+                  </span>
+                </button>
+              );
+            })}
+          </span>,
+          document.body,
+        )}
 
       {isDetailOpen && (
         <ReminderDetailModal
