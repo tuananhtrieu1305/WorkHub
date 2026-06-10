@@ -846,6 +846,7 @@ const ChatWindow = ({
                     isTightGroup={item.spacing === "tight"}
                     hasTightNext={item.hasTightNext}
                     isHighlighted={highlightedMessageId === itemMessageId}
+                    showPollActivityCard={item.showPollActivityCard}
                     onReply={onReplyMessage}
                     onEdit={onEditMessage}
                     onDelete={onDeleteMessage}

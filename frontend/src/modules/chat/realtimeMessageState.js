@@ -1,5 +1,6 @@
 import { sortConversationsByActivity } from "./conversationListState.js";
 import { getMessagePreviewText } from "./chatMessagePreview.js";
+import { isPollActivityEventType } from "./messageTimeline.js";
 
 const toComparableId = (value) => {
   if (value == null) return "";
@@ -28,7 +29,7 @@ const syncPollActivityMessages = (messages, incomingMessage) => {
     const targetMessageId = toComparableId(metadata.targetMessageId);
     const isPollActivity =
       message?.type === "system" &&
-      metadata.eventType === "poll_voted" &&
+      isPollActivityEventType(metadata.eventType) &&
       targetMessageId === incomingId;
 
     if (!isPollActivity) return message;

@@ -6,6 +6,7 @@ import { useAuth } from "../../context/AuthContext";
 import {
   formatMessageTimestamp,
   getHoverTimestampPlacement,
+  isPollActivityEventType,
 } from "./messageTimeline";
 import {
   formatAudioDuration,
@@ -961,7 +962,6 @@ const CallSystemMessage = ({ message }) => {
 };
 
 const pinSystemEventTypes = new Set(["message_pinned", "message_unpinned"]);
-const pollActivityEventTypes = new Set(["poll_voted"]);
 
 const getPinSystemActorName = (sender, currentUserId) => {
   const senderId = getUserId(sender);
@@ -1002,6 +1002,7 @@ const PollActivitySystemMessage = ({
   currentUserId,
   onVotePoll,
   onAddPollOption,
+  showPollCard = false,
 }) => {
   const [isDetailOpen, setIsDetailOpen] = useState(false);
   const pollMessage = message.metadata?.pollMessage;
@@ -1011,6 +1012,8 @@ const PollActivitySystemMessage = ({
     pollMessage?.poll?.question ||
     pollMessage?.content ||
     "Bình chọn";
+  const isOptionAdded = message.metadata?.eventType === "poll_option_added";
+  const pollOptionText = message.metadata?.pollOptionText || "";
 
   if (!pollMessage?.poll) {
     return (
@@ -1032,8 +1035,18 @@ const PollActivitySystemMessage = ({
           bar_chart
         </span>
         <span className="min-w-0 truncate">
-          <strong>{actorName || "Người dùng"}</strong> tham gia cuộc bình chọn:{" "}
-          <strong>{pollQuestion}</strong>
+          {isOptionAdded ? (
+            <>
+              <strong>{actorName || "Người dùng"}</strong> đã thêm lựa chọn{" "}
+              {pollOptionText ? <strong>{pollOptionText}</strong> : "mới"} vào
+              cuộc bình chọn: <strong>{pollQuestion}</strong>
+            </>
+          ) : (
+            <>
+              <strong>{actorName || "Người dùng"}</strong> tham gia cuộc bình
+              chọn: <strong>{pollQuestion}</strong>
+            </>
+          )}
         </span>
         <button
           type="button"
@@ -1044,14 +1057,16 @@ const PollActivitySystemMessage = ({
         </button>
       </div>
 
-      <div className="chat-message-poll-surface chat-poll-activity-surface">
-        <PollMessage
-          message={pollMessage}
-          isMine={false}
-          onVote={onVotePoll}
-          onAddOption={onAddPollOption}
-        />
-      </div>
+      {showPollCard && (
+        <div className="chat-message-poll-surface chat-poll-activity-surface">
+          <PollMessage
+            message={pollMessage}
+            isMine={false}
+            onVote={onVotePoll}
+            onAddOption={onAddPollOption}
+          />
+        </div>
+      )}
 
       {isDetailOpen && (
         <PollDetailModal
@@ -1074,6 +1089,7 @@ const MessageBubble = ({
   isTightGroup = false,
   hasTightNext = false,
   isHighlighted = false,
+  showPollActivityCard = false,
   onReply,
   onEdit,
   onDelete,
@@ -1322,13 +1338,14 @@ const MessageBubble = ({
       );
     }
 
-    if (pollActivityEventTypes.has(systemEventType)) {
+    if (isPollActivityEventType(systemEventType)) {
       return (
         <PollActivitySystemMessage
           message={message}
           currentUserId={currentUserId}
           onVotePoll={onVotePoll}
           onAddPollOption={onAddPollOption}
+          showPollCard={showPollActivityCard}
         />
       );
     }

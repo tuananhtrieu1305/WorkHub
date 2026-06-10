@@ -22,6 +22,7 @@ import {
   getCurrentUserPollOptionIds,
   isPollClosed,
   normalizePollPayload,
+  sortPollOptionsByVotesAndText,
 } from "../utils/pollPolicy.js";
 import { contentDisposition } from "../utils/fileResponse.js";
 
@@ -36,6 +37,11 @@ const MAX_MESSAGE_ATTACHMENTS = 10;
 const MAX_VOICE_DURATION_SECONDS = 5 * 60;
 const VOICE_ATTACHMENT_FILE_SIZE_LIMIT = 20 * 1024 * 1024;
 const POLL_VOTED_EVENT_TYPE = "poll_voted";
+const POLL_OPTION_ADDED_EVENT_TYPE = "poll_option_added";
+const POLL_ACTIVITY_EVENT_TYPES = new Set([
+  POLL_VOTED_EVENT_TYPE,
+  POLL_OPTION_ADDED_EVENT_TYPE,
+]);
 const ALLOWED_AUDIO_MIMES = new Set([
   "audio/aac",
   "audio/mp4",
@@ -310,25 +316,32 @@ const formatPoll = async (poll, { currentUserId = null } = {}) => {
     0,
   );
 
+  const options = (plain.options || []).map((option) => {
+    const optionId = toComparableId(option._id || option.id);
+    const voters = option.voters || [];
+    const voterUsers =
+      resultsVisible && !hideVoters
+        ? voters
+            .map((vote) => formatPollVoter(userById.get(toComparableId(vote.userId))))
+            .filter(Boolean)
+        : [];
+
+    return {
+      id: optionId,
+      text: option.text || "",
+      voteCount: resultsVisible ? voters.length : null,
+      voters: voterUsers,
+      isSelectedByCurrentUser: currentUserOptionIds.includes(optionId),
+    };
+  });
+
   return {
     question: plain.question || "",
-    options: (plain.options || []).map((option) => {
-      const optionId = toComparableId(option._id || option.id);
-      const voters = option.voters || [];
-      const voterUsers =
-        resultsVisible && !hideVoters
-          ? voters
-              .map((vote) => formatPollVoter(userById.get(toComparableId(vote.userId))))
-              .filter(Boolean)
-          : [];
-
-      return {
-        id: optionId,
-        text: option.text || "",
-        voteCount: resultsVisible ? voters.length : null,
-        voters: voterUsers,
-        isSelectedByCurrentUser: currentUserOptionIds.includes(optionId),
-      };
+    options: sortPollOptionsByVotesAndText(options, {
+      getVoteCount: (option) =>
+        resultsVisible && typeof option.voteCount === "number"
+          ? option.voteCount
+          : 0,
     }),
     settings: {
       multiple: Boolean(plain.settings?.multiple),
@@ -408,7 +421,10 @@ const formatMessageMetadata = async (
   { currentUserId = null } = {},
 ) => {
   const metadata = getSystemMessageMetadata(message);
-  if (message.type !== "system" || metadata.eventType !== POLL_VOTED_EVENT_TYPE) {
+  if (
+    message.type !== "system" ||
+    !POLL_ACTIVITY_EVENT_TYPES.has(metadata.eventType)
+  ) {
     return metadata;
   }
 
@@ -1898,10 +1914,12 @@ export const addPollOptionToMessage = async (req, res) => {
       return res.status(400).json({ message: "Message is not a poll" });
     }
 
+    const changedAt = new Date();
+
     try {
       addPollOption(message.poll, req.body?.text, {
         userId: req.user._id,
-        now: new Date(),
+        now: changedAt,
       });
     } catch (error) {
       return res.status(400).json({ message: error.message });
@@ -1910,15 +1928,59 @@ export const addPollOptionToMessage = async (req, res) => {
     message.markModified("poll");
     await message.save();
 
-    const messageData = await formatMessage(message, {
-      currentUserId: req.user._id,
+    const addedOption =
+      message.poll.options?.[message.poll.options.length - 1] || {};
+    const pollOptionText =
+      addedOption.text || normalizeString(req.body?.text, 100) || "lựa chọn mới";
+    const pollQuestion = message.poll?.question || message.content || "Bình chọn";
+    const systemContent = `${
+      req.user.fullName || "Người dùng"
+    } đã thêm lựa chọn "${pollOptionText}" vào cuộc bình chọn: ${pollQuestion}`;
+    const systemMessage = await Message.create({
+      conversationId: conversation._id,
+      senderId: req.user._id,
+      type: "system",
+      content: systemContent,
+      metadata: {
+        eventType: POLL_OPTION_ADDED_EVENT_TYPE,
+        action: "add_option",
+        targetMessageId: message._id,
+        actorId: req.user._id,
+        pollQuestion,
+        pollOptionText,
+        pollCreatorId: message.senderId,
+        pollCreatedAt: message.createdAt,
+      },
     });
 
+    conversation.lastMessage = {
+      messageId: systemMessage._id,
+      content: systemContent,
+      senderId: req.user._id,
+      createdAt: systemMessage.createdAt,
+      deletedAt: null,
+      deletedBy: null,
+    };
+    await conversation.save();
+
+    const [messageData, systemMessageData, conversationData] =
+      await Promise.all([
+        formatMessage(message, { currentUserId: req.user._id }),
+        formatMessage(systemMessage, { currentUserId: req.user._id }),
+        formatConversation(conversation, { currentUserId: req.user._id }),
+      ]);
+
     if (ioInstance) {
+      joinParticipantSocketsToConversationRoom(ioInstance, conversation);
       await emitPersonalizedMessageUpdated(conversation, message);
+      await emitPersonalizedNewMessage(conversation, systemMessage);
     }
 
-    res.status(200).json(messageData);
+    res.status(200).json({
+      message: messageData,
+      systemMessage: systemMessageData,
+      conversation: conversationData,
+    });
   } catch (error) {
     console.error("AddPollOption error:", error.message);
     if (error.kind === "ObjectId") {

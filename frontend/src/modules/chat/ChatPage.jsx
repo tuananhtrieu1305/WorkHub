@@ -866,20 +866,40 @@ const ChatPage = () => {
       if (!selectedConversationId || !message?.id) return;
 
       try {
-        const updatedMessage = await addConversationPollOption(
+        const optionResult = await addConversationPollOption(
           selectedConversationId,
           message.id,
           text
         );
-        setMessages((prev) => upsertMessageById(prev, updatedMessage));
+        const updatedMessage = optionResult.message || optionResult;
+        const systemMessage = optionResult.systemMessage || null;
+
+        setMessages((prev) => {
+          const withUpdatedPoll = upsertMessageById(prev, updatedMessage);
+          return systemMessage
+            ? upsertMessageById(withUpdatedPoll, systemMessage)
+            : withUpdatedPoll;
+        });
         setPinnedMessages((prev) => upsertPinnedMessage(prev, updatedMessage));
+        if (optionResult.conversation) {
+          setConversations((prev) =>
+            mergeConversationUpdate(prev, optionResult.conversation)
+          );
+        } else {
+          setConversations((prev) =>
+            updateConversationPreview(prev, systemMessage || updatedMessage, {
+              currentUserId: user?._id || user?.id,
+              selectedConversationId,
+            })
+          );
+        }
       } catch (err) {
         console.error("Failed to add poll option:", err);
         toast.error("Không thể thêm phương án");
         throw err;
       }
     },
-    [selectedConversationId, toast]
+    [selectedConversationId, toast, user?._id, user?.id]
   );
 
   const handleCreateConversation = async (newConv) => {

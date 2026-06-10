@@ -19,6 +19,39 @@ const getMessageSenderId = (message) => {
   );
 };
 
+export const pollActivityEventTypes = new Set([
+  "poll_voted",
+  "poll_option_added",
+]);
+
+export const isPollActivityEventType = (eventType) =>
+  pollActivityEventTypes.has(eventType);
+
+const getPollActivityTargetId = (message) => {
+  const metadata = message?.metadata || {};
+  if (
+    message?.type !== "system" ||
+    !isPollActivityEventType(metadata.eventType)
+  ) {
+    return "";
+  }
+
+  return getComparableId(metadata.targetMessageId);
+};
+
+export const getLatestPollActivityMessageIds = (messages = []) => {
+  let latestMessageId = "";
+
+  messages.forEach((message, index) => {
+    const targetMessageId = getPollActivityTargetId(message);
+    if (!targetMessageId) return;
+
+    latestMessageId = getMessageId(message, index);
+  });
+
+  return new Set(latestMessageId ? [latestMessageId] : []);
+};
+
 const toValidDate = (value) => {
   if (!value) return null;
   const date = new Date(value);
@@ -62,6 +95,7 @@ const formatTimeSeparatorLabel = (
 
 export const buildMessageTimeline = (messages = [], { now = new Date() } = {}) => {
   const timeline = [];
+  const latestPollActivityMessageIds = getLatestPollActivityMessageIds(messages);
 
   messages.forEach((message, index) => {
     const previousMessage = index > 0 ? messages[index - 1] : null;
@@ -134,6 +168,7 @@ export const buildMessageTimeline = (messages = [], { now = new Date() } = {}) =
       showAvatar: !nextMessage || nextHasTimeSeparator || !isSameNextSender,
       hasTightNext,
       timestampLabel,
+      showPollActivityCard: latestPollActivityMessageIds.has(messageId),
     });
   });
 

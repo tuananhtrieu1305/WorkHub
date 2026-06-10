@@ -3,6 +3,7 @@ import test from "node:test";
 import {
   addPollOption,
   applyPollVote,
+  sortPollOptionsByVotesAndText,
   getCurrentUserPollOptionIds,
   isPollClosed,
   normalizePollPayload,
@@ -119,5 +120,25 @@ test("poll closes after expiration time", () => {
       options: [],
     }, now),
     true,
+  );
+});
+
+test("sorts poll options by vote count descending then text", () => {
+  const options = [
+    { text: "Táo", voters: [{ userId: "user-1" }] },
+    { text: "Cam", voters: [{ userId: "user-2" }, { userId: "user-3" }] },
+    { text: "Bưởi", voters: [{ userId: "user-4" }, { userId: "user-5" }] },
+    { text: "Ổi", voters: [] },
+  ];
+
+  const sortedOptions = sortPollOptionsByVotesAndText(options);
+
+  assert.deepEqual(
+    sortedOptions.map((option) => option.text),
+    ["Bưởi", "Cam", "Táo", "Ổi"],
+  );
+  assert.deepEqual(
+    options.map((option) => option.text),
+    ["Táo", "Cam", "Bưởi", "Ổi"],
   );
 });

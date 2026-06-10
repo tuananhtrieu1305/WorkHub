@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
+import { useAuth } from "../../context/AuthContext";
 import { getAvatarUrl } from "../../utils/avatar";
+import { sortPollOptionsByVotesAndText } from "./pollOptionSorting";
 
 const formatPollExpiry = (expiresAt, isClosed) => {
   if (isClosed) return "Đã kết thúc";
@@ -70,6 +72,8 @@ const getTotalVoters = (poll) => {
 
 const getOptionId = (option) => String(option?.id || option?._id || "");
 
+const getVoterId = (voter) => String(voter?.id || voter?._id || "");
+
 const normalizeOptionIds = (optionIds = []) =>
   [...new Set(optionIds.map(String).filter(Boolean))].sort();
 
@@ -113,10 +117,10 @@ const PollVoterAvatar = ({ voter }) => {
 };
 
 const PollOptionAvatarStack = ({ voters = [], voteCount = 0 }) => {
-  if (!voteCount) return null;
+  if (!voteCount || voters.length === 0) return null;
 
   const visibleVoters = voters.slice(0, 2);
-  const hiddenCount = Math.max(0, voteCount - visibleVoters.length);
+  const hiddenCount = Math.max(0, voters.length - visibleVoters.length);
 
   return (
     <span className="poll-detail-option-avatar-stack" aria-hidden="true">
@@ -141,7 +145,9 @@ const PollOptionAvatarStack = ({ voters = [], voteCount = 0 }) => {
           </span>
         );
       })}
-      {hiddenCount > 0 && <span>+{hiddenCount}</span>}
+      {hiddenCount > 0 && (
+        <span className="poll-detail-option-overflow">+{hiddenCount}</span>
+      )}
     </span>
   );
 };
@@ -156,16 +162,43 @@ export const PollDetailModal = ({
   onVote,
   onAddOption,
 }) => {
-  const options = useMemo(() => poll?.options || [], [poll]);
+  const { user } = useAuth();
+  const options = useMemo(
+    () =>
+      sortPollOptionsByVotesAndText(poll?.options || [], {
+        getVoteCount: (option) =>
+          poll?.resultsVisible ? getOptionVoteCount(option) : 0,
+      }),
+    [poll],
+  );
+  const currentUser = useMemo(() => {
+    const userId = user?._id || user?.id;
+    if (!userId) return null;
+
+    return {
+      ...user,
+      _id: user._id || userId,
+      id: user.id || userId,
+      fullName: user.fullName || "Bạn",
+    };
+  }, [user]);
   const currentSelectionKey = useMemo(
     () => getSelectionKey(getSelectedOptionIds(poll)),
     [poll],
+  );
+  const currentOptionIds = useMemo(
+    () => parseSelectionKey(currentSelectionKey),
+    [currentSelectionKey],
+  );
+  const currentOptionSet = useMemo(
+    () => new Set(currentOptionIds),
+    [currentOptionIds],
   );
   const [activeOptionId, setActiveOptionId] = useState(() =>
     getDefaultPollOptionId(options),
   );
   const [draftOptionIds, setDraftOptionIds] = useState(() =>
-    parseSelectionKey(currentSelectionKey),
+    currentOptionIds,
   );
   const [viewMode, setViewMode] = useState("vote");
   const [visibleVoterCount, setVisibleVoterCount] = useState(6);
@@ -197,17 +230,10 @@ export const PollDetailModal = ({
 
   if (!poll || typeof document === "undefined") return null;
 
-  const activeOption =
-    options.find((option) => getOptionId(option) === activeOptionId) ||
-    options.find((option) => getOptionVoteCount(option) > 0) ||
-    options[0];
-  const voters = activeOption?.voters || [];
   const creatorName = message?.sender?.fullName || "Người dùng";
   const pollTypeLabel = poll.settings?.multiple
     ? "Chọn nhiều phương án"
     : "Chọn một phương án";
-  const canShowVoters =
-    poll.resultsVisible && !poll.settings?.hideVoters && voters.length > 0;
   const emptyVoterText = !poll.resultsVisible
     ? "Kết quả sẽ hiển thị sau khi bạn bình chọn."
     : poll.settings?.hideVoters
@@ -217,18 +243,63 @@ export const PollDetailModal = ({
   const totalVoters = getTotalVoters(poll);
   const draftSelectionKey = getSelectionKey(draftOptionIds);
   const selectedDraftOptionSet = new Set(draftOptionIds);
+  const currentUserId = getVoterId(currentUser);
   const hasSelectionChanged = draftSelectionKey !== currentSelectionKey;
   const isMultiple = Boolean(poll.settings?.multiple);
   const canVote = !poll.isClosed && Boolean(onVote);
   const canAddOption =
     !poll.isClosed && Boolean(poll.settings?.allowOptions) && Boolean(onAddOption);
   const canInspectVoters = poll.resultsVisible && !poll.settings?.hideVoters;
+  const displayTotalVotes = Math.max(
+    0,
+    totalVotes + draftOptionIds.length - currentOptionIds.length,
+  );
+  const displayTotalVoters = Math.max(
+    0,
+    totalVoters +
+      (currentOptionIds.length === 0 && draftOptionIds.length > 0 ? 1 : 0) -
+      (currentOptionIds.length > 0 && draftOptionIds.length === 0 ? 1 : 0),
+  );
   const summaryText = poll.resultsVisible
-    ? `${totalVoters} người bình chọn, ${totalVotes} lượt bình chọn`
+    ? `${displayTotalVoters} người bình chọn, ${displayTotalVotes} lượt bình chọn`
     : "Kết quả sẽ hiển thị sau khi bạn bình chọn";
   const footerConfirmDisabled =
     !canVote || !hasSelectionChanged || isSubmitting;
-  const visibleVoters = voters.slice(0, visibleVoterCount);
+  const getDisplayedOptionVoteCount = (option) => {
+    const optionId = getOptionId(option);
+    const voteCount = getOptionVoteCount(option);
+    const wasSelected = currentOptionSet.has(optionId);
+    const isSelected = selectedDraftOptionSet.has(optionId);
+
+    if (wasSelected === isSelected) return voteCount;
+
+    return Math.max(0, voteCount + (isSelected ? 1 : -1));
+  };
+
+  const getDisplayedOptionVoters = (option) => {
+    const optionId = getOptionId(option);
+    const voters = option?.voters || [];
+    const wasSelected = currentOptionSet.has(optionId);
+    const isSelected = selectedDraftOptionSet.has(optionId);
+
+    if (wasSelected === isSelected || !currentUserId) return voters;
+
+    if (isSelected) {
+      const hasCurrentUser = voters.some(
+        (voter) => getVoterId(voter) === currentUserId,
+      );
+      return hasCurrentUser || !currentUser ? voters : [...voters, currentUser];
+    }
+
+    return voters.filter((voter) => getVoterId(voter) !== currentUserId);
+  };
+  const displayOptions = sortPollOptionsByVotesAndText(options, {
+    getVoteCount: getDisplayedOptionVoteCount,
+  });
+  const activeOption =
+    displayOptions.find((option) => getOptionId(option) === activeOptionId) ||
+    displayOptions.find((option) => getDisplayedOptionVoteCount(option) > 0) ||
+    displayOptions[0];
 
   const handleToggleDraftOption = (optionId) => {
     if (!canVote || isSubmitting) return;
@@ -310,13 +381,16 @@ export const PollDetailModal = ({
         className="poll-detail-total-row"
         onClick={() => {
           const targetOption =
-            activeOption || options.find((option) => getOptionVoteCount(option) > 0);
+            activeOption ||
+            displayOptions.find(
+              (option) => getDisplayedOptionVoteCount(option) > 0,
+            );
           if (targetOption) handleOpenVoters(getOptionId(targetOption));
         }}
-        disabled={!canInspectVoters || totalVotes === 0}
+        disabled={!canInspectVoters || displayTotalVotes === 0}
       >
         <span>{summaryText}</span>
-        {canInspectVoters && totalVotes > 0 && (
+        {canInspectVoters && displayTotalVotes > 0 && (
           <span className="material-symbols-outlined" aria-hidden="true">
             chevron_right
           </span>
@@ -324,11 +398,11 @@ export const PollDetailModal = ({
       </button>
 
       <div className="poll-detail-vote-options" aria-label="Các phương án">
-        {options.map((option) => {
+        {displayOptions.map((option) => {
           const optionId = getOptionId(option);
           const isSelected = selectedDraftOptionSet.has(optionId);
-          const voteCount = getOptionVoteCount(option);
-          const optionVoters = option.voters || [];
+          const voteCount = getDisplayedOptionVoteCount(option);
+          const optionVoters = getDisplayedOptionVoters(option);
 
           return (
             <div
@@ -356,7 +430,7 @@ export const PollDetailModal = ({
                 </span>
                 <span className="poll-detail-option-label">{option.text}</span>
               </button>
-              {canInspectVoters && voteCount > 0 && (
+              {canInspectVoters && optionVoters.length > 0 && (
                 <button
                   type="button"
                   className="poll-detail-option-voters-button"
@@ -423,36 +497,59 @@ export const PollDetailModal = ({
     </>
   );
 
-  const renderVoterView = () => (
-    <section className="poll-detail-voter-view">
-      <h3>
-        {activeOption?.text || "Phương án"} ({getOptionVoteCount(activeOption)})
-      </h3>
-      {canShowVoters ? (
-        <>
-          <div className="poll-detail-voter-grid">
-            {visibleVoters.map((voter, index) => (
-              <div className="poll-detail-voter" key={getVoterKey(voter, index)}>
-                <PollVoterAvatar voter={voter} />
-                <span>{voter.fullName || "Người dùng"}</span>
-              </div>
-            ))}
-          </div>
-          {visibleVoterCount < voters.length && (
-            <button
-              type="button"
-              className="poll-detail-show-more"
-              onClick={() => setVisibleVoterCount((count) => count + 8)}
-            >
-              Xem thêm
-            </button>
-          )}
-        </>
-      ) : (
-        <p className="poll-detail-empty">{emptyVoterText}</p>
-      )}
-    </section>
-  );
+  const renderVoterView = () => {
+    return (
+      <section className="poll-detail-voter-view">
+        <h3>Chi tiết lựa chọn</h3>
+        <p className="poll-detail-voter-summary">{summaryText}</p>
+        <div className="poll-detail-voter-options">
+          {displayOptions.map((option) => {
+            const optionId = getOptionId(option);
+            const optionVoters = getDisplayedOptionVoters(option);
+            const visibleVoters = optionVoters.slice(0, visibleVoterCount);
+            const voteCount = getDisplayedOptionVoteCount(option);
+            const canShowOptionVoters =
+              canInspectVoters && optionVoters.length > 0;
+
+            return (
+              <section className="poll-detail-voter-option" key={optionId}>
+                <div className="poll-detail-voter-option-title">
+                  <span>{option.text || "Phương án"}</span>
+                  <strong>{voteCount}</strong>
+                </div>
+                {canShowOptionVoters ? (
+                  <>
+                    <div className="poll-detail-voter-grid">
+                      {visibleVoters.map((voter, index) => (
+                        <div
+                          className="poll-detail-voter"
+                          key={getVoterKey(voter, index)}
+                        >
+                          <PollVoterAvatar voter={voter} />
+                          <span>{voter.fullName || "Người dùng"}</span>
+                        </div>
+                      ))}
+                    </div>
+                    {visibleVoterCount < optionVoters.length && (
+                      <button
+                        type="button"
+                        className="poll-detail-show-more"
+                        onClick={() => setVisibleVoterCount((count) => count + 8)}
+                      >
+                        Xem thêm
+                      </button>
+                    )}
+                  </>
+                ) : (
+                  <p className="poll-detail-empty">{emptyVoterText}</p>
+                )}
+              </section>
+            );
+          })}
+        </div>
+      </section>
+    );
+  };
 
   return createPortal(
     <div
@@ -537,11 +634,7 @@ export const PollDetailModal = ({
 
 const PollMessage = ({ message, isMine, onVote, onAddOption }) => {
   const poll = message?.poll;
-  const [pendingOptionId, setPendingOptionId] = useState("");
-  const [newOptionText, setNewOptionText] = useState("");
-  const [isAddingOption, setIsAddingOption] = useState(false);
   const [isDetailOpen, setIsDetailOpen] = useState(false);
-  const [error, setError] = useState("");
   const selectedOptionIds = useMemo(() => getSelectedOptionIds(poll), [poll]);
   const selectedOptionSet = useMemo(
     () => new Set(selectedOptionIds),
@@ -549,54 +642,17 @@ const PollMessage = ({ message, isMine, onVote, onAddOption }) => {
   );
   const totalVotes = getTotalVotes(poll);
   const isMultiple = Boolean(poll?.settings?.multiple);
-  const canInteract = Boolean(poll) && !poll.isClosed && Boolean(onVote);
-  const canAddOption =
-    canInteract && Boolean(poll?.settings?.allowOptions) && Boolean(onAddOption);
   const expiresLabel = formatPollExpiry(poll?.expiresAt, poll?.isClosed);
+  const previewOptions = useMemo(
+    () =>
+      sortPollOptionsByVotesAndText(poll?.options || [], {
+        getVoteCount: (option) =>
+          poll?.resultsVisible ? getOptionVoteCount(option) : 0,
+      }),
+    [poll],
+  );
 
   if (!poll) return null;
-
-  const handleVote = async (event, optionId) => {
-    event?.stopPropagation();
-    if (!canInteract || !onVote || pendingOptionId) return;
-
-    const optionIdText = String(optionId);
-    const nextSelection = isMultiple
-      ? selectedOptionSet.has(optionIdText)
-        ? selectedOptionIds.filter((id) => id !== optionIdText)
-        : [...selectedOptionIds, optionIdText]
-      : selectedOptionSet.has(optionIdText)
-        ? []
-        : [optionIdText];
-
-    setPendingOptionId(optionIdText);
-    setError("");
-
-    try {
-      await onVote(message, nextSelection);
-    } catch {
-      setError("Không thể cập nhật bình chọn.");
-    } finally {
-      setPendingOptionId("");
-    }
-  };
-
-  const handleAddOption = async () => {
-    const text = newOptionText.trim();
-    if (!text || !canAddOption || isAddingOption) return;
-
-    setIsAddingOption(true);
-    setError("");
-
-    try {
-      await onAddOption(message, text);
-      setNewOptionText("");
-    } catch {
-      setError("Không thể thêm phương án.");
-    } finally {
-      setIsAddingOption(false);
-    }
-  };
 
   const handleCardKeyDown = (event) => {
     if (event.key !== "Enter" && event.key !== " ") return;
@@ -632,8 +688,8 @@ const PollMessage = ({ message, isMine, onVote, onAddOption }) => {
       </div>
 
       <div className="chat-poll-options">
-        {(poll.options || []).map((option) => {
-          const optionId = String(option.id);
+        {previewOptions.map((option) => {
+          const optionId = getOptionId(option);
           const isSelected = selectedOptionSet.has(optionId);
           const voteCount = Number(option.voteCount) || 0;
           const percent =
@@ -645,13 +701,12 @@ const PollMessage = ({ message, isMine, onVote, onAddOption }) => {
             .filter(Boolean);
 
           return (
-            <button
-              type="button"
+            <div
               key={optionId}
-              className={`chat-poll-option ${isSelected ? "is-selected" : ""}`}
+              className={`chat-poll-option chat-poll-option-preview ${
+                isSelected ? "is-selected" : ""
+              }`}
               style={{ "--poll-option-percent": `${percent}%` }}
-              onClick={(event) => handleVote(event, optionId)}
-              disabled={!canInteract || Boolean(pendingOptionId)}
             >
               <span className="chat-poll-option-fill" aria-hidden="true" />
               <span className="chat-poll-option-content">
@@ -683,13 +738,8 @@ const PollMessage = ({ message, isMine, onVote, onAddOption }) => {
                     <small>{voteCount} lượt</small>
                   </span>
                 )}
-                {pendingOptionId === optionId && (
-                  <span className="chat-poll-option-loading material-symbols-outlined">
-                    progress_activity
-                  </span>
-                )}
               </span>
-            </button>
+            </div>
           );
         })}
       </div>
@@ -700,43 +750,6 @@ const PollMessage = ({ message, isMine, onVote, onAddOption }) => {
         </p>
       )}
 
-      {canAddOption && (
-        <div
-          className="chat-poll-add-option"
-          data-poll-interactive
-          onClick={(event) => event.stopPropagation()}
-        >
-          <input
-            type="text"
-            value={newOptionText}
-            onChange={(event) => setNewOptionText(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === "Enter") {
-                event.preventDefault();
-                handleAddOption();
-              }
-            }}
-            placeholder="Thêm phương án"
-            maxLength={100}
-            disabled={isAddingOption}
-          />
-          <button
-            type="button"
-            onClick={(event) => {
-              event.stopPropagation();
-              handleAddOption();
-            }}
-            disabled={!newOptionText.trim() || isAddingOption}
-            title="Thêm phương án"
-            aria-label="Thêm phương án"
-          >
-            <span className="material-symbols-outlined">
-              {isAddingOption ? "progress_activity" : "add"}
-            </span>
-          </button>
-        </div>
-      )}
-
       <div className="chat-poll-footer">
         <span>{expiresLabel}</span>
         <span>
@@ -745,12 +758,6 @@ const PollMessage = ({ message, isMine, onVote, onAddOption }) => {
             : "Chưa hiển thị kết quả"}
         </span>
       </div>
-
-      {error && (
-        <div className="chat-poll-error" role="status">
-          {error}
-        </div>
-      )}
 
       {isDetailOpen && (
         <PollDetailModal
