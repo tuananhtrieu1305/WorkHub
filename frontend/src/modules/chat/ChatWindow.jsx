@@ -321,7 +321,7 @@ const ChatWindow = ({
   editingMessage = null,
   typingUsers = [],
   isLoadingMessages = false,
-  isSending = false,
+  isComposerDisabled = false,
 }) => {
   const { user } = useAuth();
   const { message } = App.useApp();
@@ -922,7 +922,7 @@ const ChatWindow = ({
           initialContent={editingMessage?.content || ""}
           mode={editingMessage ? "edit" : replyToMessage ? "reply" : "send"}
           draftPreview={draftPreview}
-          disabled={isSending}
+          disabled={isComposerDisabled}
           placeholder={`Trả lời ${isPrivate ? displayName : `# ${displayName}`}...`}
         />
       </div>

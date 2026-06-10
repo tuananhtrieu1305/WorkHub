@@ -59,6 +59,8 @@ const ALLOWED_AUDIO_MIMES = new Set([
   "audio/x-m4a",
   "audio/x-wav",
 ]);
+const MESSAGE_USER_SELECT =
+  "_id fullName avatar activityStatus activityStatusExpiresAt";
 
 const normalizeString = (value, maxLength = 1000) => {
   if (typeof value !== "string") return "";
@@ -297,7 +299,105 @@ const collectPollVoterIds = (poll) => {
   return [...voterIds];
 };
 
-const formatPoll = async (poll, { currentUserId = null } = {}) => {
+const getUserFromFormatContext = async (
+  userId,
+  { context = null, select = MESSAGE_USER_SELECT } = {},
+) => {
+  const normalizedUserId = toComparableId(userId);
+  if (!normalizedUserId) return null;
+
+  const cachedUser = context?.userById?.get(normalizedUserId);
+  if (cachedUser) return cachedUser;
+
+  return User.findById(userId).select(select);
+};
+
+const getMessageFromFormatContext = async (messageId, { context = null } = {}) => {
+  const normalizedMessageId = toComparableId(messageId);
+  if (!normalizedMessageId) return null;
+
+  const cachedMessage = context?.messageById?.get(normalizedMessageId);
+  if (cachedMessage) return cachedMessage;
+
+  return Message.findById(messageId);
+};
+
+const collectMessageFormatReferences = (message, references) => {
+  if (!message) return;
+
+  const userIds = references.userIds;
+  const messageIds = references.messageIds;
+  const addUserId = (value) => {
+    const userId = toComparableId(value);
+    if (userId) userIds.add(userId);
+  };
+  const addMessageId = (value) => {
+    const messageId = toComparableId(value);
+    if (messageId) messageIds.add(messageId);
+  };
+
+  addUserId(message.senderId);
+  addUserId(message.deletedBy);
+  addUserId(message.pinnedBy);
+  addMessageId(message.replyTo);
+
+  collectPollVoterIds(message.poll).forEach(addUserId);
+
+  const metadata = getSystemMessageMetadata(message);
+  if (
+    message.type === "system" &&
+    POLL_ACTIVITY_EVENT_TYPES.has(metadata.eventType)
+  ) {
+    addMessageId(metadata.targetMessageId);
+  }
+};
+
+const createMessageFormatContext = async (messages = []) => {
+  const contextMessages = messages.filter(Boolean);
+  const messageById = new Map();
+  const references = {
+    userIds: new Set(),
+    messageIds: new Set(),
+  };
+
+  contextMessages.forEach((message) => {
+    const messageId = toComparableId(message._id || message.id);
+    if (messageId) messageById.set(messageId, message);
+    collectMessageFormatReferences(message, references);
+  });
+
+  const missingMessageIds = [...references.messageIds].filter(
+    (messageId) => !messageById.has(messageId),
+  );
+  if (missingMessageIds.length > 0) {
+    const referencedMessages = await Message.find({
+      _id: { $in: missingMessageIds },
+    });
+
+    referencedMessages.forEach((message) => {
+      const messageId = toComparableId(message._id || message.id);
+      if (messageId) messageById.set(messageId, message);
+      collectMessageFormatReferences(message, references);
+    });
+  }
+
+  const users =
+    references.userIds.size > 0
+      ? await User.find({ _id: { $in: [...references.userIds] } }).select(
+          MESSAGE_USER_SELECT,
+        )
+      : [];
+  const userById = new Map(
+    users.map((user) => [toComparableId(user._id || user.id), user]),
+  );
+
+  return { messageById, userById };
+};
+
+const formatPoll = async (
+  poll,
+  { currentUserId = null, context = null } = {},
+) => {
   if (!poll) return null;
 
   const plain = poll.toObject?.() || poll;
@@ -311,13 +411,19 @@ const formatPoll = async (poll, { currentUserId = null } = {}) => {
     pollClosed || !plain.settings?.hideResultsUntilVoted || hasCurrentUserVoted;
   const hideVoters = Boolean(plain.settings?.hideVoters);
   const voterIds = collectPollVoterIds(plain);
+  const missingVoterIds = context?.userById
+    ? voterIds.filter((userId) => !context.userById.has(userId))
+    : voterIds;
   const users =
-    resultsVisible && !hideVoters && voterIds.length
-      ? await User.find({ _id: { $in: voterIds } }).select(
+    resultsVisible && !hideVoters && missingVoterIds.length
+      ? await User.find({ _id: { $in: missingVoterIds } }).select(
           "_id fullName avatar",
         )
       : [];
-  const userById = new Map(users.map((user) => [user._id.toString(), user]));
+  const userById = new Map(context?.userById || []);
+  users.forEach((user) => {
+    userById.set(toComparableId(user._id || user.id), user);
+  });
   const totalVotes = (plain.options || []).reduce(
     (sum, option) => sum + (option.voters || []).length,
     0,
@@ -373,12 +479,14 @@ const getSystemMessageMetadata = (message) => {
 
 const formatPollActivityTargetMessage = async (
   metadata,
-  { currentUserId = null } = {},
+  { currentUserId = null, context = null } = {},
 ) => {
   const targetMessageId = metadata?.targetMessageId;
   if (!targetMessageId) return null;
 
-  const pollMessage = await Message.findById(targetMessageId);
+  const pollMessage = await getMessageFromFormatContext(targetMessageId, {
+    context,
+  });
   if (
     !pollMessage ||
     pollMessage.deletedAt ||
@@ -389,15 +497,11 @@ const formatPollActivityTargetMessage = async (
   }
 
   const [sender, pinnedBy, pollData] = await Promise.all([
-    User.findById(pollMessage.senderId).select(
-      "_id fullName avatar activityStatus activityStatusExpiresAt",
-    ),
+    getUserFromFormatContext(pollMessage.senderId, { context }),
     pollMessage.pinnedBy
-      ? User.findById(pollMessage.pinnedBy).select(
-          "_id fullName avatar activityStatus activityStatusExpiresAt",
-        )
+      ? getUserFromFormatContext(pollMessage.pinnedBy, { context })
       : null,
-    formatPoll(pollMessage.poll, { currentUserId }),
+    formatPoll(pollMessage.poll, { currentUserId, context }),
   ]);
 
   return {
@@ -425,7 +529,7 @@ const formatPollActivityTargetMessage = async (
 
 const formatMessageMetadata = async (
   message,
-  { currentUserId = null } = {},
+  { currentUserId = null, context = null } = {},
 ) => {
   const metadata = getSystemMessageMetadata(message);
   if (
@@ -439,28 +543,32 @@ const formatMessageMetadata = async (
     ...metadata,
     pollMessage: await formatPollActivityTargetMessage(metadata, {
       currentUserId,
+      context,
     }),
   };
 };
 
-const formatReplyMessage = async (replyTo, { currentUserId = null } = {}) => {
+const formatReplyMessage = async (
+  replyTo,
+  { currentUserId = null, context = null } = {},
+) => {
   if (!replyTo) return null;
 
-  const replyMessage = await Message.findById(replyTo);
+  const replyMessage =
+    (typeof replyTo === "object" && (replyTo._id || replyTo.id || replyTo.content)
+      ? replyTo
+      : null) ||
+    (await getMessageFromFormatContext(replyTo, { context }));
   if (!replyMessage) return null;
 
-  const sender = await User.findById(replyMessage.senderId).select(
-    "_id fullName avatar activityStatus activityStatusExpiresAt",
-  );
+  const sender = await getUserFromFormatContext(replyMessage.senderId, {
+    context,
+  });
   const deletedBy = replyMessage.deletedBy
-    ? await User.findById(replyMessage.deletedBy).select(
-        "_id fullName avatar activityStatus activityStatusExpiresAt",
-      )
+    ? await getUserFromFormatContext(replyMessage.deletedBy, { context })
     : null;
   const pinnedBy = replyMessage.pinnedBy
-    ? await User.findById(replyMessage.pinnedBy).select(
-        "_id fullName avatar activityStatus activityStatusExpiresAt",
-      )
+    ? await getUserFromFormatContext(replyMessage.pinnedBy, { context })
     : null;
   const isDeleted = Boolean(replyMessage.deletedAt);
 
@@ -472,7 +580,7 @@ const formatReplyMessage = async (replyTo, { currentUserId = null } = {}) => {
     metadata: isDeleted ? {} : replyMessage.metadata || {},
     poll: isDeleted
       ? null
-      : await formatPoll(replyMessage.poll, { currentUserId }),
+      : await formatPoll(replyMessage.poll, { currentUserId, context }),
     attachments: isDeleted
       ? []
       : serializeConversationAttachments(
@@ -489,24 +597,28 @@ const formatReplyMessage = async (replyTo, { currentUserId = null } = {}) => {
   };
 };
 
-const formatMessage = async (message, { currentUserId = null } = {}) => {
-  const sender = await User.findById(message.senderId).select(
-    "_id fullName avatar activityStatus activityStatusExpiresAt",
-  );
+const formatMessageFromContext = async (
+  message,
+  { currentUserId = null, context = null } = {},
+) => {
+  const sender = await getUserFromFormatContext(message.senderId, { context });
   const deletedBy = message.deletedBy
-    ? await User.findById(message.deletedBy).select(
-        "_id fullName avatar activityStatus activityStatusExpiresAt",
-      )
+    ? await getUserFromFormatContext(message.deletedBy, { context })
     : null;
   const pinnedBy = message.pinnedBy
-    ? await User.findById(message.pinnedBy).select(
-        "_id fullName avatar activityStatus activityStatusExpiresAt",
-      )
+    ? await getUserFromFormatContext(message.pinnedBy, { context })
     : null;
   const isDeleted = Boolean(message.deletedAt);
   const metadata = isDeleted
     ? {}
-    : await formatMessageMetadata(message, { currentUserId });
+    : await formatMessageMetadata(message, { currentUserId, context });
+  const poll = isDeleted
+    ? null
+    : await formatPoll(message.poll, { currentUserId, context });
+  const replyTo = await formatReplyMessage(message.replyTo, {
+    currentUserId,
+    context,
+  });
 
   return {
     id: message._id,
@@ -515,7 +627,7 @@ const formatMessage = async (message, { currentUserId = null } = {}) => {
     type: message.type,
     content: isDeleted ? "" : message.content,
     metadata,
-    poll: isDeleted ? null : await formatPoll(message.poll, { currentUserId }),
+    poll,
     attachments: isDeleted
       ? []
       : serializeConversationAttachments(
@@ -523,7 +635,7 @@ const formatMessage = async (message, { currentUserId = null } = {}) => {
           message.attachments,
         ),
     mentions: isDeleted ? [] : message.mentions,
-    replyTo: await formatReplyMessage(message.replyTo, { currentUserId }),
+    replyTo,
     reactions: isDeleted ? [] : message.reactions,
     editedAt: message.editedAt,
     isPinned: isDeleted ? false : Boolean(message.isPinned),
@@ -534,6 +646,21 @@ const formatMessage = async (message, { currentUserId = null } = {}) => {
     createdAt: message.createdAt,
     updatedAt: message.updatedAt,
   };
+};
+
+const formatMessages = async (messages, { currentUserId = null } = {}) => {
+  const context = await createMessageFormatContext(messages);
+
+  return Promise.all(
+    messages.map((message) =>
+      formatMessageFromContext(message, { currentUserId, context }),
+    ),
+  );
+};
+
+const formatMessage = async (message, { currentUserId = null } = {}) => {
+  const [formattedMessage] = await formatMessages([message], { currentUserId });
+  return formattedMessage;
 };
 
 const emitPersonalizedMessageUpdated = async (
@@ -1067,10 +1194,9 @@ export const getMessages = async (req, res) => {
           .limit(newerLimit),
       ]);
 
-      const content = await Promise.all(
-        [...olderMessages.reverse(), targetMessage, ...newerMessages].map(
-          (message) => formatMessage(message, { currentUserId: req.user._id }),
-        ),
+      const content = await formatMessages(
+        [...olderMessages.reverse(), targetMessage, ...newerMessages],
+        { currentUserId: req.user._id },
       );
 
       return res.status(200).json({ content, hasMore: false });
@@ -1092,11 +1218,9 @@ export const getMessages = async (req, res) => {
       await markConversationRead(conversation, req.user._id, messages[0]._id);
     }
 
-    const content = await Promise.all(
-      messages.map((message) =>
-        formatMessage(message, { currentUserId: req.user._id }),
-      ),
-    );
+    const content = await formatMessages(messages, {
+      currentUserId: req.user._id,
+    });
 
     res.status(200).json({ content, hasMore });
   } catch (error) {
@@ -1128,11 +1252,9 @@ export const getPinnedMessages = async (req, res) => {
       deletedAt: null,
     }).sort({ pinnedAt: -1, createdAt: -1, _id: -1 });
 
-    const content = await Promise.all(
-      pinnedMessages.map((message) =>
-        formatMessage(message, { currentUserId: req.user._id }),
-      ),
-    );
+    const content = await formatMessages(pinnedMessages, {
+      currentUserId: req.user._id,
+    });
 
     res.status(200).json({ content });
   } catch (error) {

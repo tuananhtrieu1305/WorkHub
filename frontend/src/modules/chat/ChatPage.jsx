@@ -37,6 +37,13 @@ import {
 } from "./realtimeMessageState";
 import { useSocket } from "../../context/SocketContext";
 import { useCall } from "../call/callContextValue";
+import {
+  areMessagesForConversation,
+  getCachedMessages,
+  getVisibleMessagesForConversation,
+  setCachedMessages,
+  updateCachedMessages,
+} from "./messageCacheState";
 
 const toComparableId = (value) => {
   if (value == null) return "";
@@ -173,8 +180,10 @@ const ChatPage = () => {
   const [selectedConversation, setSelectedConversation] = useState(null);
   const [messages, setMessages] = useState([]);
   const [pinnedMessages, setPinnedMessages] = useState([]);
+  const [messagesConversationId, setMessagesConversationId] = useState("");
+  const [pinnedMessagesConversationId, setPinnedMessagesConversationId] =
+    useState("");
   const [isLoadingMessages, setIsLoadingMessages] = useState(false);
-  const [isSending, setIsSending] = useState(false);
   const [showDetail, setShowDetail] = useState(true);
   const [showMobileDetail, setShowMobileDetail] = useState(false);
   const [showNewModal, setShowNewModal] = useState(false);
@@ -183,8 +192,25 @@ const ChatPage = () => {
   const [replyToMessage, setReplyToMessage] = useState(null);
   const [editingMessage, setEditingMessage] = useState(null);
   const typingTimeoutRef = useRef(null);
+  const messagesCacheRef = useRef(new Map());
+  const pinnedMessagesCacheRef = useRef(new Map());
+  const messagesConversationIdRef = useRef("");
+  const pinnedMessagesConversationIdRef = useRef("");
+  const messagesRequestSeqRef = useRef(0);
+  const fetchedConversationIdsRef = useRef(new Set());
+  const [hasLoadedConversations, setHasLoadedConversations] = useState(false);
 
-  const selectedConversationId = getConversationId(selectedConversation);
+  const selectedConversationId = toComparableId(conversationId);
+  const setMessagesOwner = useCallback((nextConversationId) => {
+    const targetConversationId = toComparableId(nextConversationId);
+    messagesConversationIdRef.current = targetConversationId;
+    setMessagesConversationId(targetConversationId);
+  }, []);
+  const setPinnedMessagesOwner = useCallback((nextConversationId) => {
+    const targetConversationId = toComparableId(nextConversationId);
+    pinnedMessagesConversationIdRef.current = targetConversationId;
+    setPinnedMessagesConversationId(targetConversationId);
+  }, []);
 
   // Fetch conversations on mount
   useEffect(() => {
@@ -197,33 +223,10 @@ const ChatPage = () => {
 
         const nextConversations = sortConversationsByActivity(res.content || []);
         setConversations(nextConversations);
-
-        if (!conversationId) {
-          setSelectedConversation(null);
-          setMessages([]);
-          setMobileView("list");
-          return;
-        }
-
-        const matchedConversation = nextConversations.find(
-          (conversation) => getConversationId(conversation) === conversationId
-        );
-
-        if (matchedConversation) {
-          setSelectedConversation(matchedConversation);
-          setMobileView("chat");
-          return;
-        }
-
-        const fetchedConversation = await getConversationById(conversationId);
-        if (ignore) return;
-        setConversations((prev) =>
-          sortConversationsByActivity([fetchedConversation, ...prev])
-        );
-        setSelectedConversation(fetchedConversation);
-        setMobileView("chat");
       } catch (err) {
         console.error("Failed to fetch conversations:", err);
+      } finally {
+        if (!ignore) setHasLoadedConversations(true);
       }
     };
 
@@ -232,12 +235,87 @@ const ChatPage = () => {
     return () => {
       ignore = true;
     };
-  }, [conversationId]);
+  }, []);
+
+  useEffect(() => {
+    if (!selectedConversationId) {
+      setSelectedConversation(null);
+      setMessages([]);
+      setPinnedMessages([]);
+      setMessagesOwner("");
+      setPinnedMessagesOwner("");
+      setIsLoadingMessages(false);
+      messagesRequestSeqRef.current += 1;
+      setTypingUsers([]);
+      setReplyToMessage(null);
+      setEditingMessage(null);
+      setMobileView("list");
+      return undefined;
+    }
+
+    const matchedConversation = conversations.find(
+      (conversation) => getConversationId(conversation) === selectedConversationId
+    );
+
+    if (matchedConversation) {
+      setSelectedConversation(matchedConversation);
+      setMobileView("chat");
+      return undefined;
+    }
+
+    if (
+      !hasLoadedConversations ||
+      fetchedConversationIdsRef.current.has(selectedConversationId)
+    ) {
+      return undefined;
+    }
+
+    let ignore = false;
+    fetchedConversationIdsRef.current.add(selectedConversationId);
+
+    const fetchConversation = async () => {
+      try {
+        const fetchedConversation = await getConversationById(selectedConversationId);
+        if (ignore) return;
+        setConversations((prev) =>
+          sortConversationsByActivity([
+            fetchedConversation,
+            ...prev.filter(
+              (conversation) =>
+                getConversationId(conversation) !==
+                getConversationId(fetchedConversation)
+            ),
+          ])
+        );
+        setSelectedConversation(fetchedConversation);
+        setMobileView("chat");
+      } catch (err) {
+        console.error("Failed to fetch conversation:", err);
+        fetchedConversationIdsRef.current.delete(selectedConversationId);
+      }
+    };
+
+    fetchConversation();
+
+    return () => {
+      ignore = true;
+    };
+  }, [
+    conversations,
+    hasLoadedConversations,
+    selectedConversationId,
+    setMessagesOwner,
+    setPinnedMessagesOwner,
+  ]);
 
   useEffect(() => {
     if (!selectedConversationId) {
       setMessages([]);
       setPinnedMessages([]);
+      setMessagesOwner("");
+      setPinnedMessagesOwner("");
+      setIsLoadingMessages(false);
+      messagesRequestSeqRef.current += 1;
       setTypingUsers([]);
       setReplyToMessage(null);
       setEditingMessage(null);
@@ -245,7 +323,38 @@ const ChatPage = () => {
     }
 
     let ignore = false;
-    setIsLoadingMessages(true);
+    const requestSeq = messagesRequestSeqRef.current + 1;
+    messagesRequestSeqRef.current = requestSeq;
+    const cachedMessages = getCachedMessages(
+      messagesCacheRef.current,
+      selectedConversationId
+    );
+    const cachedPinnedMessages = getCachedMessages(
+      pinnedMessagesCacheRef.current,
+      selectedConversationId
+    );
+    const hasCachedMessages = Boolean(cachedMessages);
+
+    if (hasCachedMessages) {
+      setMessagesOwner(selectedConversationId);
+      setPinnedMessagesOwner(selectedConversationId);
+      setMessages(cachedMessages);
+      setPinnedMessages(cachedPinnedMessages || []);
+      setIsLoadingMessages(false);
+      setConversations((prev) =>
+        markConversationAsRead(prev, selectedConversationId)
+      );
+      setSelectedConversation((prev) => {
+        if (!prev) return prev;
+        return markConversationAsRead([prev], selectedConversationId)[0];
+      });
+    } else {
+      setMessagesOwner(selectedConversationId);
+      setPinnedMessagesOwner(selectedConversationId);
+      setMessages([]);
+      setPinnedMessages([]);
+      setIsLoadingMessages(true);
+    }
 
     const fetchMessages = async () => {
       const pinnedMessagesRequest = getPinnedMessages(selectedConversationId)
@@ -254,8 +363,15 @@ const ChatPage = () => {
 
       try {
         const res = await getMessages(selectedConversationId, { limit: 50 });
-        if (!ignore) {
-          setMessages(normalizeMessagesForDisplay(res.content || []));
+        if (!ignore && messagesRequestSeqRef.current === requestSeq) {
+          const loadedMessages = normalizeMessagesForDisplay(res.content || []);
+          setCachedMessages(
+            messagesCacheRef.current,
+            selectedConversationId,
+            loadedMessages
+          );
+          setMessagesOwner(selectedConversationId);
+          setMessages(loadedMessages);
           setConversations((prev) =>
             markConversationAsRead(prev, selectedConversationId)
           );
@@ -266,27 +382,43 @@ const ChatPage = () => {
         }
 
         const pinnedMessagesResult = await pinnedMessagesRequest;
-        if (ignore) return;
+        if (ignore || messagesRequestSeqRef.current !== requestSeq) return;
 
         if (pinnedMessagesResult.response) {
-          setPinnedMessages(
-            sortPinnedMessages(pinnedMessagesResult.response.content || [])
+          const loadedPinnedMessages = sortPinnedMessages(
+            pinnedMessagesResult.response.content || []
           );
+          setCachedMessages(
+            pinnedMessagesCacheRef.current,
+            selectedConversationId,
+            loadedPinnedMessages
+          );
+          setPinnedMessagesOwner(selectedConversationId);
+          setPinnedMessages(loadedPinnedMessages);
         } else {
           console.error(
             "Failed to fetch pinned messages:",
             pinnedMessagesResult.error
           );
+          setPinnedMessagesOwner(selectedConversationId);
           setPinnedMessages([]);
         }
       } catch (err) {
         console.error("Failed to fetch messages:", err);
-        if (!ignore) {
+        if (
+          !ignore &&
+          messagesRequestSeqRef.current === requestSeq &&
+          !hasCachedMessages
+        ) {
+          setMessagesOwner(selectedConversationId);
+          setPinnedMessagesOwner(selectedConversationId);
           setMessages([]);
           setPinnedMessages([]);
         }
       } finally {
-        if (!ignore) setIsLoadingMessages(false);
+        if (!ignore && messagesRequestSeqRef.current === requestSeq) {
+          setIsLoadingMessages(false);
+        }
       }
     };
 
@@ -295,7 +427,7 @@ const ChatPage = () => {
     return () => {
       ignore = true;
     };
-  }, [selectedConversationId]);
+  }, [selectedConversationId, setMessagesOwner, setPinnedMessagesOwner]);
 
   useEffect(() => {
     if (!socket || !selectedConversationId) return undefined;
@@ -326,11 +458,79 @@ const ChatPage = () => {
       );
     };
 
-    const handleNewMessage = (message) => {
-      if (isSelectedConversationEvent(message.conversationId)) {
-        setMessages((prev) => upsertMessageById(prev, message));
-        setPinnedMessages((prev) => upsertPinnedMessage(prev, message));
+    const applyMessageUpdate = (eventConversationId, updater) => {
+      const eventConversationIdText = toComparableId(eventConversationId);
+      if (!eventConversationIdText) return;
+
+      if (isSelectedConversationEvent(eventConversationIdText)) {
+        const hasCurrentMessages =
+          messagesConversationIdRef.current === eventConversationIdText;
+        setMessagesOwner(eventConversationIdText);
+        setMessages((prev) => {
+          const baseMessages = hasCurrentMessages
+            ? prev
+            : getCachedMessages(
+                messagesCacheRef.current,
+                eventConversationIdText
+              ) || [];
+          const nextMessages = updater(baseMessages);
+          setCachedMessages(
+            messagesCacheRef.current,
+            eventConversationIdText,
+            nextMessages
+          );
+          return nextMessages;
+        });
+        return;
       }
+
+      updateCachedMessages(
+        messagesCacheRef.current,
+        eventConversationIdText,
+        updater
+      );
+    };
+
+    const applyPinnedMessageUpdate = (eventConversationId, updater) => {
+      const eventConversationIdText = toComparableId(eventConversationId);
+      if (!eventConversationIdText) return;
+
+      if (isSelectedConversationEvent(eventConversationIdText)) {
+        const hasCurrentPinnedMessages =
+          pinnedMessagesConversationIdRef.current === eventConversationIdText;
+        setPinnedMessagesOwner(eventConversationIdText);
+        setPinnedMessages((prev) => {
+          const basePinnedMessages = hasCurrentPinnedMessages
+            ? prev
+            : getCachedMessages(
+                pinnedMessagesCacheRef.current,
+                eventConversationIdText
+              ) || [];
+          const nextPinnedMessages = updater(basePinnedMessages);
+          setCachedMessages(
+            pinnedMessagesCacheRef.current,
+            eventConversationIdText,
+            nextPinnedMessages
+          );
+          return nextPinnedMessages;
+        });
+        return;
+      }
+
+      updateCachedMessages(
+        pinnedMessagesCacheRef.current,
+        eventConversationIdText,
+        updater
+      );
+    };
+
+    const handleNewMessage = (message) => {
+      applyMessageUpdate(message.conversationId, (prev) =>
+        upsertMessageById(prev, message)
+      );
+      applyPinnedMessageUpdate(message.conversationId, (prev) =>
+        upsertPinnedMessage(prev, message)
+      );
       setConversations((prev) =>
         updateConversationPreview(prev, message, {
           currentUserId: user?._id || user?.id,
@@ -340,10 +540,12 @@ const ChatPage = () => {
     };
 
     const handleMessageUpdated = (message) => {
-      if (isSelectedConversationEvent(message.conversationId)) {
-        setMessages((prev) => upsertMessageById(prev, message));
-        setPinnedMessages((prev) => upsertPinnedMessage(prev, message));
-      }
+      applyMessageUpdate(message.conversationId, (prev) =>
+        upsertMessageById(prev, message)
+      );
+      applyPinnedMessageUpdate(message.conversationId, (prev) =>
+        upsertPinnedMessage(prev, message)
+      );
       if (message.conversation) {
         setConversations((prev) =>
           mergeConversationUpdate(prev, message.conversation, {
@@ -366,9 +568,13 @@ const ChatPage = () => {
           deletedAt: new Date().toISOString(),
         };
 
+      applyMessageUpdate(eventConversationId, (prev) =>
+        applyDeletedMessage(prev, deletedMessage)
+      );
+      applyPinnedMessageUpdate(eventConversationId, (prev) =>
+        upsertPinnedMessage(prev, deletedMessage)
+      );
       if (isSelectedConversationEvent(eventConversationId)) {
-        setMessages((prev) => applyDeletedMessage(prev, deletedMessage));
-        setPinnedMessages((prev) => upsertPinnedMessage(prev, deletedMessage));
         setReplyToMessage((prev) =>
           toComparableId(prev?.id) === toComparableId(messageId) ? null : prev
         );
@@ -392,15 +598,15 @@ const ChatPage = () => {
     };
 
     const handleReactionAdded = (event) => {
-      if (isSelectedConversationEvent(event.conversationId)) {
-        setMessages((prev) => addReactionToMessages(prev, event));
-      }
+      applyMessageUpdate(event.conversationId, (prev) =>
+        addReactionToMessages(prev, event)
+      );
     };
 
     const handleReactionRemoved = (event) => {
-      if (isSelectedConversationEvent(event.conversationId)) {
-        setMessages((prev) => removeReactionFromMessages(prev, event));
-      }
+      applyMessageUpdate(event.conversationId, (prev) =>
+        removeReactionFromMessages(prev, event)
+      );
     };
 
     const handleUserTyping = (event) => {
@@ -439,7 +645,14 @@ const ChatPage = () => {
       socket.off("user_typing", handleUserTyping);
       socket.off("activity_status_changed", handleActivityStatusChanged);
     };
-  }, [socket, selectedConversationId, user?._id, user?.id]);
+  }, [
+    socket,
+    selectedConversationId,
+    setMessagesOwner,
+    setPinnedMessagesOwner,
+    user?._id,
+    user?.id,
+  ]);
 
   const emitTypingStatus = useCallback(
     (isTyping) => {
@@ -499,11 +712,75 @@ const ChatPage = () => {
     setShowMobileDetail((value) => !value);
   };
 
+  const applySelectedMessagesUpdate = useCallback(
+    (updater) => {
+      if (!selectedConversationId || typeof updater !== "function") return;
+
+      const hasCurrentMessages =
+        messagesConversationIdRef.current === selectedConversationId;
+      setMessagesOwner(selectedConversationId);
+      setMessages((prev) => {
+        const baseMessages = hasCurrentMessages
+          ? prev
+          : getCachedMessages(messagesCacheRef.current, selectedConversationId) ||
+            [];
+        const nextMessages = updater(baseMessages);
+        setCachedMessages(
+          messagesCacheRef.current,
+          selectedConversationId,
+          nextMessages
+        );
+        return nextMessages;
+      });
+    },
+    [selectedConversationId, setMessagesOwner]
+  );
+
+  const applySelectedPinnedMessagesUpdate = useCallback(
+    (updater) => {
+      if (!selectedConversationId || typeof updater !== "function") return;
+
+      const hasCurrentPinnedMessages =
+        pinnedMessagesConversationIdRef.current === selectedConversationId;
+      setPinnedMessagesOwner(selectedConversationId);
+      setPinnedMessages((prev) => {
+        const basePinnedMessages = hasCurrentPinnedMessages
+          ? prev
+          : getCachedMessages(
+              pinnedMessagesCacheRef.current,
+              selectedConversationId
+            ) || [];
+        const nextPinnedMessages = updater(basePinnedMessages);
+        setCachedMessages(
+          pinnedMessagesCacheRef.current,
+          selectedConversationId,
+          nextPinnedMessages
+        );
+        return nextPinnedMessages;
+      });
+    },
+    [selectedConversationId, setPinnedMessagesOwner]
+  );
+
+  const upsertSelectedMessages = useCallback(
+    (...nextMessages) => {
+      applySelectedMessagesUpdate((prev) =>
+        nextMessages
+          .filter(Boolean)
+          .reduce(
+            (messagesToUpdate, message) =>
+              upsertMessageById(messagesToUpdate, message),
+            prev
+          )
+      );
+    },
+    [applySelectedMessagesUpdate]
+  );
+
   const handleSendMessage = useCallback(
     async (content, options = {}) => {
       if (!selectedConversationId) return;
 
-      setIsSending(true);
       try {
         const attachments = Array.isArray(options.attachments)
           ? options.attachments
@@ -525,7 +802,10 @@ const ChatPage = () => {
               poll,
               replyTo: replyToMessage?.id || null,
             });
-        setMessages((prev) => upsertMessageById(prev, message));
+        upsertSelectedMessages(message);
+        applySelectedPinnedMessagesUpdate((prev) =>
+          upsertPinnedMessage(prev, message)
+        );
         if (!editingMessage) {
           setConversations((prev) =>
             updateConversationPreview(prev, message, {
@@ -539,15 +819,15 @@ const ChatPage = () => {
         handleTypingChange(false);
       } catch (err) {
         console.error("Failed to send message:", err);
-      } finally {
-        setIsSending(false);
       }
     },
     [
       editingMessage,
+      applySelectedPinnedMessagesUpdate,
       handleTypingChange,
       replyToMessage?.id,
       selectedConversationId,
+      upsertSelectedMessages,
       user?._id,
       user?.id,
     ]
@@ -568,7 +848,6 @@ const ChatPage = () => {
     async (poll) => {
       if (!selectedConversationId) return;
 
-      setIsSending(true);
       try {
         const createPollResult = await sendConversationMessage(
           selectedConversationId,
@@ -582,13 +861,10 @@ const ChatPage = () => {
         const message = createPollResult.message || createPollResult;
         const systemMessage = createPollResult.systemMessage || null;
 
-        setMessages((prev) => {
-          const withPoll = upsertMessageById(prev, message);
-          return systemMessage
-            ? upsertMessageById(withPoll, systemMessage)
-            : withPoll;
-        });
-        setPinnedMessages((prev) => upsertPinnedMessage(prev, message));
+        upsertSelectedMessages(message, systemMessage);
+        applySelectedPinnedMessagesUpdate((prev) =>
+          upsertPinnedMessage(prev, message)
+        );
         setConversations((prev) =>
           updateConversationPreview(prev, systemMessage || message, {
             currentUserId: user?._id || user?.id,
@@ -602,14 +878,14 @@ const ChatPage = () => {
         console.error("Failed to create poll:", err);
         toast.error("Không thể tạo bình chọn");
         throw err;
-      } finally {
-        setIsSending(false);
       }
     },
     [
       handleTypingChange,
+      applySelectedPinnedMessagesUpdate,
       selectedConversationId,
       toast,
+      upsertSelectedMessages,
       user?._id,
       user?.id,
     ]
@@ -641,8 +917,12 @@ const ChatPage = () => {
           message.id
         );
         const deletedMessage = deleteResult.message || deleteResult;
-        setMessages((prev) => applyDeletedMessage(prev, deletedMessage));
-        setPinnedMessages((prev) => upsertPinnedMessage(prev, deletedMessage));
+        applySelectedMessagesUpdate((prev) =>
+          applyDeletedMessage(prev, deletedMessage)
+        );
+        applySelectedPinnedMessagesUpdate((prev) =>
+          upsertPinnedMessage(prev, deletedMessage)
+        );
         setReplyToMessage((prev) =>
           toComparableId(prev?.id) === toComparableId(message.id) ? null : prev
         );
@@ -665,7 +945,13 @@ const ChatPage = () => {
         console.error("Failed to delete message:", err);
       }
     },
-    [selectedConversationId, user?._id, user?.id]
+    [
+      applySelectedMessagesUpdate,
+      applySelectedPinnedMessagesUpdate,
+      selectedConversationId,
+      user?._id,
+      user?.id,
+    ]
   );
 
   const handleMarkConversationRead = useCallback(
@@ -737,13 +1023,10 @@ const ChatPage = () => {
         } = pinResult;
         const updatedMessage = responseMessage || messagePayload;
 
-        setMessages((prev) => {
-          const withUpdatedMessage = upsertMessageById(prev, updatedMessage);
-          return systemMessage
-            ? upsertMessageById(withUpdatedMessage, systemMessage)
-            : withUpdatedMessage;
-        });
-        setPinnedMessages((prev) => upsertPinnedMessage(prev, updatedMessage));
+        upsertSelectedMessages(updatedMessage, systemMessage);
+        applySelectedPinnedMessagesUpdate((prev) =>
+          upsertPinnedMessage(prev, updatedMessage)
+        );
         if (conversation) {
           setConversations((prev) =>
             mergeConversationUpdate(prev, conversation)
@@ -754,7 +1037,12 @@ const ChatPage = () => {
         toast.error("Không thể cập nhật ghim tin nhắn");
       }
     },
-    [selectedConversationId, toast]
+    [
+      applySelectedPinnedMessagesUpdate,
+      selectedConversationId,
+      toast,
+      upsertSelectedMessages,
+    ]
   );
 
   const handleEnsureMessageLoaded = useCallback(
@@ -779,7 +1067,7 @@ const ChatPage = () => {
 
         if (!didLoadTarget) return false;
 
-        setMessages((prev) =>
+        applySelectedMessagesUpdate((prev) =>
           loadedMessages.reduce(
             (nextMessages, message) => upsertMessageById(nextMessages, message),
             prev
@@ -792,7 +1080,7 @@ const ChatPage = () => {
         return false;
       }
     },
-    [messages, selectedConversationId]
+    [applySelectedMessagesUpdate, messages, selectedConversationId]
   );
 
   const handleToggleReaction = useCallback(
@@ -809,7 +1097,7 @@ const ChatPage = () => {
       try {
         if (hasReaction) {
           await removeMessageReaction(selectedConversationId, message.id, reaction);
-          setMessages((prev) =>
+          applySelectedMessagesUpdate((prev) =>
             removeReactionFromMessages(prev, {
               messageId: message.id,
               userId: user?._id || user?.id,
@@ -818,7 +1106,7 @@ const ChatPage = () => {
           );
         } else {
           await addMessageReaction(selectedConversationId, message.id, reaction);
-          setMessages((prev) =>
+          applySelectedMessagesUpdate((prev) =>
             addReactionToMessages(prev, {
               messageId: message.id,
               userId: user?._id || user?.id,
@@ -830,7 +1118,7 @@ const ChatPage = () => {
         console.error("Failed to toggle reaction:", err);
       }
     },
-    [selectedConversationId, user?._id, user?.id]
+    [applySelectedMessagesUpdate, selectedConversationId, user?._id, user?.id]
   );
 
   const handleVotePoll = useCallback(
@@ -846,13 +1134,10 @@ const ChatPage = () => {
         const updatedMessage = voteResult.message || voteResult;
         const systemMessage = voteResult.systemMessage || null;
 
-        setMessages((prev) => {
-          const withUpdatedPoll = upsertMessageById(prev, updatedMessage);
-          return systemMessage
-            ? upsertMessageById(withUpdatedPoll, systemMessage)
-            : withUpdatedPoll;
-        });
-        setPinnedMessages((prev) => upsertPinnedMessage(prev, updatedMessage));
+        upsertSelectedMessages(updatedMessage, systemMessage);
+        applySelectedPinnedMessagesUpdate((prev) =>
+          upsertPinnedMessage(prev, updatedMessage)
+        );
         if (voteResult.conversation) {
           setConversations((prev) =>
             mergeConversationUpdate(prev, voteResult.conversation)
@@ -871,7 +1156,14 @@ const ChatPage = () => {
         throw err;
       }
     },
-    [selectedConversationId, toast, user?._id, user?.id]
+    [
+      applySelectedPinnedMessagesUpdate,
+      selectedConversationId,
+      toast,
+      upsertSelectedMessages,
+      user?._id,
+      user?.id,
+    ]
   );
 
   const handleAddPollOption = useCallback(
@@ -887,13 +1179,10 @@ const ChatPage = () => {
         const updatedMessage = optionResult.message || optionResult;
         const systemMessage = optionResult.systemMessage || null;
 
-        setMessages((prev) => {
-          const withUpdatedPoll = upsertMessageById(prev, updatedMessage);
-          return systemMessage
-            ? upsertMessageById(withUpdatedPoll, systemMessage)
-            : withUpdatedPoll;
-        });
-        setPinnedMessages((prev) => upsertPinnedMessage(prev, updatedMessage));
+        upsertSelectedMessages(updatedMessage, systemMessage);
+        applySelectedPinnedMessagesUpdate((prev) =>
+          upsertPinnedMessage(prev, updatedMessage)
+        );
         if (optionResult.conversation) {
           setConversations((prev) =>
             mergeConversationUpdate(prev, optionResult.conversation)
@@ -912,7 +1201,14 @@ const ChatPage = () => {
         throw err;
       }
     },
-    [selectedConversationId, toast, user?._id, user?.id]
+    [
+      applySelectedPinnedMessagesUpdate,
+      selectedConversationId,
+      toast,
+      upsertSelectedMessages,
+      user?._id,
+      user?.id,
+    ]
   );
 
   const handleSharePoll = useCallback(
@@ -927,13 +1223,10 @@ const ChatPage = () => {
         const updatedMessage = shareResult.message || message;
         const systemMessage = shareResult.systemMessage || null;
 
-        setMessages((prev) => {
-          const withPoll = upsertMessageById(prev, updatedMessage);
-          return systemMessage
-            ? upsertMessageById(withPoll, systemMessage)
-            : withPoll;
-        });
-        setPinnedMessages((prev) => upsertPinnedMessage(prev, updatedMessage));
+        upsertSelectedMessages(updatedMessage, systemMessage);
+        applySelectedPinnedMessagesUpdate((prev) =>
+          upsertPinnedMessage(prev, updatedMessage)
+        );
         if (shareResult.conversation) {
           setConversations((prev) =>
             mergeConversationUpdate(prev, shareResult.conversation)
@@ -952,7 +1245,14 @@ const ChatPage = () => {
         throw err;
       }
     },
-    [selectedConversationId, toast, user?._id, user?.id]
+    [
+      applySelectedPinnedMessagesUpdate,
+      selectedConversationId,
+      toast,
+      upsertSelectedMessages,
+      user?._id,
+      user?.id,
+    ]
   );
 
   const handleClosePoll = useCallback(
@@ -967,13 +1267,10 @@ const ChatPage = () => {
         const updatedMessage = closeResult.message || message;
         const systemMessage = closeResult.systemMessage || null;
 
-        setMessages((prev) => {
-          const withPoll = upsertMessageById(prev, updatedMessage);
-          return systemMessage
-            ? upsertMessageById(withPoll, systemMessage)
-            : withPoll;
-        });
-        setPinnedMessages((prev) => upsertPinnedMessage(prev, updatedMessage));
+        upsertSelectedMessages(updatedMessage, systemMessage);
+        applySelectedPinnedMessagesUpdate((prev) =>
+          upsertPinnedMessage(prev, updatedMessage)
+        );
         if (closeResult.conversation) {
           setConversations((prev) =>
             mergeConversationUpdate(prev, closeResult.conversation)
@@ -992,7 +1289,14 @@ const ChatPage = () => {
         throw err;
       }
     },
-    [selectedConversationId, toast, user?._id, user?.id]
+    [
+      applySelectedPinnedMessagesUpdate,
+      selectedConversationId,
+      toast,
+      upsertSelectedMessages,
+      user?._id,
+      user?.id,
+    ]
   );
 
   const handleCreateConversation = async (newConv) => {
@@ -1020,6 +1324,31 @@ const ChatPage = () => {
     navigate(`/messages/${getConversationId(nextConversation)}`);
   };
 
+  const activeConversation =
+    selectedConversationId &&
+    getConversationId(selectedConversation) === selectedConversationId
+      ? selectedConversation
+      : conversations.find(
+          (conversation) => getConversationId(conversation) === selectedConversationId
+        ) || null;
+  const hasMessagesForSelectedConversation = areMessagesForConversation(
+    messagesConversationId,
+    selectedConversationId
+  );
+  const visibleMessages = getVisibleMessagesForConversation(
+    messages,
+    messagesConversationId,
+    selectedConversationId
+  );
+  const visiblePinnedMessages = getVisibleMessagesForConversation(
+    pinnedMessages,
+    pinnedMessagesConversationId,
+    selectedConversationId
+  );
+  const visibleIsLoadingMessages =
+    isLoadingMessages ||
+    (Boolean(selectedConversationId) && !hasMessagesForSelectedConversation);
+
   return (
     <div className="chat-page-shell flex h-full w-full overflow-hidden bg-slate-100 text-slate-950">
       {/* Conversation List - Hidden on mobile when viewing chat */}
@@ -1045,9 +1374,9 @@ const ChatPage = () => {
         } min-w-0 flex-1 p-2 md:flex md:p-3`}
       >
         <ChatWindow
-          conversation={selectedConversation}
-          messages={messages}
-          pinnedMessages={pinnedMessages}
+          conversation={activeConversation}
+          messages={visibleMessages}
+          pinnedMessages={visiblePinnedMessages}
           onSendMessage={handleSendMessage}
           onUploadAttachment={handleUploadAttachment}
           onCreatePoll={handleCreatePoll}
@@ -1070,16 +1399,16 @@ const ChatPage = () => {
           replyToMessage={replyToMessage}
           editingMessage={editingMessage}
           typingUsers={typingUsers}
-          isLoadingMessages={isLoadingMessages}
-          isSending={isSending || !isAuthenticated}
+          isLoadingMessages={visibleIsLoadingMessages}
+          isComposerDisabled={!isAuthenticated}
         />
       </div>
 
       {/* Detail Panel - Desktop only, toggleable */}
-      {showDetail && selectedConversation && (
+      {showDetail && activeConversation && (
         <div className="hidden shrink-0 py-3 pr-3 xl:flex">
           <ChatDetailPanel
-            conversation={selectedConversation}
+            conversation={activeConversation}
             currentUserId={user?._id || user?.id}
             className="flex w-80 rounded-2xl border border-slate-200 bg-white shadow-sm xl:w-[20rem] 2xl:w-80"
             onClose={() => setShowDetail(false)}
@@ -1088,7 +1417,7 @@ const ChatPage = () => {
       )}
 
       {/* Detail drawer - Mobile/tablet */}
-      {showMobileDetail && selectedConversation && (
+      {showMobileDetail && activeConversation && (
         <>
           <button
             type="button"
@@ -1097,7 +1426,7 @@ const ChatPage = () => {
             onClick={() => setShowMobileDetail(false)}
           />
           <ChatDetailPanel
-            conversation={selectedConversation}
+            conversation={activeConversation}
             currentUserId={user?._id || user?.id}
             className="chat-detail-drawer fixed bottom-3 right-3 top-[4.75rem] z-50 flex rounded-2xl border border-slate-200 bg-white shadow-2xl xl:hidden"
             onClose={() => setShowMobileDetail(false)}
