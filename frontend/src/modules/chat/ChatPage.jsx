@@ -46,6 +46,15 @@ import {
   setCachedMessages,
   updateCachedMessages,
 } from "./messageCacheState";
+import {
+  DEFAULT_MESSAGE_PAGE_STATE,
+  MESSAGE_PAGE_SIZE,
+  createMessagePageState,
+  getCachedMessagePageState,
+  getOldestMessageCursor,
+  mergeMessagePage,
+  setCachedMessagePageState,
+} from "./messagePaginationState";
 
 const toComparableId = (value) => {
   if (value == null) return "";
@@ -186,6 +195,9 @@ const ChatPage = () => {
   const [pinnedMessagesConversationId, setPinnedMessagesConversationId] =
     useState("");
   const [isLoadingMessages, setIsLoadingMessages] = useState(false);
+  const [messagePageState, setMessagePageState] = useState(
+    DEFAULT_MESSAGE_PAGE_STATE,
+  );
   const [showDetail, setShowDetail] = useState(true);
   const [showMobileDetail, setShowMobileDetail] = useState(false);
   const [showNewModal, setShowNewModal] = useState(false);
@@ -196,13 +208,17 @@ const ChatPage = () => {
   const typingTimeoutRef = useRef(null);
   const messagesCacheRef = useRef(new Map());
   const pinnedMessagesCacheRef = useRef(new Map());
+  const messagePageStateCacheRef = useRef(new Map());
   const messagesConversationIdRef = useRef("");
   const pinnedMessagesConversationIdRef = useRef("");
+  const selectedConversationIdRef = useRef("");
   const messagesRequestSeqRef = useRef(0);
+  const olderMessagesRequestSeqRef = useRef(0);
   const fetchedConversationIdsRef = useRef(new Set());
   const [hasLoadedConversations, setHasLoadedConversations] = useState(false);
 
   const selectedConversationId = toComparableId(conversationId);
+  selectedConversationIdRef.current = selectedConversationId;
   const setMessagesOwner = useCallback((nextConversationId) => {
     const targetConversationId = toComparableId(nextConversationId);
     messagesConversationIdRef.current = targetConversationId;
@@ -213,6 +229,25 @@ const ChatPage = () => {
     pinnedMessagesConversationIdRef.current = targetConversationId;
     setPinnedMessagesConversationId(targetConversationId);
   }, []);
+  const setMessagePageStateForConversation = useCallback(
+    (nextConversationId, nextState) => {
+      const targetConversationId = toComparableId(nextConversationId);
+      const normalizedState = createMessagePageState(nextState);
+
+      if (targetConversationId) {
+        setCachedMessagePageState(
+          messagePageStateCacheRef.current,
+          targetConversationId,
+          normalizedState,
+        );
+      }
+
+      if (targetConversationId === selectedConversationId) {
+        setMessagePageState(normalizedState);
+      }
+    },
+    [selectedConversationId],
+  );
 
   // Fetch conversations on mount
   useEffect(() => {
@@ -246,8 +281,10 @@ const ChatPage = () => {
       setPinnedMessages([]);
       setMessagesOwner("");
       setPinnedMessagesOwner("");
+      setMessagePageState(DEFAULT_MESSAGE_PAGE_STATE);
       setIsLoadingMessages(false);
       messagesRequestSeqRef.current += 1;
+      olderMessagesRequestSeqRef.current += 1;
       setTypingUsers([]);
       setReplyToMessage(null);
       setEditingMessage(null);
@@ -316,8 +353,10 @@ const ChatPage = () => {
       setPinnedMessages([]);
       setMessagesOwner("");
       setPinnedMessagesOwner("");
+      setMessagePageState(DEFAULT_MESSAGE_PAGE_STATE);
       setIsLoadingMessages(false);
       messagesRequestSeqRef.current += 1;
+      olderMessagesRequestSeqRef.current += 1;
       setTypingUsers([]);
       setReplyToMessage(null);
       setEditingMessage(null);
@@ -327,6 +366,7 @@ const ChatPage = () => {
     let ignore = false;
     const requestSeq = messagesRequestSeqRef.current + 1;
     messagesRequestSeqRef.current = requestSeq;
+    olderMessagesRequestSeqRef.current += 1;
     const cachedMessages = getCachedMessages(
       messagesCacheRef.current,
       selectedConversationId
@@ -335,6 +375,11 @@ const ChatPage = () => {
       pinnedMessagesCacheRef.current,
       selectedConversationId
     );
+    const cachedMessagePageState =
+      getCachedMessagePageState(
+        messagePageStateCacheRef.current,
+        selectedConversationId,
+      ) || DEFAULT_MESSAGE_PAGE_STATE;
     const hasCachedMessages = Boolean(cachedMessages);
 
     if (hasCachedMessages) {
@@ -342,6 +387,7 @@ const ChatPage = () => {
       setPinnedMessagesOwner(selectedConversationId);
       setMessages(cachedMessages);
       setPinnedMessages(cachedPinnedMessages || []);
+      setMessagePageState(cachedMessagePageState);
       setIsLoadingMessages(false);
       setConversations((prev) =>
         markConversationAsRead(prev, selectedConversationId)
@@ -355,6 +401,7 @@ const ChatPage = () => {
       setPinnedMessagesOwner(selectedConversationId);
       setMessages([]);
       setPinnedMessages([]);
+      setMessagePageState(DEFAULT_MESSAGE_PAGE_STATE);
       setIsLoadingMessages(true);
     }
 
@@ -364,16 +411,27 @@ const ChatPage = () => {
         .catch((error) => ({ error }));
 
       try {
-        const res = await getMessages(selectedConversationId, { limit: 50 });
+        const res = await getMessages(selectedConversationId, {
+          limit: MESSAGE_PAGE_SIZE,
+        });
         if (!ignore && messagesRequestSeqRef.current === requestSeq) {
           const loadedMessages = normalizeMessagesForDisplay(res.content || []);
+          const nextMessagePageState = createMessagePageState({
+            hasOlder: res.hasMore,
+          });
           setCachedMessages(
             messagesCacheRef.current,
             selectedConversationId,
             loadedMessages
           );
+          setCachedMessagePageState(
+            messagePageStateCacheRef.current,
+            selectedConversationId,
+            nextMessagePageState,
+          );
           setMessagesOwner(selectedConversationId);
           setMessages(loadedMessages);
+          setMessagePageState(nextMessagePageState);
           setConversations((prev) =>
             markConversationAsRead(prev, selectedConversationId)
           );
@@ -416,6 +474,7 @@ const ChatPage = () => {
           setPinnedMessagesOwner(selectedConversationId);
           setMessages([]);
           setPinnedMessages([]);
+          setMessagePageState(DEFAULT_MESSAGE_PAGE_STATE);
         }
       } finally {
         if (!ignore && messagesRequestSeqRef.current === requestSeq) {
@@ -1094,6 +1153,91 @@ const ChatPage = () => {
     ]
   );
 
+  const handleLoadOlderMessages = useCallback(async () => {
+    if (
+      !selectedConversationId ||
+      isLoadingMessages ||
+      messagePageState.isLoadingOlder ||
+      !messagePageState.hasOlder
+    ) {
+      return false;
+    }
+
+    const currentMessages =
+      messagesConversationIdRef.current === selectedConversationId
+        ? messages
+        : getCachedMessages(messagesCacheRef.current, selectedConversationId) || [];
+    const before = getOldestMessageCursor(currentMessages);
+
+    if (!before) {
+      setMessagePageStateForConversation(selectedConversationId, {
+        hasOlder: false,
+      });
+      return false;
+    }
+
+    const requestSeq = olderMessagesRequestSeqRef.current + 1;
+    olderMessagesRequestSeqRef.current = requestSeq;
+    setMessagePageState(
+      createMessagePageState({
+        hasOlder: messagePageState.hasOlder,
+        isLoadingOlder: true,
+      }),
+    );
+
+    try {
+      const res = await getMessages(selectedConversationId, {
+        before,
+        limit: MESSAGE_PAGE_SIZE,
+      });
+
+      if (
+        selectedConversationIdRef.current !== selectedConversationId ||
+        olderMessagesRequestSeqRef.current !== requestSeq
+      ) {
+        return false;
+      }
+
+      const loadedMessages = normalizeMessagesForDisplay(res.content || []);
+      const nextMessagePageState = createMessagePageState({
+        hasOlder: res.hasMore,
+      });
+
+      applySelectedMessagesUpdate((prev) =>
+        mergeMessagePage(prev, loadedMessages),
+      );
+      setMessagePageStateForConversation(
+        selectedConversationId,
+        nextMessagePageState,
+      );
+
+      return loadedMessages.length > 0;
+    } catch (err) {
+      console.error("Failed to load older messages:", err);
+
+      if (
+        selectedConversationIdRef.current === selectedConversationId &&
+        olderMessagesRequestSeqRef.current === requestSeq
+      ) {
+        setMessagePageState(
+          createMessagePageState({
+            hasOlder: messagePageState.hasOlder,
+          }),
+        );
+      }
+
+      return false;
+    }
+  }, [
+    applySelectedMessagesUpdate,
+    isLoadingMessages,
+    messagePageState.hasOlder,
+    messagePageState.isLoadingOlder,
+    messages,
+    selectedConversationId,
+    setMessagePageStateForConversation,
+  ]);
+
   const handleEnsureMessageLoaded = useCallback(
     async (targetMessage) => {
       const targetMessageId = getMessageId(targetMessage);
@@ -1107,7 +1251,7 @@ const ChatPage = () => {
       try {
         const res = await getMessages(selectedConversationId, {
           around: targetMessageId,
-          limit: 50,
+          limit: MESSAGE_PAGE_SIZE,
         });
         const loadedMessages = normalizeMessagesForDisplay(res.content || []);
         const didLoadTarget = loadedMessages.some(
@@ -1117,10 +1261,13 @@ const ChatPage = () => {
         if (!didLoadTarget) return false;
 
         applySelectedMessagesUpdate((prev) =>
-          loadedMessages.reduce(
-            (nextMessages, message) => upsertMessageById(nextMessages, message),
-            prev
-          )
+          mergeMessagePage(prev, loadedMessages),
+        );
+        setMessagePageStateForConversation(
+          selectedConversationId,
+          createMessagePageState({
+            hasOlder: res.hasMore,
+          }),
         );
 
         return true;
@@ -1129,7 +1276,12 @@ const ChatPage = () => {
         return false;
       }
     },
-    [applySelectedMessagesUpdate, messages, selectedConversationId]
+    [
+      applySelectedMessagesUpdate,
+      messages,
+      selectedConversationId,
+      setMessagePageStateForConversation,
+    ]
   );
 
   const handleToggleReaction = useCallback(
@@ -1535,6 +1687,10 @@ const ChatPage = () => {
   const visibleIsLoadingMessages =
     isLoadingMessages ||
     (Boolean(selectedConversationId) && !hasMessagesForSelectedConversation);
+  const visibleHasOlderMessages =
+    hasMessagesForSelectedConversation && messagePageState.hasOlder;
+  const visibleIsLoadingOlderMessages =
+    hasMessagesForSelectedConversation && messagePageState.isLoadingOlder;
 
   return (
     <div className="chat-page-shell flex h-full w-full overflow-hidden bg-slate-100 text-slate-950">
@@ -1575,6 +1731,7 @@ const ChatPage = () => {
           onCopyMessage={handleCopyMessage}
           onTogglePinMessage={handleTogglePinMessage}
           onEnsureMessageLoaded={handleEnsureMessageLoaded}
+          onLoadOlderMessages={handleLoadOlderMessages}
           onToggleReaction={handleToggleReaction}
           onVotePoll={handleVotePoll}
           onAddPollOption={handleAddPollOption}
@@ -1591,6 +1748,8 @@ const ChatPage = () => {
           editingMessage={editingMessage}
           typingUsers={typingUsers}
           isLoadingMessages={visibleIsLoadingMessages}
+          hasOlderMessages={visibleHasOlderMessages}
+          isLoadingOlderMessages={visibleIsLoadingOlderMessages}
           isComposerDisabled={!isAuthenticated}
         />
       </div>

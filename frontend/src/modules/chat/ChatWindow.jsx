@@ -331,6 +331,7 @@ const messageSpacingClassNames = {
 };
 
 const SCROLL_BOTTOM_THRESHOLD_PX = 48;
+const LOAD_OLDER_THRESHOLD_PX = 96;
 
 const isViewingLatestMessage = (pane) => {
   if (!pane) return true;
@@ -356,6 +357,7 @@ const ChatWindow = ({
   onCopyMessage,
   onTogglePinMessage,
   onEnsureMessageLoaded,
+  onLoadOlderMessages,
   onToggleReaction,
   onVotePoll,
   onAddPollOption,
@@ -372,6 +374,8 @@ const ChatWindow = ({
   editingMessage = null,
   typingUsers = [],
   isLoadingMessages = false,
+  hasOlderMessages = false,
+  isLoadingOlderMessages = false,
   isComposerDisabled = false,
 }) => {
   const { user } = useAuth();
@@ -384,6 +388,8 @@ const ChatWindow = ({
   const shouldStickToLatestMessageRef = useRef(true);
   const programmaticScrollUntilRef = useRef(0);
   const previousConversationIdRef = useRef("");
+  const isOlderLoadRequestPendingRef = useRef(false);
+  const olderMessagesAnchorRef = useRef(null);
   const [highlightedMessageId, setHighlightedMessageId] = useState("");
   const [showScrollToBottomButton, setShowScrollToBottomButton] =
     useState(false);
@@ -459,6 +465,95 @@ const ChatWindow = ({
     scrollPaneToLatestMessage(behavior);
     setShowScrollToBottomButton(false);
   }, [scrollPaneToLatestMessage]);
+
+  const maybeLoadOlderMessages = useCallback(() => {
+    const pane = messagesPaneRef.current;
+
+    if (
+      !pane ||
+      !onLoadOlderMessages ||
+      !hasOlderMessages ||
+      isLoadingMessages ||
+      isLoadingOlderMessages ||
+      isOlderLoadRequestPendingRef.current ||
+      messages.length === 0 ||
+      pane.scrollTop > LOAD_OLDER_THRESHOLD_PX
+    ) {
+      return;
+    }
+
+    shouldStickToLatestMessageRef.current = false;
+    isViewingLatestMessageRef.current = false;
+    olderMessagesAnchorRef.current = {
+      scrollHeight: pane.scrollHeight,
+      scrollTop: pane.scrollTop,
+    };
+    isOlderLoadRequestPendingRef.current = true;
+
+    Promise.resolve(onLoadOlderMessages())
+      .then((didLoadMessages) => {
+        if (!didLoadMessages) {
+          olderMessagesAnchorRef.current = null;
+        }
+      })
+      .catch(() => {
+        olderMessagesAnchorRef.current = null;
+      })
+      .finally(() => {
+        isOlderLoadRequestPendingRef.current = false;
+      });
+  }, [
+    hasOlderMessages,
+    isLoadingMessages,
+    isLoadingOlderMessages,
+    messages.length,
+    onLoadOlderMessages,
+  ]);
+
+  const handleMessagesPaneScroll = useCallback(() => {
+    updateScrollToBottomVisibility();
+    maybeLoadOlderMessages();
+  }, [maybeLoadOlderMessages, updateScrollToBottomVisibility]);
+
+  useLayoutEffect(() => {
+    const pane = messagesPaneRef.current;
+    const anchor = olderMessagesAnchorRef.current;
+
+    if (!pane || !anchor) return;
+
+    const scrollHeightDelta = pane.scrollHeight - anchor.scrollHeight;
+    pane.scrollTop = Math.max(0, anchor.scrollTop + scrollHeightDelta);
+    olderMessagesAnchorRef.current = null;
+
+    if (typeof window === "undefined") return;
+
+    const frameId = window.requestAnimationFrame(updateScrollToBottomVisibility);
+    return () => window.cancelAnimationFrame(frameId);
+  }, [messages.length, updateScrollToBottomVisibility]);
+
+  useEffect(() => {
+    const pane = messagesPaneRef.current;
+    if (
+      !pane ||
+      !hasOlderMessages ||
+      isLoadingMessages ||
+      isLoadingOlderMessages ||
+      messages.length === 0
+    ) {
+      return;
+    }
+
+    if (pane.scrollHeight <= pane.clientHeight + LOAD_OLDER_THRESHOLD_PX) {
+      maybeLoadOlderMessages();
+    }
+  }, [
+    conversationId,
+    hasOlderMessages,
+    isLoadingMessages,
+    isLoadingOlderMessages,
+    maybeLoadOlderMessages,
+    messages.length,
+  ]);
 
   useLayoutEffect(() => {
     if (!conversationId || isLoadingMessages || messages.length === 0) {
@@ -607,6 +702,8 @@ const ChatWindow = ({
       );
       if (!targetMessageId) return;
 
+      shouldStickToLatestMessageRef.current = false;
+      isViewingLatestMessageRef.current = false;
       let targetNode = messageNodeRefs.current.get(targetMessageId);
       if (!targetNode && onEnsureMessageLoaded) {
         const didLoadMessage = await onEnsureMessageLoaded(targetMessage);
@@ -838,7 +935,7 @@ const ChatWindow = ({
       {/* Messages Area */}
       <div
         ref={messagesPaneRef}
-        onScroll={updateScrollToBottomVisibility}
+        onScroll={handleMessagesPaneScroll}
         className="chat-messages-pane chat-messages-scroll flex flex-1 flex-col overflow-y-auto px-4 py-6 sm:px-6"
       >
         {isLoadingMessages ? (
@@ -867,6 +964,12 @@ const ChatWindow = ({
             ref={messagesContentRef}
             className="chat-messages-content flex w-full flex-col"
           >
+            {isLoadingOlderMessages && (
+              <div className="mb-3 flex items-center justify-center gap-2 text-xs font-semibold text-slate-500">
+                <span className="h-4 w-4 rounded-full border-2 border-blue-200 border-t-blue-600 animate-spin" />
+                <span>Đang tải tin nhắn cũ...</span>
+              </div>
+            )}
             {timelineItems.map((item) => {
               if (item.type === "separator") {
                 return (

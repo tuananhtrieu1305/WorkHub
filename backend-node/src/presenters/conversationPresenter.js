@@ -1404,21 +1404,30 @@ export const getMessages = async (req, res) => {
           createdAt: { $lt: targetMessage.createdAt },
         })
           .sort({ createdAt: -1, _id: -1 })
-          .limit(olderLimit),
+          .limit(olderLimit + 1),
         Message.find({
           conversationId: conversation._id,
           createdAt: { $gt: targetMessage.createdAt },
         })
           .sort({ createdAt: 1, _id: 1 })
-          .limit(newerLimit),
+          .limit(newerLimit + 1),
       ]);
+      const hasMoreBefore = olderMessages.length > olderLimit;
+      const hasMoreAfter = newerMessages.length > newerLimit;
+      if (hasMoreBefore) olderMessages.pop();
+      if (hasMoreAfter) newerMessages.pop();
 
       const content = await formatMessages(
         [...olderMessages.reverse(), targetMessage, ...newerMessages],
         { currentUserId: req.user._id },
       );
 
-      return res.status(200).json({ content, hasMore: false });
+      return res.status(200).json({
+        content,
+        hasMore: hasMoreBefore,
+        hasMoreBefore,
+        hasMoreAfter,
+      });
     }
 
     const filter = { conversationId: conversation._id };
