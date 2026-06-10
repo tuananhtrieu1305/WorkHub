@@ -1,4 +1,11 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { createPortal } from "react-dom";
 import MessageBubble from "./MessageBubble";
 import ChatInput from "./ChatInput";
@@ -23,6 +30,46 @@ const getComparableId = (value) => {
 
 const getMessageSenderId = (message) =>
   getComparableId(message?.sender?._id || message?.sender?.id || message?.sender);
+
+const getMessageId = (message) =>
+  getComparableId(message?.id || message?._id || message);
+
+const hasReplyMessagePayload = (replyTo) => {
+  if (!replyTo || typeof replyTo !== "object" || Array.isArray(replyTo)) {
+    return false;
+  }
+
+  return Boolean(
+    replyTo.sender ||
+      replyTo.senderId ||
+      replyTo.type ||
+      typeof replyTo.content === "string" ||
+      Array.isArray(replyTo.attachments) ||
+      replyTo.deletedAt,
+  );
+};
+
+const resolveMessageReplyReferences = (messages = []) => {
+  const messageById = new Map();
+  messages.forEach((message) => {
+    const messageId = getMessageId(message);
+    if (messageId) messageById.set(messageId, message);
+  });
+
+  return messages.map((message) => {
+    const replyTo = message?.replyTo;
+    const replyToId = getMessageId(replyTo);
+    if (!replyToId || hasReplyMessagePayload(replyTo)) return message;
+
+    const resolvedReplyTo = messageById.get(replyToId);
+    if (!resolvedReplyTo) return message;
+
+    return {
+      ...message,
+      replyTo: resolvedReplyTo,
+    };
+  });
+};
 
 const getDraftPreviewText = (message) => {
   return getMessagePreviewText(message);
@@ -351,6 +398,10 @@ const ChatWindow = ({
     Boolean(currentUserId) &&
     Boolean(latestMessageSenderId) &&
     latestMessageSenderId === currentUserId;
+  const timelineMessages = useMemo(
+    () => resolveMessageReplyReferences(messages),
+    [messages],
+  );
 
   const updateScrollToBottomVisibility = useCallback(() => {
     const pane = messagesPaneRef.current;
@@ -638,7 +689,7 @@ const ChatWindow = ({
   const shouldShowActivityStatus = isPrivate && activityStatusMeta.label;
 
   const participantCount = conversation.participants?.length || 0;
-  const timelineItems = buildMessageTimeline(messages);
+  const timelineItems = buildMessageTimeline(timelineMessages);
   const calleeUserId = otherParticipant?._id || otherParticipant?.id;
   const isCalleeAvailableForCall = !["offline", "invisible"].includes(
     effectiveActivityStatus,

@@ -731,6 +731,21 @@ const formatMessageMetadata = async (
   return metadata;
 };
 
+const hasReplyMessagePayload = (replyTo) => {
+  if (!replyTo || typeof replyTo !== "object" || Array.isArray(replyTo)) {
+    return false;
+  }
+
+  return Boolean(
+    replyTo.senderId ||
+      replyTo.conversationId ||
+      replyTo.type ||
+      typeof replyTo.content === "string" ||
+      Array.isArray(replyTo.attachments) ||
+      replyTo.deletedAt,
+  );
+};
+
 const formatReplyMessage = async (
   replyTo,
   { currentUserId = null, context = null } = {},
@@ -738,9 +753,7 @@ const formatReplyMessage = async (
   if (!replyTo) return null;
 
   const replyMessage =
-    (typeof replyTo === "object" && (replyTo._id || replyTo.id || replyTo.content)
-      ? replyTo
-      : null) ||
+    (hasReplyMessagePayload(replyTo) ? replyTo : null) ||
     (await getMessageFromFormatContext(replyTo, { context }));
   if (!replyMessage) return null;
 

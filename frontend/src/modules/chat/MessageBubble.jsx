@@ -44,10 +44,17 @@ const getReplyPreviewAttachment = (message) => {
   if (message?.deletedAt) return null;
   return (
     message?.attachments?.find(
-      (attachment) =>
-        attachment.mimeType?.startsWith("image/") ||
-        attachment.mimeType?.startsWith("video/") ||
-        isAudioAttachment(attachment),
+      (attachment) => {
+        const mimeType = String(attachment?.mimeType || "").toLowerCase();
+        const kind = String(attachment?.kind || "").toLowerCase();
+        return (
+          kind === "image" ||
+          kind === "video" ||
+          mimeType.startsWith("image/") ||
+          mimeType.startsWith("video/") ||
+          isAudioAttachment(attachment)
+        );
+      },
     ) ||
     message?.attachments?.[0] ||
     null
@@ -949,13 +956,21 @@ const ReplyQuote = ({
     "Người dùng",
     currentUserId,
   );
+  const actorId = getUserId(message.sender);
   const targetName = getReplyParticipantName(
     replyTo.sender,
     "tin nhắn",
     currentUserId,
     { selfLabel: "bạn" },
   );
-  const previewText = getMessagePreviewText(replyTo);
+  const targetId = getUserId(replyTo.sender);
+  const isSelfReply = Boolean(actorId && targetId && actorId === targetId);
+  const replyLabel = isSelfReply
+    ? `${actorName} đã trả lời chính mình`
+    : `${actorName} đã trả lời ${targetName}`;
+  const previewText = getMessagePreviewText(replyTo, {
+    emptyText: "Tin nhắn",
+  });
   const previewAttachment = getReplyPreviewAttachment(replyTo);
   const canJump = Boolean(replyToId && onJumpToMessage);
 
@@ -967,14 +982,16 @@ const ReplyQuote = ({
     >
       <div className="chat-reply-context-title">
         <span className="material-symbols-outlined">reply</span>
-        <span>{actorName} đã trả lời {targetName}</span>
+        <span>{replyLabel}</span>
       </div>
       <button
         type="button"
-        className="chat-reply-preview-button"
+        className={`chat-reply-preview-button ${
+          previewAttachment ? "chat-reply-preview-button-with-media" : ""
+        }`}
         onClick={() => onJumpToMessage?.(replyTo)}
         disabled={!canJump}
-        title={canJump ? "Đi đến tin nhắn được trả lời" : previewText}
+        title={previewText}
       >
         <ReplyMediaThumbnail attachment={previewAttachment} />
         <span className="chat-reply-preview-text" title={previewText}>
@@ -1451,8 +1468,9 @@ const MessageBubble = ({
   const messageTimestamp =
     timestampLabel || formatMessageTimestamp(message.createdAt);
   const hoverTimestampPlacement = getHoverTimestampPlacement(isMine);
+  const hasReplyContext = !isDeleted && Boolean(message.replyTo);
   const shouldShowSenderHeader =
-    showSenderHeader || (!isDeleted && message.isPinned);
+    !hasReplyContext && (showSenderHeader || (!isDeleted && message.isPinned));
 
   const updateHoverTimePosition = useCallback(() => {
     if (!messageTimestamp || !bubbleRef.current) {

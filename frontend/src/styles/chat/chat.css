@@ -2012,8 +2012,8 @@ video.chat-attachment-media {
 }
 
 .chat-reply-context {
-  max-width: min(18rem, 100%);
-  margin-bottom: 0.35rem;
+  max-width: min(20rem, 100%);
+  margin-bottom: 0.28rem;
   color: #64748b;
 }
 
@@ -2041,8 +2041,8 @@ video.chat-attachment-media {
   display: flex;
   min-width: 0;
   align-items: center;
-  gap: 0.25rem;
-  padding: 0 0.25rem 0.22rem;
+  gap: 0.2rem;
+  padding: 0 0.3rem 0.18rem;
   color: #64748b;
   font-size: 0.75rem;
   font-weight: 800;
@@ -2065,13 +2065,13 @@ video.chat-attachment-media {
   display: flex;
   width: fit-content;
   max-width: 100%;
-  min-height: 2.35rem;
+  min-height: 2.2rem;
   align-items: center;
-  gap: 0.5rem;
+  gap: 0.48rem;
   border: 0;
-  border-radius: 1rem;
-  background: rgba(51, 65, 85, 0.12);
-  padding: 0.4rem 0.75rem;
+  border-radius: 999px;
+  background: rgba(51, 65, 85, 0.14);
+  padding: 0.42rem 0.78rem;
   color: #64748b;
   text-align: left;
   transition:
@@ -2092,12 +2092,12 @@ video.chat-attachment-media {
 
 .chat-reply-preview-button:disabled {
   cursor: default;
-  opacity: 0.78;
+  opacity: 0.88;
 }
 
 .chat-reply-preview-text {
   min-width: 0;
-  max-width: min(13.5rem, calc(100vw - 8rem));
+  max-width: min(15rem, calc(100vw - 8rem));
   flex: 0 1 auto;
   overflow: hidden;
   color: inherit;
@@ -2108,16 +2108,20 @@ video.chat-attachment-media {
   white-space: nowrap;
 }
 
+.chat-reply-preview-button-with-media .chat-reply-preview-text {
+  max-width: min(12.5rem, calc(100vw - 10.5rem));
+}
+
 .chat-reply-preview-media {
   position: relative;
   display: inline-flex;
-  width: 2rem;
-  height: 2rem;
-  flex: 0 0 2rem;
+  width: 1.9rem;
+  height: 1.9rem;
+  flex: 0 0 1.9rem;
   align-items: center;
   justify-content: center;
   overflow: hidden;
-  border-radius: 0.7rem;
+  border-radius: 0.65rem;
   background: rgba(255, 255, 255, 0.8);
   color: #475569;
 }

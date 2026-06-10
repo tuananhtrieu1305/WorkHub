@@ -16,7 +16,7 @@ export const formatAudioDuration = (seconds) => {
 
 export const getMessagePreviewText = (
   message,
-  { emptyText = "..." } = {},
+  { emptyText = "Tin nhắn" } = {},
 ) => {
   if (!message) return emptyText;
   if (message.deletedAt) return "Tin nhắn đã được thu hồi";
@@ -28,18 +28,33 @@ export const getMessagePreviewText = (
     const title = message.reminder?.title || message.content;
     return title ? `Nhắc hẹn: ${title}` : "Nhắc hẹn";
   }
-  if (message.content) return message.content.replace(/\s+/g, " ").trim();
+  const normalizedContent =
+    typeof message.content === "string"
+      ? message.content.replace(/\s+/g, " ").trim()
+      : "";
+  if (normalizedContent) return normalizedContent;
 
-  const attachments = message.attachments || [];
+  const attachments = Array.isArray(message.attachments)
+    ? message.attachments
+    : [];
   const firstAttachment = attachments[0];
   const firstMimeType = String(firstAttachment?.mimeType || "").toLowerCase();
+  const firstKind = String(firstAttachment?.kind || "").toLowerCase();
 
   if (message.type === "audio" || attachments.some(isAudioAttachment)) {
     return "Tin nhắn thoại";
   }
 
-  if (firstMimeType.startsWith("image/")) return "Ảnh";
-  if (firstMimeType.startsWith("video/")) return "Video";
+  if (
+    message.type === "image" ||
+    firstKind === "image" ||
+    firstMimeType.startsWith("image/")
+  ) {
+    return "Ảnh";
+  }
+  if (firstKind === "video" || firstMimeType.startsWith("video/")) {
+    return "Video";
+  }
   if (firstAttachment?.fileName) return firstAttachment.fileName;
   if (attachments.length) return "Tệp đính kèm";
   return emptyText;
