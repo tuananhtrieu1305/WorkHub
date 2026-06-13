@@ -9,6 +9,14 @@ import {
   sendVerificationEmail,
   sendResetPasswordEmail,
 } from "../utils/sendEmail.js";
+import {
+  saveVerifyOTP,
+  getVerifyOTP,
+  deleteVerifyOTP,
+  saveResetToken,
+  getResetToken,
+  deleteResetToken,
+} from "../services/otpService.js";
 
 const generateOTP = () => {
   return Math.floor(100000 + Math.random() * 900000).toString();
@@ -47,12 +55,10 @@ export const register = async (req, res) => {
         const otp = generateOTP();
         existingUser.fullName = fullName;
         existingUser.password = password;
-        existingUser.verificationOTP = otp;
-        existingUser.verificationOTPExpires = new Date(
-          Date.now() + 10 * 60 * 1000,
-        );
         await existingUser.save();
 
+        // Store OTP in Redis (TTL 10 min)
+        await saveVerifyOTP(email, otp);
         await sendVerificationEmail(email, fullName, otp);
 
         return res.status(200).json({
@@ -73,10 +79,10 @@ export const register = async (req, res) => {
       fullName,
       email,
       password,
-      verificationOTP: otp,
-      verificationOTPExpires: new Date(Date.now() + 10 * 60 * 1000),
     });
 
+    // Store OTP in Redis (TTL 10 min)
+    await saveVerifyOTP(email, otp);
     await sendVerificationEmail(email, fullName, otp);
 
     res.status(201).json({
@@ -114,13 +120,20 @@ export const verifyEmail = async (req, res) => {
         .json({ message: "This account is already verified" });
     }
 
-    if (user.verificationOTP !== otp) {
+    // Primary: check Redis OTP
+    // Fallback: check MongoDB OTP (backward-compat for tokens issued before migration)
+    const redisOtp = await getVerifyOTP(email);
+    const validOtp = redisOtp ?? user.verificationOTP;
+    const validExpiry = redisOtp ? null : user.verificationOTPExpires;
+
+    if (!validOtp || validOtp !== otp) {
       return res
         .status(400)
         .json({ message: "Invalid verification code. Please try again." });
     }
 
-    if (user.verificationOTPExpires < new Date()) {
+    // Only check expiry for MongoDB fallback path (Redis TTL handles it natively)
+    if (!redisOtp && validExpiry && validExpiry < new Date()) {
       return res.status(400).json({
         message: "Verification code has expired. Please request a new one.",
         expired: true,
@@ -133,6 +146,9 @@ export const verifyEmail = async (req, res) => {
     const refreshToken = generateRefreshToken(user._id);
     user.refreshToken = refreshToken;
     await user.save();
+
+    // Clean up Redis OTP
+    await deleteVerifyOTP(email);
 
     res.status(200).json({
       message: "Email verified successfully!",
@@ -172,10 +188,9 @@ export const resendOTP = async (req, res) => {
     }
 
     const otp = generateOTP();
-    user.verificationOTP = otp;
-    user.verificationOTPExpires = new Date(Date.now() + 10 * 60 * 1000);
-    await user.save();
 
+    // Store OTP in Redis — no more user.save() just for OTP
+    await saveVerifyOTP(email, otp);
     await sendVerificationEmail(email, user.fullName, otp);
 
     res.status(200).json({
@@ -324,13 +339,13 @@ export const forgotPassword = async (req, res) => {
     }
 
     const resetToken = crypto.randomBytes(32).toString("hex");
-
-    user.resetPasswordToken = crypto
+    const hashedToken = crypto
       .createHash("sha256")
       .update(resetToken)
       .digest("hex");
-    user.resetPasswordExpires = new Date(Date.now() + 15 * 60 * 1000);
-    await user.save();
+
+    // Store hashed token → userId in Redis (TTL 15 min)
+    await saveResetToken(hashedToken, user._id);
 
     const resetLink = `${process.env.FRONTEND_URL}/reset-password/${resetToken}`;
 
@@ -363,10 +378,20 @@ export const resetPassword = async (req, res) => {
 
     const hashedToken = crypto.createHash("sha256").update(token).digest("hex");
 
-    const user = await User.findOne({
-      resetPasswordToken: hashedToken,
-      resetPasswordExpires: { $gt: new Date() },
-    }).select("+resetPasswordToken +resetPasswordExpires");
+    // Primary: lookup userId from Redis
+    // Fallback: lookup from MongoDB (backward-compat for tokens issued before migration)
+    let userId = await getResetToken(hashedToken);
+    let user;
+
+    if (userId) {
+      user = await User.findById(userId);
+    } else {
+      // MongoDB fallback path
+      user = await User.findOne({
+        resetPasswordToken: hashedToken,
+        resetPasswordExpires: { $gt: new Date() },
+      }).select("+resetPasswordToken +resetPasswordExpires");
+    }
 
     if (!user) {
       return res.status(400).json({
@@ -381,6 +406,9 @@ export const resetPassword = async (req, res) => {
 
     user.isVerified = true;
     await user.save();
+
+    // Clean up Redis token
+    await deleteResetToken(hashedToken);
 
     res.status(200).json({
       message:

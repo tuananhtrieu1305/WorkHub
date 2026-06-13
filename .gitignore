@@ -11,7 +11,6 @@ Thumbs.db
 *.sln
 *.sw?
 
-
 # --- DEPENDENCIES (Thư viện tải về) ---
 node_modules/
 **/node_modules/  # Chặn node_modules ở mọi thư mục con
@@ -61,3 +60,8 @@ env/
 # --- DOCKER DATA (Dữ liệu DB cục bộ) ---
 db_data/
 mysql_data/
+
+# --- ENVIRONMENT VARIABLES (Bảo mật thông tin) ---
+.env
+.env.*
+!.env.example

@@ -527,7 +527,13 @@ export const downloadPostAttachment = async (req, res) => {
         }
         await pipeline(object.body, res);
       } catch (error) {
-        console.error("Error getting object from R2:", error);
+        if (error.code !== 'ECONNRESET' && error.message !== 'aborted') {
+          console.error("Error getting object from R2:", error);
+        }
+        if (res.headersSent) {
+          res.end();
+          return;
+        }
         return res.status(404).json({ message: "Attachment not found" });
       }
     } else {
