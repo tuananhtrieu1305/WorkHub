@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { App } from "antd";
 import { useLocation, useNavigate } from "react-router-dom";
+import { useAuth } from "../../context/AuthContext";
 import { useSocket } from "../../context/SocketContext";
 import {
   acceptCall as acceptCallApi,
@@ -36,6 +37,11 @@ import OutgoingCallModal from "./OutgoingCallModal";
 const getPeer = (payload, role) =>
   role === "caller" ? payload?.caller : payload?.callee;
 
+const toComparableId = (value) => {
+  if (value == null) return "";
+  return String(value._id || value.id || value);
+};
+
 const terminalMessages = {
   busy: "May ban",
   declined: "Cuoc goi da bi tu choi",
@@ -61,6 +67,7 @@ const addRoomLeftListener = (meetingClient, handler) => {
 
 export const CallProvider = ({ children }) => {
   const { message } = App.useApp();
+  const { user } = useAuth();
   const { socket } = useSocket();
   const navigate = useNavigate();
   const location = useLocation();
@@ -82,6 +89,11 @@ export const CallProvider = ({ children }) => {
   const isEndingCallRef = useRef(false);
   const joinPromiseRef = useRef(null);
   const removeRoomLeftListenerRef = useRef(null);
+  const activeOrganizationId = toComparableId(
+    user?.activeOrganization?.id ||
+      user?.activeOrganization?._id ||
+      user?.activeOrganizationId,
+  );
 
   useEffect(() => {
     activeCallRef.current = activeCall;
@@ -137,6 +149,35 @@ export const CallProvider = ({ children }) => {
       }
     }
   }, []);
+
+  const isActiveOrganizationCallPayload = useCallback(
+    (payload) => {
+      const eventOrganizationId = toComparableId(
+        payload?.call?.organizationId || payload?.organizationId,
+      );
+
+      return Boolean(activeOrganizationId) && eventOrganizationId === activeOrganizationId;
+    },
+    [activeOrganizationId],
+  );
+
+  useEffect(() => {
+    setIncoming((current) =>
+      !current || isActiveOrganizationCallPayload(current) ? current : null,
+    );
+    setOutgoing((current) =>
+      !current || isActiveOrganizationCallPayload(current) ? current : null,
+    );
+
+    const activeOrganization = toComparableId(activeCallRef.current?.organizationId);
+    if (activeCallRef.current && activeOrganization !== activeOrganizationId) {
+      void clearCallClient({
+        leave: true,
+        reason: "workhub-organization-switch",
+      });
+      setActiveCall(null);
+    }
+  }, [activeOrganizationId, clearCallClient, isActiveOrganizationCallPayload]);
 
   const endActiveCall = useCallback(
     async (callOverride = null) => {
@@ -472,18 +513,22 @@ export const CallProvider = ({ children }) => {
     if (!socket) return undefined;
 
     const handleIncoming = (payload) => {
+      if (!isActiveOrganizationCallPayload(payload)) return;
       setIncoming(payload);
     };
 
     const handleRinging = (payload) => {
+      if (!isActiveOrganizationCallPayload(payload)) return;
       setOutgoing(payload);
     };
 
     const handleAnswering = (payload) => {
+      if (!isActiveOrganizationCallPayload(payload)) return;
       setOutgoing(payload);
     };
 
     const handleResolved = (payload) => {
+      if (!isActiveOrganizationCallPayload(payload)) return;
       const call = payload?.call;
       broadcastResolved(call);
       setIncoming((current) => {
@@ -502,6 +547,7 @@ export const CallProvider = ({ children }) => {
     };
 
     const handleAccepted = async (payload) => {
+      if (!isActiveOrganizationCallPayload(payload)) return;
       const call = payload?.call;
       if (!call?.id) return;
       setOutgoing(payload);
@@ -518,10 +564,12 @@ export const CallProvider = ({ children }) => {
     };
 
     const handleActive = (payload) => {
+      if (!isActiveOrganizationCallPayload(payload)) return;
       setActiveCall(payload?.call || null);
     };
 
     const handleTerminal = (payload) => {
+      if (!isActiveOrganizationCallPayload(payload)) return;
       const call = payload?.call;
       if (!call || !isTerminalCallStatus(call.status)) return;
 
@@ -574,6 +622,7 @@ export const CallProvider = ({ children }) => {
     message,
     navigateToCall,
     redirectAfterEnd,
+    isActiveOrganizationCallPayload,
     socket,
   ]);
 

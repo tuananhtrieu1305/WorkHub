@@ -51,6 +51,16 @@ export const updateOrganization = async (organizationId, payload) => {
   return data;
 };
 
+export const updateOrganizationLogo = async (organizationId, file) => {
+  const formData = new FormData();
+  formData.append("logo", file);
+  const { data } = await axiosClient.patch(
+    `/organizations/${organizationId}/logo`,
+    formData,
+  );
+  return data;
+};
+
 export const leaveOrganization = async (organizationId) => {
   const { data } = await axiosClient.delete(
     `/organizations/${organizationId}/members/me`,

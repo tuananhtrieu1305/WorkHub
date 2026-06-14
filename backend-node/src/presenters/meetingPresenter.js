@@ -7,6 +7,7 @@ import {
   getRequestOrganizationId,
   requireActiveOrganization,
 } from "../utils/organizationScope.js";
+import { getOrganizationRoomName } from "../utils/conversationRealtime.js";
 
 const DEFAULT_PAGE = 1;
 const DEFAULT_LIMIT = 20;
@@ -120,7 +121,9 @@ const serializeParticipant = (participant) => ({
 });
 
 const emitMeetingEvent = (event, meeting) => {
-  meetingIo?.emit?.(event, { meeting: serializeMeeting(meeting) });
+  const room = getOrganizationRoomName(meeting?.organizationId);
+  if (!room) return;
+  meetingIo?.to?.(room)?.emit?.(event, { meeting: serializeMeeting(meeting) });
 };
 
 const getProviderParticipantId = (participant) =>

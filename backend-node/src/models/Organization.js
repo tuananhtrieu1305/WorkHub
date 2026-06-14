@@ -22,6 +22,17 @@ const organizationSchema = new mongoose.Schema(
       maxlength: 1000,
       default: "",
     },
+    logoUrl: {
+      type: String,
+      trim: true,
+      default: "",
+    },
+    logoStorageKey: {
+      type: String,
+      trim: true,
+      default: "",
+      select: false,
+    },
     ownerId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",

@@ -4,6 +4,7 @@ import OrganizationMember from "../models/OrganizationMember.js";
 import User from "../models/User.js";
 import { getPresenceFields } from "../services/presenceService.js";
 import {
+  getOrganizationUserRoomName,
   getConversationParticipantUserRoomName,
   getConversationRealtimeRoomNames,
   joinParticipantSocketsToConversationRoom,
@@ -650,6 +651,7 @@ const formatPollActivityTargetMessage = async (
   return {
     id: pollMessage._id,
     conversationId: pollMessage.conversationId,
+    organizationId: pollMessage.organizationId,
     sender: formatConversationUser(sender),
     type: pollMessage.type,
     content: pollMessage.content,
@@ -700,6 +702,7 @@ const formatReminderActivityTargetMessage = async (
   return {
     id: reminderMessage._id,
     conversationId: reminderMessage.conversationId,
+    organizationId: reminderMessage.organizationId,
     sender: formatConversationUser(sender),
     type: reminderMessage.type,
     content: reminderMessage.content,
@@ -847,6 +850,7 @@ const formatMessageFromContext = async (
   return {
     id: message._id,
     conversationId: message.conversationId,
+    organizationId: message.organizationId,
     sender: formatConversationUser(sender),
     type: message.type,
     content: isDeleted ? "" : message.content,
@@ -898,11 +902,15 @@ const emitPersonalizedMessageUpdated = async (
   await Promise.all(
     (conversation.participants || []).map(async (participant) => {
       const participantUserId = participant.userId;
-      const participantUserRoom = `user:${toComparableId(participantUserId)}`;
+      const participantUserRoom = getOrganizationUserRoomName(
+        conversation.organizationId,
+        participantUserId,
+      );
       const conversationParticipantRoom =
         getConversationParticipantUserRoomName(
           conversation._id || conversation.id,
           participantUserId,
+          conversation.organizationId,
         );
       const [messageData, conversationData] = await Promise.all([
         formatMessage(message, { currentUserId: participantUserId }),
@@ -930,11 +938,15 @@ const emitPersonalizedNewMessage = async (
   await Promise.all(
     (conversation.participants || []).map(async (participant) => {
       const participantUserId = participant.userId;
-      const participantUserRoom = `user:${toComparableId(participantUserId)}`;
+      const participantUserRoom = getOrganizationUserRoomName(
+        conversation.organizationId,
+        participantUserId,
+      );
       const conversationParticipantRoom =
         getConversationParticipantUserRoomName(
           conversation._id || conversation.id,
           participantUserId,
+          conversation.organizationId,
         );
       const [messageData, conversationData] = await Promise.all([
         formatMessage(message, { currentUserId: participantUserId }),
@@ -979,6 +991,7 @@ const formatConversation = async (
 
   return {
     id: conversation._id,
+    organizationId: conversation.organizationId,
     type: conversation.type,
     name: conversation.name,
     avatar: conversation.avatar,
@@ -3111,12 +3124,15 @@ export const addReaction = async (req, res) => {
     await message.save();
 
     if (ioInstance) {
-      ioInstance.to(`conversation:${conversation._id}`).emit("reaction_added", {
-        messageId: message._id,
-        conversationId: conversation._id,
-        userId: req.user._id,
-        reaction,
-      });
+      ioInstance
+        .to(getConversationRealtimeRoomNames(conversation))
+        .emit("reaction_added", {
+          messageId: message._id,
+          conversationId: conversation._id,
+          organizationId: conversation.organizationId,
+          userId: req.user._id,
+          reaction,
+        });
     }
 
     res.status(200).json({ message: "Reaction added successfully" });
@@ -3171,10 +3187,11 @@ export const removeReaction = async (req, res) => {
 
     if (ioInstance) {
       ioInstance
-        .to(`conversation:${conversation._id}`)
+        .to(getConversationRealtimeRoomNames(conversation))
         .emit("reaction_removed", {
           messageId: message._id,
           conversationId: conversation._id,
+          organizationId: conversation.organizationId,
           userId: req.user._id,
           reaction,
         });

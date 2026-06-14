@@ -1,5 +1,7 @@
 import jwt from "jsonwebtoken";
 import User from "../models/User.js";
+import Organization from "../models/Organization.js";
+import OrganizationMember from "../models/OrganizationMember.js";
 import Conversation from "../models/Conversation.js";
 import {
   buildPresencePayload,
@@ -7,6 +9,8 @@ import {
   markUserDisconnected,
 } from "../services/presenceService.js";
 import {
+  getOrganizationRoomName,
+  getOrganizationUserRoomName,
   getConversationParticipantUserRoomName,
   getConversationRoomName,
 } from "../utils/conversationRealtime.js";
@@ -16,23 +20,59 @@ const toComparableId = (value) => {
   return String(value._id || value.id || value);
 };
 
-const joinConversationRooms = (socket, conversationId) => {
-  const targetConversationId = toComparableId(conversationId);
+const resolveSocketOrganization = async (user, requestedOrganizationId) => {
+  const organizationId = toComparableId(
+    requestedOrganizationId || user?.activeOrganizationId,
+  );
+  if (!organizationId) return null;
+
+  const [membership, organization] = await Promise.all([
+    OrganizationMember.findOne({
+      organizationId,
+      userId: user._id,
+      status: "active",
+    }),
+    Organization.findOne({ _id: organizationId, archivedAt: null }),
+  ]);
+
+  return membership && organization ? organization._id : null;
+};
+
+const joinConversationRooms = (socket, conversationOrId) => {
+  const targetConversationId = toComparableId(
+    conversationOrId?._id || conversationOrId?.id || conversationOrId,
+  );
+  const organizationId = toComparableId(
+    conversationOrId?.organizationId || socket.data?.organizationId,
+  );
   const currentUserId = toComparableId(socket.user?._id);
   if (!targetConversationId || !currentUserId) return;
 
-  socket.join(getConversationRoomName(targetConversationId));
+  socket.join(getConversationRoomName(targetConversationId, organizationId));
   socket.join(
-    getConversationParticipantUserRoomName(targetConversationId, currentUserId),
+    getConversationParticipantUserRoomName(
+      targetConversationId,
+      currentUserId,
+      organizationId,
+    ),
   );
 };
 
 const leaveConversationRooms = (socket, conversationId) => {
   const targetConversationId = toComparableId(conversationId);
+  const organizationId = toComparableId(socket.data?.organizationId);
   const currentUserId = toComparableId(socket.user?._id);
   if (!targetConversationId || !currentUserId) return;
 
+  socket.leave(getConversationRoomName(targetConversationId, organizationId));
   socket.leave(getConversationRoomName(targetConversationId));
+  socket.leave(
+    getConversationParticipantUserRoomName(
+      targetConversationId,
+      currentUserId,
+      organizationId,
+    ),
+  );
   socket.leave(
     getConversationParticipantUserRoomName(targetConversationId, currentUserId),
   );
@@ -50,10 +90,10 @@ const emitPresenceChanged = async (io, userId) => {
 
   const conversations = await Conversation.find({
     "participants.userId": freshUser._id,
-  }).select("_id");
+  }).select("_id organizationId");
 
   conversations.forEach((conversation) => {
-    io.to(`conversation:${conversation._id}`).emit(
+    io.to(getConversationRoomName(conversation._id, conversation.organizationId)).emit(
       "activity_status_changed",
       payload,
     );
@@ -75,6 +115,11 @@ export const setupSocket = (io) => {
       }
       socket.user = user;
       socket.data.userId = toComparableId(user._id);
+      const organizationId = await resolveSocketOrganization(
+        user,
+        socket.handshake.auth?.organizationId,
+      );
+      socket.data.organizationId = toComparableId(organizationId);
       next();
     } catch (error) {
       next(new Error("Invalid token"));
@@ -84,15 +129,29 @@ export const setupSocket = (io) => {
   io.on("connection", async (socket) => {
     console.log(`User connected: ${socket.user.fullName} (${socket.user._id})`);
     socket.join(`user:${socket.user._id}`);
+    if (socket.data.organizationId) {
+      socket.join(getOrganizationRoomName(socket.data.organizationId));
+      socket.join(
+        getOrganizationUserRoomName(socket.data.organizationId, socket.user._id),
+      );
+    }
     const becameOnline = markUserConnected(socket.user._id, socket.id);
 
     // Auto-join all conversation rooms
     try {
-      const conversations = await Conversation.find({
+      const conversationQuery = {
         "participants.userId": socket.user._id,
-      }).select("_id");
+      };
+      if (socket.data.organizationId) {
+        conversationQuery.organizationId = socket.data.organizationId;
+      } else {
+        conversationQuery._id = { $exists: false };
+      }
+      const conversations = await Conversation.find(conversationQuery).select(
+        "_id organizationId",
+      );
 
-      conversations.forEach((conv) => joinConversationRooms(socket, conv._id));
+      conversations.forEach((conv) => joinConversationRooms(socket, conv));
 
       if (becameOnline) {
         await emitPresenceChanged(io, socket.user._id);
@@ -104,9 +163,10 @@ export const setupSocket = (io) => {
     // Join a specific conversation room (when user opens a conversation)
     socket.on("join_conversation", async (conversationId) => {
       try {
-        const conversation = await Conversation.findById(conversationId).select(
-          "participants",
-        );
+        const conversation = await Conversation.findOne({
+          _id: conversationId,
+          organizationId: socket.data.organizationId,
+        }).select("participants organizationId");
         if (!conversation) return;
 
         const isMember = conversation.participants.some(
@@ -114,7 +174,7 @@ export const setupSocket = (io) => {
         );
         if (!isMember) return;
 
-        joinConversationRooms(socket, conversation._id);
+        joinConversationRooms(socket, conversation);
       } catch (error) {
         console.error("Join conversation error:", error.message);
       }
@@ -130,7 +190,10 @@ export const setupSocket = (io) => {
       try {
         if (!conversationId) return;
 
-        const conversation = await Conversation.findById(conversationId).select("participants");
+        const conversation = await Conversation.findOne({
+          _id: conversationId,
+          organizationId: socket.data.organizationId,
+        }).select("participants organizationId");
         if (!conversation) return;
 
         const isMember = conversation.participants.some(
@@ -138,8 +201,11 @@ export const setupSocket = (io) => {
         );
         if (!isMember) return;
 
-        socket.to(`conversation:${conversationId}`).emit("user_typing", {
+        socket.to(
+          getConversationRoomName(conversation._id, conversation.organizationId),
+        ).emit("user_typing", {
           conversationId,
+          organizationId: conversation.organizationId,
           userId: socket.user._id,
           fullName: socket.user.fullName,
           isTyping: Boolean(isTyping),

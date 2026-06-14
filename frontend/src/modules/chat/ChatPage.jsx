@@ -218,6 +218,9 @@ const ChatPage = () => {
   const [hasLoadedConversations, setHasLoadedConversations] = useState(false);
 
   const selectedConversationId = toComparableId(conversationId);
+  const activeOrganizationId = toComparableId(
+    user?.activeOrganization?.id || user?.activeOrganizationId,
+  );
   selectedConversationIdRef.current = selectedConversationId;
   const setMessagesOwner = useCallback((nextConversationId) => {
     const targetConversationId = toComparableId(nextConversationId);
@@ -255,6 +258,7 @@ const ChatPage = () => {
 
     const fetchConversations = async () => {
       try {
+        setHasLoadedConversations(false);
         const res = await getConversations({ page: 1, size: 50 });
         if (ignore) return;
 
@@ -272,7 +276,24 @@ const ChatPage = () => {
     return () => {
       ignore = true;
     };
-  }, []);
+  }, [activeOrganizationId]);
+
+  useEffect(() => {
+    messagesCacheRef.current.clear();
+    pinnedMessagesCacheRef.current.clear();
+    messagePageStateCacheRef.current.clear();
+    fetchedConversationIdsRef.current.clear();
+    setConversations([]);
+    setSelectedConversation(null);
+    setMessages([]);
+    setPinnedMessages([]);
+    setMessagesOwner("");
+    setPinnedMessagesOwner("");
+    setMessagePageState(DEFAULT_MESSAGE_PAGE_STATE);
+    setTypingUsers([]);
+    setReplyToMessage(null);
+    setEditingMessage(null);
+  }, [activeOrganizationId, setMessagesOwner, setPinnedMessagesOwner]);
 
   useEffect(() => {
     if (!selectedConversationId) {
@@ -512,6 +533,18 @@ const ChatPage = () => {
   useEffect(() => {
     if (!socket) return undefined;
 
+    const getEventOrganizationId = (event = {}) =>
+      toComparableId(
+        event.organizationId ||
+          event.conversation?.organizationId ||
+          event.message?.organizationId,
+      );
+
+    const isActiveOrganizationEvent = (event = {}) => {
+      const eventOrganizationId = getEventOrganizationId(event);
+      return !eventOrganizationId || eventOrganizationId === activeOrganizationId;
+    };
+
     const isSelectedConversationEvent = (eventConversationId) => {
       return (
         selectedConversationId &&
@@ -586,6 +619,7 @@ const ChatPage = () => {
     };
 
     const handleNewMessage = (message) => {
+      if (!isActiveOrganizationEvent(message)) return;
       applyMessageUpdate(message.conversationId, (prev) =>
         upsertMessageById(prev, message)
       );
@@ -601,6 +635,7 @@ const ChatPage = () => {
     };
 
     const handleMessageUpdated = (message) => {
+      if (!isActiveOrganizationEvent(message)) return;
       applyMessageUpdate(message.conversationId, (prev) =>
         upsertMessageById(prev, message)
       );
@@ -619,9 +654,13 @@ const ChatPage = () => {
     const handleMessageDeleted = ({
       messageId,
       conversationId: eventConversationId,
+      organizationId,
       message,
       conversation,
     }) => {
+      if (!isActiveOrganizationEvent({ organizationId, message, conversation })) {
+        return;
+      }
       const deletedMessage =
         message || {
           id: messageId,
@@ -659,18 +698,21 @@ const ChatPage = () => {
     };
 
     const handleReactionAdded = (event) => {
+      if (!isActiveOrganizationEvent(event)) return;
       applyMessageUpdate(event.conversationId, (prev) =>
         addReactionToMessages(prev, event)
       );
     };
 
     const handleReactionRemoved = (event) => {
+      if (!isActiveOrganizationEvent(event)) return;
       applyMessageUpdate(event.conversationId, (prev) =>
         removeReactionFromMessages(prev, event)
       );
     };
 
     const handleUserTyping = (event) => {
+      if (!isActiveOrganizationEvent(event)) return;
       if (
         isSelectedConversationEvent(event.conversationId) &&
         toComparableId(event.userId) !== toComparableId(user?._id)
@@ -708,6 +750,7 @@ const ChatPage = () => {
     };
   }, [
     socket,
+    activeOrganizationId,
     selectedConversationId,
     setMessagesOwner,
     setPinnedMessagesOwner,

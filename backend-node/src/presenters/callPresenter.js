@@ -7,6 +7,10 @@ import ApiError from "../utils/apiError.js";
 import { getRealtimeMeetingService } from "../services/realtimeMeetingService.js";
 import { getRequestOrganizationId } from "../utils/organizationScope.js";
 import {
+  getConversationRoomName,
+  getOrganizationUserRoomName,
+} from "../utils/conversationRealtime.js";
+import {
   acquireUserLock,
   releaseCallLocks,
   releaseUserLock,
@@ -143,13 +147,18 @@ const buildCallPayload = async (call) => ({
   callee: await getUserSummary(call.calleeUserId),
 });
 
-const emitToUser = (userId, event, payload) => {
+const emitToUser = (userId, event, payload, organizationId) => {
+  const scopedRoom = getOrganizationUserRoomName(organizationId, userId);
+  if (scopedRoom) {
+    callIo?.to?.(scopedRoom)?.emit?.(event, payload);
+    return;
+  }
   callIo?.to?.(`user:${toId(userId)}`)?.emit?.(event, payload);
 };
 
 const emitToCallUsers = (call, event, payload) => {
-  emitToUser(call.callerUserId, event, payload);
-  emitToUser(call.calleeUserId, event, payload);
+  emitToUser(call.callerUserId, event, payload, call.organizationId);
+  emitToUser(call.calleeUserId, event, payload, call.organizationId);
 };
 
 const formatCallDuration = (seconds) => {
@@ -181,6 +190,7 @@ const formatMessageForSocket = async (message) => {
   return {
     id: toId(message._id),
     conversationId: message.conversationId,
+    organizationId: toId(message.organizationId),
     sender: {
       _id: toId(sender?._id),
       id: toId(sender?._id),
@@ -234,7 +244,9 @@ const createCallSystemMessage = async (call, eventType) => {
 
   if (callIo) {
     const messageData = await formatMessageForSocket(message);
-    callIo.to(`conversation:${call.conversationId}`).emit("new_message", messageData);
+    callIo
+      .to(getConversationRoomName(call.conversationId, call.organizationId))
+      .emit("new_message", messageData);
   }
 
   return message;
@@ -449,7 +461,7 @@ export const ringCall = async (req, res) => {
       emitEvent: false,
     });
     const payload = await buildCallPayload(busyCall);
-    emitToUser(call.callerUserId, "call:busy", payload);
+    emitToUser(call.callerUserId, "call:busy", payload, call.organizationId);
     return res.status(409).json({
       message: "Callee is busy",
       code: "CALL_BUSY",
@@ -477,8 +489,8 @@ export const ringCall = async (req, res) => {
   );
 
   const payload = await buildCallPayload(updated);
-  emitToUser(updated.callerUserId, "call:ringing", payload);
-  emitToUser(updated.calleeUserId, "call:incoming", payload);
+  emitToUser(updated.callerUserId, "call:ringing", payload, updated.organizationId);
+  emitToUser(updated.calleeUserId, "call:incoming", payload, updated.organizationId);
 
   return res.status(200).json({ call: serializeCall(updated) });
 };
@@ -507,8 +519,8 @@ export const answerIntent = async (req, res) => {
   if (!call) throw new ApiError(409, "Call is no longer ringing");
 
   const payload = await buildCallPayload(call);
-  emitToUser(call.calleeUserId, "call:resolved", payload);
-  emitToUser(call.callerUserId, "call:answering", payload);
+  emitToUser(call.calleeUserId, "call:resolved", payload, call.organizationId);
+  emitToUser(call.callerUserId, "call:answering", payload, call.organizationId);
 
   return res.status(200).json({ call: serializeCall(call) });
 };
@@ -596,8 +608,8 @@ export const acceptCall = async (req, res) => {
   );
 
   const payload = await buildCallPayload(updated);
-  emitToUser(updated.callerUserId, "call:accepted", payload);
-  emitToUser(updated.calleeUserId, "call:resolved", payload);
+  emitToUser(updated.callerUserId, "call:accepted", payload, updated.organizationId);
+  emitToUser(updated.calleeUserId, "call:resolved", payload, updated.organizationId);
 
   return res.status(200).json({
     call: serializeCall(updated),

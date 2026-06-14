@@ -19,6 +19,7 @@ import {
 } from "../services/r2StorageService.js";
 import { contentDisposition } from "../utils/fileResponse.js";
 import { buildUserOrganizationContext } from "../services/organizationService.js";
+import { getConversationRoomName } from "../utils/conversationRealtime.js";
 
 let ioInstance = null;
 const activityStatusExpiryTimers = new Map();
@@ -81,11 +82,11 @@ const emitActivityStatusChanged = async (user) => {
 
   const conversations = await Conversation.find({
     "participants.userId": user._id,
-  }).select("_id");
+  }).select("_id organizationId");
 
   conversations.forEach((conversation) => {
     ioInstance
-      .to(`conversation:${conversation._id}`)
+      .to(getConversationRoomName(conversation._id, conversation.organizationId))
       .emit("activity_status_changed", payload);
   });
 };

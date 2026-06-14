@@ -1,9 +1,16 @@
 import { useState, useEffect, useRef, useCallback } from "react";
+import { useAuth } from "../../context/AuthContext";
 import { getPosts } from "../../api/postApi";
 import CreatePostBox from "./CreatePostBox";
 import PostCard from "./PostCard";
 
+const toComparableId = (value) => {
+  if (value == null) return "";
+  return String(value._id || value.id || value);
+};
+
 const FeedPage = () => {
+  const { user } = useAuth();
   const [posts, setPosts] = useState([]);
   const [page, setPage] = useState(1);
   const [hasMore, setHasMore] = useState(true);
@@ -11,12 +18,26 @@ const FeedPage = () => {
   const [isInitialLoad, setIsInitialLoad] = useState(true);
   const observerRef = useRef(null);
   const sentinelRef = useRef(null);
+  const isLoadingRef = useRef(false);
+  const requestSequenceRef = useRef(0);
+  const activeOrganizationId = toComparableId(
+    user?.activeOrganization?.id || user?.activeOrganizationId,
+  );
+  const activeOrganizationIdRef = useRef(activeOrganizationId);
 
   const fetchPosts = useCallback(async (pageNum, reset = false) => {
-    if (isLoading) return;
+    if (isLoadingRef.current) return;
+    const requestOrganizationId = activeOrganizationId;
+    const requestId = requestSequenceRef.current + 1;
+    requestSequenceRef.current = requestId;
+    isLoadingRef.current = true;
     setIsLoading(true);
     try {
       const res = await getPosts({ page: pageNum, size: 10 });
+      const isCurrentRequest =
+        requestId === requestSequenceRef.current &&
+        requestOrganizationId === activeOrganizationIdRef.current;
+      if (!isCurrentRequest) return;
       const newPosts = res.content || [];
 
       if (reset) {
@@ -35,14 +56,30 @@ const FeedPage = () => {
     } catch (err) {
       console.error("Failed to fetch posts:", err);
     } finally {
-      setIsLoading(false);
-      setIsInitialLoad(false);
+      const isCurrentRequest =
+        requestId === requestSequenceRef.current &&
+        requestOrganizationId === activeOrganizationIdRef.current;
+      if (isCurrentRequest) {
+        isLoadingRef.current = false;
+        setIsLoading(false);
+        setIsInitialLoad(false);
+      }
     }
-  }, [isLoading]);
+  }, [activeOrganizationId]);
 
   useEffect(() => {
+    activeOrganizationIdRef.current = activeOrganizationId;
+  }, [activeOrganizationId]);
+
+  useEffect(() => {
+    requestSequenceRef.current += 1;
+    isLoadingRef.current = false;
+    setPosts([]);
+    setPage(1);
+    setHasMore(true);
+    setIsInitialLoad(true);
     fetchPosts(1, true);
-  }, []);
+  }, [activeOrganizationId, fetchPosts]);
 
   useEffect(() => {
     if (isInitialLoad || !hasMore) return;
@@ -63,7 +100,7 @@ const FeedPage = () => {
     }
 
     return () => observer.disconnect();
-  }, [page, hasMore, isLoading, isInitialLoad]);
+  }, [fetchPosts, page, hasMore, isLoading, isInitialLoad]);
 
   const handlePostCreated = (newPost) => {
     setPosts((prev) => [newPost, ...prev]);

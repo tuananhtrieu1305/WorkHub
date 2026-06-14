@@ -31,6 +31,7 @@ export const serializeOrganization = (
     name: org.name,
     slug: org.slug,
     description: org.description || "",
+    logoUrl: org.logoUrl || "",
     ownerId: toId(org.ownerId),
     role: membership?.role || null,
     memberStatus: membership?.status || null,

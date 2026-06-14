@@ -26,6 +26,7 @@ export const emitTaskEvent = async (eventName, payload = {}) => {
         (userId) => toId(userId) !== toId(payload.actorId),
       );
       await notifyUsers(userIds, {
+        organizationId: task.organizationId || null,
         type: "task_assigned",
         title: "New task assigned",
         message: `You were assigned to ${task.title || "a task"}`,
@@ -50,6 +51,7 @@ export const emitTaskEvent = async (eventName, payload = {}) => {
         (userId) => userId !== toId(payload.actorId),
       );
       await notifyUsers(userIds, {
+        organizationId: task.organizationId || null,
         type: "task_updated",
         title: "Task updated",
         message: `${task.title || "A task"} was updated`,

@@ -1,7 +1,15 @@
+import path from "node:path";
+import { pipeline } from "node:stream/promises";
+import { fileTypeFromBuffer } from "file-type";
 import ApiError from "../utils/apiError.js";
 import Organization from "../models/Organization.js";
 import OrganizationMember from "../models/OrganizationMember.js";
 import User from "../models/User.js";
+import {
+  buildR2OrganizationLogoKey,
+  getR2StorageService,
+} from "../services/r2StorageService.js";
+import { contentDisposition } from "../utils/fileResponse.js";
 import {
   canManageOrganization,
   normalizeInviteCode,
@@ -20,6 +28,74 @@ const getBaseUrl = (req) =>
   process.env.FRONTEND_URL ||
   req.get("origin") ||
   `${req.protocol}://${req.get("host")}`;
+
+const ORGANIZATION_LOGO_R2_PREFIX = "organizations/";
+const ALLOWED_LOGO_MIMES = new Set([
+  "image/jpeg",
+  "image/png",
+  "image/gif",
+  "image/webp",
+]);
+const ALLOWED_LOGO_EXTENSIONS = new Set([".jpg", ".jpeg", ".png", ".gif", ".webp"]);
+const MAX_LOGO_SIZE_BYTES = 5 * 1024 * 1024;
+
+const getSingleString = (value, fallback = "") => {
+  if (Array.isArray(value)) return value[0] ?? fallback;
+  return typeof value === "string" ? value : fallback;
+};
+
+const sanitizeLogoFileName = (fileName = "") => {
+  const extension = path.extname(fileName).toLowerCase();
+  const baseName = path
+    .basename(fileName || "organization-logo", extension)
+    .replace(/[^a-zA-Z0-9._-]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 80);
+  return `${baseName || "organization-logo"}${extension || ".png"}`;
+};
+
+const isOrganizationLogoStorageKey = (storageKey = "") =>
+  storageKey.startsWith(ORGANIZATION_LOGO_R2_PREFIX) &&
+  storageKey.includes("/logos/");
+
+export const buildOrganizationLogoProxyUrl = (storageKey) => {
+  if (!isOrganizationLogoStorageKey(storageKey)) return "";
+  const params = new URLSearchParams({ key: storageKey });
+  return `/api/organizations/logos?${params.toString()}`;
+};
+
+const validateOrganizationLogoFile = async (file) => {
+  if (!file) {
+    throw new ApiError(400, "Logo file is required");
+  }
+
+  if (file.size > MAX_LOGO_SIZE_BYTES) {
+    throw new ApiError(400, "Logo file must be smaller than 5MB");
+  }
+
+  const extension = path.extname(file.originalname || "").toLowerCase();
+  if (!ALLOWED_LOGO_EXTENSIONS.has(extension)) {
+    throw new ApiError(400, "Logo file extension is not allowed");
+  }
+
+  if (!ALLOWED_LOGO_MIMES.has(file.mimetype)) {
+    throw new ApiError(400, "Only JPEG, PNG, GIF, or WebP images are allowed");
+  }
+
+  const detectedType = await fileTypeFromBuffer(file.buffer);
+  if (!detectedType || !ALLOWED_LOGO_MIMES.has(detectedType.mime)) {
+    throw new ApiError(400, "Logo content is not a supported image");
+  }
+
+  if (detectedType.mime !== file.mimetype) {
+    throw new ApiError(400, "Logo content does not match its MIME type");
+  }
+
+  return {
+    safeName: sanitizeLogoFileName(file.originalname),
+    mimeType: detectedType.mime,
+  };
+};
 
 const getActiveMembership = async (organizationId, userId) =>
   OrganizationMember.findOne({
@@ -219,6 +295,86 @@ export const updateOrganization = async (req, res) => {
   res.json(
     serializeOrganization(organization, membership, { baseUrl: getBaseUrl(req) }),
   );
+};
+
+export const updateOrganizationLogo = async (req, res) => {
+  const membership = await getActiveMembership(req.params.id, req.user._id);
+  if (!canManageOrganization(membership)) {
+    throw new ApiError(403, "Only organization owners and admins can update it");
+  }
+
+  const organization = await Organization.findById(req.params.id).select(
+    "+logoStorageKey",
+  );
+  if (!organization || organization.archivedAt) {
+    throw new ApiError(404, "Organization not found");
+  }
+
+  const validation = await validateOrganizationLogoFile(req.file);
+  const storageKey = buildR2OrganizationLogoKey(
+    organization._id.toString(),
+    validation.safeName,
+  );
+  const storage = getR2StorageService();
+
+  await storage.putObject({
+    key: storageKey,
+    body: req.file.buffer,
+    contentType: validation.mimeType,
+    contentLength: req.file.size,
+    metadata: {
+      organizationId: organization._id.toString(),
+      uploadedBy: req.user._id.toString(),
+    },
+  });
+
+  const oldStorageKey = organization.logoStorageKey;
+  organization.logoStorageKey = storageKey;
+  organization.logoUrl = buildOrganizationLogoProxyUrl(storageKey);
+  await organization.save();
+
+  if (oldStorageKey && oldStorageKey !== storageKey) {
+    storage.deleteObject({ key: oldStorageKey }).catch(() => {});
+  }
+
+  res.json(
+    serializeOrganization(organization, membership, { baseUrl: getBaseUrl(req) }),
+  );
+};
+
+export const streamOrganizationLogo = async (req, res) => {
+  try {
+    const storageKey = getSingleString(req.query.key).trim();
+    if (!storageKey || !isOrganizationLogoStorageKey(storageKey)) {
+      return res.status(400).json({ message: "Invalid organization logo key" });
+    }
+
+    const object = await getR2StorageService().getObjectStream({
+      key: storageKey,
+    });
+
+    if (!object.body) {
+      return res.status(404).json({ message: "Organization logo not found" });
+    }
+
+    res.setHeader(
+      "Content-Type",
+      object.contentType || "application/octet-stream",
+    );
+    if (object.contentLength !== undefined) {
+      res.setHeader("Content-Length", String(object.contentLength));
+    }
+    res.setHeader(
+      "Content-Disposition",
+      contentDisposition("inline", storageKey.split("/").pop() || "logo"),
+    );
+    res.setHeader("Cache-Control", "public, max-age=3600");
+
+    await pipeline(object.body, res);
+  } catch (error) {
+    console.error("StreamOrganizationLogo error:", error.message);
+    return res.status(404).json({ message: "Organization logo not found" });
+  }
 };
 
 export const leaveOrganization = async (req, res) => {

@@ -21,6 +21,7 @@ import {
   leaveOrganization as leaveOrganizationApi,
   switchOrganization as switchOrganizationApi,
   updateOrganization as updateOrganizationApi,
+  updateOrganizationLogo as updateOrganizationLogoApi,
 } from "../api/organizationApi";
 
 const AuthContext = createContext(null);
@@ -181,6 +182,35 @@ export const AuthProvider = ({ children }) => {
     return organization;
   }, []);
 
+  const applyOrganizationUpdate = useCallback((organization) => {
+    setUser((currentUser) => {
+      if (!currentUser) return currentUser;
+      const nextOrganizations = (currentUser.organizations || []).map((item) =>
+        item.id === organization.id ? organization : item
+      );
+      const nextActiveOrganization =
+        currentUser.activeOrganization?.id === organization.id
+          ? organization
+          : currentUser.activeOrganization;
+
+      return {
+        ...currentUser,
+        organizations: nextOrganizations,
+        activeOrganization: nextActiveOrganization,
+        activeOrganizationId: nextActiveOrganization?.id || null,
+      };
+    });
+    return organization;
+  }, []);
+
+  const updateOrganizationLogo = useCallback(
+    async (organizationId, file) => {
+      const organization = await updateOrganizationLogoApi(organizationId, file);
+      return applyOrganizationUpdate(organization);
+    },
+    [applyOrganizationUpdate],
+  );
+
   const leaveOrganization = useCallback(async (organizationId) => {
     const context = await leaveOrganizationApi(organizationId);
     setActiveOrganizationId(context.activeOrganization?.id || null);
@@ -206,6 +236,7 @@ export const AuthProvider = ({ children }) => {
         joinOrganization,
         switchActiveOrganization,
         updateOrganization,
+        updateOrganizationLogo,
         leaveOrganization,
       }}
     >

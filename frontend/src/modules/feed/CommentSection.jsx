@@ -48,6 +48,11 @@ const getComparableUserId = (user = {}) => {
   return id?.toString?.() || "";
 };
 
+const toComparableId = (value) => {
+  if (value == null) return "";
+  return String(value);
+};
+
 const getReactionEntryUserId = (reaction = {}) =>
   getComparableUserId(reaction.user || reaction.userId);
 
@@ -414,6 +419,9 @@ const CommentSection = ({ postId, initialCommentsCount = 0, onCommentCountChange
 
   const userInitial = user?.fullName?.charAt(0)?.toUpperCase() || "U";
   const avatarUrl = getAvatarUrl(user?.avatar);
+  const activeOrganizationId = toComparableId(
+    user?.activeOrganization?.id || user?.activeOrganizationId,
+  );
 
   useEffect(() => {
     commentCountChangeRef.current = onCommentCountChange;
@@ -498,6 +506,10 @@ const CommentSection = ({ postId, initialCommentsCount = 0, onCommentCountChange
     if (!socket) return undefined;
 
     const handleCommentReactionUpdated = (event = {}) => {
+      const eventOrganizationId = toComparableId(event.organizationId);
+      if (eventOrganizationId && eventOrganizationId !== activeOrganizationId) {
+        return;
+      }
       if (!isSameId(event.postId, postId) || !event.commentId) return;
 
       updateCommentItem(event.commentId, (current) => ({
@@ -524,7 +536,7 @@ const CommentSection = ({ postId, initialCommentsCount = 0, onCommentCountChange
     return () => {
       socket.off("comment_reaction_updated", handleCommentReactionUpdated);
     };
-  }, [postId, socket, updateCommentItem]);
+  }, [activeOrganizationId, postId, socket, updateCommentItem]);
 
   const loadReplies = async (commentId) => {
     if (loadingReplies[commentId]) return;

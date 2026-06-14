@@ -12,6 +12,7 @@ import {
 } from "@ant-design/icons";
 import { listMeetings } from "../../services/meetingService";
 import { useSocket } from "../../context/SocketContext";
+import { useAuth } from "../../context/AuthContext";
 import {
   buildMeetingPath,
   formatMeetingDateTime,
@@ -29,9 +30,15 @@ const getMeetingId = (meeting) => meeting?.id || meeting?._id || "";
 const getMeetingTime = (meeting) =>
   meeting?.startTime || meeting?.startedAt || meeting?.scheduledAt || meeting?.createdAt;
 
+const toComparableId = (value) => {
+  if (value == null) return "";
+  return String(value);
+};
+
 export default function MeetingPage() {
   const navigate = useNavigate();
   const { createMeeting, joinMeeting } = useMeetingContext();
+  const { user } = useAuth();
   const { socket } = useSocket();
   const [form] = Form.useForm();
   const [joinForm] = Form.useForm();
@@ -39,6 +46,9 @@ export default function MeetingPage() {
   const [loading, setLoading] = useState(false);
   const [creating, setCreating] = useState(false);
   const [joining, setJoining] = useState(false);
+  const activeOrganizationId = toComparableId(
+    user?.activeOrganization?.id || user?.activeOrganizationId,
+  );
 
   const loadMeetings = async () => {
     setLoading(true);
@@ -54,17 +64,23 @@ export default function MeetingPage() {
 
   useEffect(() => {
     loadMeetings();
-  }, []);
+  }, [activeOrganizationId]);
 
   useEffect(() => {
     if (!socket) return undefined;
 
     const handleMeetingCreated = ({ meeting }) => {
+      if (toComparableId(meeting?.organizationId) !== activeOrganizationId) {
+        return;
+      }
       setMeetings((currentMeetings) =>
         upsertActiveMeeting(currentMeetings, meeting),
       );
     };
     const handleMeetingEnded = ({ meeting }) => {
+      if (toComparableId(meeting?.organizationId) !== activeOrganizationId) {
+        return;
+      }
       setMeetings((currentMeetings) =>
         removeMeetingById(currentMeetings, meeting?.id || meeting?._id),
       );
@@ -77,7 +93,7 @@ export default function MeetingPage() {
       socket.off("meeting_created", handleMeetingCreated);
       socket.off("meeting_ended", handleMeetingEnded);
     };
-  }, [socket]);
+  }, [socket, activeOrganizationId]);
 
   const handleCreate = async (values) => {
     setCreating(true);

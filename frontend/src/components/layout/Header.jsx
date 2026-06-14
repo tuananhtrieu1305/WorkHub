@@ -66,6 +66,39 @@ const formatTime = (dateStr) => {
   return `${days} ngày trước`;
 };
 
+const toComparableId = (value) => {
+  if (value == null) return "";
+  return String(value._id || value.id || value);
+};
+
+const OrganizationLogoMark = ({
+  organization,
+  className = "size-8 rounded-full",
+  textClassName = "text-xs",
+}) => {
+  const logoUrl = getAvatarUrl(organization?.logoUrl);
+  const initial = organization?.name?.charAt(0)?.toUpperCase() || "O";
+
+  if (logoUrl) {
+    return (
+      <img
+        src={logoUrl}
+        alt={organization?.name || "Tổ chức"}
+        referrerPolicy={getAvatarReferrerPolicy(logoUrl)}
+        className={`${className} shrink-0 object-cover ring-1 ring-slate-200`}
+      />
+    );
+  }
+
+  return (
+    <span
+      className={`${className} ${textClassName} flex shrink-0 items-center justify-center bg-slate-900 font-black text-white ring-1 ring-slate-200`}
+    >
+      {initial}
+    </span>
+  );
+};
+
 const Header = ({ overlay = false }) => {
   const { user, logout, updateCurrentUser, switchActiveOrganization } = useAuth();
   const { socket } = useSocket();
@@ -86,6 +119,11 @@ const Header = ({ overlay = false }) => {
   const notificationRef = useRef(null);
   const mobileMenuRef = useRef(null);
   const organizationRef = useRef(null);
+  const organizations = user?.organizations || [];
+  const activeOrganization = user?.activeOrganization || null;
+  const activeOrganizationId = toComparableId(
+    activeOrganization?.id || activeOrganization?._id || user?.activeOrganizationId,
+  );
 
   const isActiveNavItem = (path) => {
     if (path === "/") return location.pathname === "/";
@@ -152,18 +190,33 @@ const Header = ({ overlay = false }) => {
   }, [location.pathname]);
 
   useEffect(() => {
+    setNotifications([]);
+    setUnreadCount(0);
+    setMeetings([]);
     loadNotificationPanelData();
-  }, [loadNotificationPanelData]);
+  }, [activeOrganizationId, loadNotificationPanelData]);
 
   useEffect(() => {
     if (!socket) return undefined;
 
     const handleMeetingCreated = ({ meeting }) => {
+      if (
+        activeOrganizationId &&
+        toComparableId(meeting?.organizationId) !== activeOrganizationId
+      ) {
+        return;
+      }
       setMeetings((currentMeetings) =>
         upsertActiveMeeting(currentMeetings, meeting).slice(0, 3),
       );
     };
     const handleMeetingEnded = ({ meeting }) => {
+      if (
+        activeOrganizationId &&
+        toComparableId(meeting?.organizationId) !== activeOrganizationId
+      ) {
+        return;
+      }
       setMeetings((currentMeetings) =>
         removeMeetingById(currentMeetings, meeting?.id || meeting?._id),
       );
@@ -176,7 +229,7 @@ const Header = ({ overlay = false }) => {
       socket.off("meeting_created", handleMeetingCreated);
       socket.off("meeting_ended", handleMeetingEnded);
     };
-  }, [socket]);
+  }, [activeOrganizationId, socket]);
 
   useEffect(() => {
     if (!user?.activityStatusExpiresAt) return undefined;
@@ -230,11 +283,6 @@ const Header = ({ overlay = false }) => {
 
   const userInitial = user?.fullName?.charAt(0)?.toUpperCase() || "U";
   const currentStatusMeta = getActivityStatusMeta(user?.activityStatus);
-  const organizations = user?.organizations || [];
-  const activeOrganization = user?.activeOrganization || null;
-  const activeOrganizationId = activeOrganization?.id || activeOrganization?._id || "";
-  const activeOrganizationInitial =
-    activeOrganization?.name?.charAt(0)?.toUpperCase() || "O";
 
   const avatarUrl = getAvatarUrl(user?.avatar);
   const filteredNotifications = filterNotificationsByTab(notifications, inboxTab);
@@ -523,14 +571,11 @@ const Header = ({ overlay = false }) => {
               title={activeOrganization?.name || "Quản lý tổ chức"}
               onClick={toggleOrganizationMenu}
             >
-              <span
-                className="flex size-7 shrink-0 items-center justify-center rounded-full text-xs font-black text-white"
-                style={{
-                  background: activeOrganization?.accentColor || "#4f46e5",
-                }}
-              >
-                {activeOrganizationInitial}
-              </span>
+              <OrganizationLogoMark
+                organization={activeOrganization}
+                className="size-7 rounded-full"
+                textClassName="text-[11px]"
+              />
               <span className="hidden min-w-0 flex-1 sm:block">
                 <span className="block truncate text-xs font-black leading-4">
                   {activeOrganization?.name || "Tổ chức"}
@@ -587,14 +632,11 @@ const Header = ({ overlay = false }) => {
                           onClick={() => handleSwitchOrganization(organizationId)}
                           role="menuitem"
                         >
-                          <span
-                            className="flex size-9 shrink-0 items-center justify-center rounded-xl text-sm font-black text-white"
-                            style={{
-                              background: organization.accentColor || "#4f46e5",
-                            }}
-                          >
-                            {organization.name?.charAt(0)?.toUpperCase() || "O"}
-                          </span>
+                          <OrganizationLogoMark
+                            organization={organization}
+                            className="size-9 rounded-xl"
+                            textClassName="text-sm"
+                          />
                           <span className="min-w-0 flex-1">
                             <span className="block truncate text-sm font-black">
                               {organization.name}

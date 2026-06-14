@@ -14,6 +14,7 @@ import {
 } from "../services/reactionService.js";
 import { getReactionDetailsForTarget } from "../services/reactionDetailsService.js";
 import { getRequestOrganizationId } from "../utils/organizationScope.js";
+import { getOrganizationRoomName } from "../utils/conversationRealtime.js";
 
 const getUserReactionType = (like) => (like ? getLikeReactionType(like) : null);
 
@@ -30,6 +31,7 @@ export const setCommentIo = (io) => {
 const buildPublicReactionPayload = ({ comment, reactionDetails }) => ({
   commentId: comment._id,
   postId: comment.postId,
+  organizationId: comment.organizationId,
   likesCount: comment.likesCount,
   reactionSummary: reactionDetails.reactionSummary,
   reactions: reactionDetails.reactions,
@@ -385,7 +387,12 @@ export const toggleCommentLike = async (req, res) => {
       reactionDetails,
     });
 
-    commentIoInstance?.emit("comment_reaction_updated", publicReactionPayload);
+    const organizationRoom = getOrganizationRoomName(comment.organizationId);
+    if (organizationRoom) {
+      commentIoInstance
+        ?.to(organizationRoom)
+        ?.emit("comment_reaction_updated", publicReactionPayload);
+    }
 
     res.status(200).json({
       liked: plan.liked,

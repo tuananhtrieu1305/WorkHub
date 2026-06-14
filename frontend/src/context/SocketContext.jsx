@@ -27,15 +27,17 @@ export const SocketProvider = ({ children }) => {
   const token = user
     ? getAccessToken() || localStorage.getItem("workhub_token")
     : null;
+  const activeOrganizationId =
+    user?.activeOrganization?.id || user?.activeOrganizationId || null;
 
   const socket = useMemo(() => {
     if (!token) return null;
 
     return io(API_URL, {
-      auth: { token },
+      auth: { token, organizationId: activeOrganizationId },
       autoConnect: false,
     });
-  }, [token]);
+  }, [token, activeOrganizationId]);
 
   // Global socket lifecycle
   useEffect(() => {
@@ -90,8 +92,9 @@ export const SocketProvider = ({ children }) => {
     () => ({
       socket,
       isAuthenticated: Boolean(token),
+      activeOrganizationId,
     }),
-    [socket, token],
+    [socket, token, activeOrganizationId],
   );
 
   return (
