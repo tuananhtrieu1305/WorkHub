@@ -1,12 +1,17 @@
 import { Outlet, useLocation } from "react-router-dom";
 import Sidebar from "./Sidebar";
 import Header from "./Header";
+import OrganizationRequiredState from "./OrganizationRequiredState";
+import { useAuth } from "../../context/AuthContext";
 import { SocketProvider } from "../../context/SocketContext";
 import { CallProvider } from "../../modules/call/CallProvider";
 
 const MainLayout = () => {
   const location = useLocation();
+  const { user } = useAuth();
   const isChatRoute = location.pathname.startsWith("/messages");
+  const isOrganizationRoute = location.pathname.startsWith("/organization");
+  const hasActiveOrganization = Boolean(user?.activeOrganization?.id);
 
   return (
     <SocketProvider>
@@ -20,7 +25,11 @@ const MainLayout = () => {
                 isChatRoute ? "overflow-hidden" : "overflow-y-auto"
               }`}
             >
-              <Outlet />
+              {!hasActiveOrganization && !isOrganizationRoute ? (
+                <OrganizationRequiredState />
+              ) : (
+                <Outlet key={user?.activeOrganization?.id || "no-organization"} />
+              )}
             </main>
           </div>
         </div>

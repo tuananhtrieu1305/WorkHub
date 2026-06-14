@@ -1,5 +1,7 @@
 import jwt from "jsonwebtoken";
 import User from "../models/User.js";
+import Organization from "../models/Organization.js";
+import OrganizationMember from "../models/OrganizationMember.js";
 
 const inactiveAccountMessage =
   "Your account is not active. Please contact an administrator.";
@@ -25,6 +27,34 @@ const protect = async (req, res, next) => {
 
       if (isInactiveUser(req.user)) {
         return res.status(403).json({ message: inactiveAccountMessage });
+      }
+
+      const requestedOrganizationId =
+        req.get("x-workhub-organization-id") || req.user.activeOrganizationId;
+      req.organizationId = null;
+      req.organization = null;
+      req.organizationMembership = null;
+
+      if (requestedOrganizationId) {
+        const membership = await OrganizationMember.findOne({
+          organizationId: requestedOrganizationId,
+          userId: req.user._id,
+          status: "active",
+        });
+
+        if (membership) {
+          const organization = await Organization.findOne({
+            _id: requestedOrganizationId,
+            archivedAt: null,
+          });
+
+          if (organization) {
+            req.organizationId = organization._id;
+            req.organization = organization;
+            req.organizationMembership = membership;
+            req.user.activeOrganizationId = organization._id;
+          }
+        }
       }
 
       next();

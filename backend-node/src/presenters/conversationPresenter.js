@@ -1,5 +1,6 @@
 import Conversation from "../models/Conversation.js";
 import Message from "../models/Message.js";
+import OrganizationMember from "../models/OrganizationMember.js";
 import User from "../models/User.js";
 import { getPresenceFields } from "../services/presenceService.js";
 import {
@@ -38,6 +39,9 @@ import {
   normalizeReminderPayload,
 } from "../utils/reminderPolicy.js";
 import { contentDisposition } from "../utils/fileResponse.js";
+import {
+  getRequestOrganizationId,
+} from "../utils/organizationScope.js";
 
 // Helper: get io instance
 let ioInstance = null;
@@ -280,6 +284,24 @@ const isParticipant = (conversation, userId) => {
   return conversation.participants.some(
     (p) => p.userId.toString() === userId.toString(),
   );
+};
+
+const getConversationForRequest = (req) => {
+  const organizationId = getRequestOrganizationId(req);
+  if (!organizationId) return null;
+  return Conversation.findOne({
+    _id: req.params.id,
+    organizationId,
+  });
+};
+
+const getActiveOrganizationMemberIds = async (organizationId) => {
+  if (!organizationId) return [];
+  const memberships = await OrganizationMember.find({
+    organizationId,
+    status: "active",
+  }).select("userId");
+  return memberships.map((membership) => toComparableId(membership.userId));
 };
 
 const toComparableId = (value) => {
@@ -1039,8 +1061,18 @@ const markConversationRead = async (conversation, userId, messageId) => {
 export const getConversations = async (req, res) => {
   try {
     const { type, page = 1, size = 20 } = req.query;
+    const organizationId = getRequestOrganizationId(req);
+    if (!organizationId) {
+      return res.status(200).json({
+        content: [],
+        totalElements: 0,
+        totalPages: 0,
+        currentPage: Math.max(1, parseInt(page)),
+        pageSize: Math.max(1, parseInt(size)),
+      });
+    }
 
-    const filter = { "participants.userId": req.user._id };
+    const filter = { organizationId, "participants.userId": req.user._id };
     if (type) filter.type = type;
 
     const pageNum = Math.max(1, parseInt(page));
@@ -1082,6 +1114,13 @@ export const getConversations = async (req, res) => {
 export const createConversation = async (req, res) => {
   try {
     const { type, name, participantIds } = req.body;
+    const organizationId = getRequestOrganizationId(req);
+    if (!organizationId) {
+      return res.status(409).json({
+        code: "NO_ACTIVE_ORGANIZATION",
+        message: "Please create or join an organization before creating a conversation",
+      });
+    }
 
     if (!type || !["private", "group"].includes(type)) {
       return res
@@ -1102,6 +1141,15 @@ export const createConversation = async (req, res) => {
       req.user._id,
       participantIds,
     );
+    const memberIds = await getActiveOrganizationMemberIds(organizationId);
+    const outsideOrganizationIds = allParticipantIds.filter(
+      (participantId) => !memberIds.includes(toComparableId(participantId)),
+    );
+    if (outsideOrganizationIds.length > 0) {
+      return res.status(400).json({
+        message: "All conversation participants must belong to the active organization",
+      });
+    }
     const groupName = typeof name === "string" ? name.trim() : "";
 
     if (type === "private") {
@@ -1115,6 +1163,7 @@ export const createConversation = async (req, res) => {
 
       // Check for existing private conversation between these two users
       const existing = await Conversation.findOne({
+        organizationId,
         type: "private",
         "participants.userId": { $all: allParticipantIds },
         $expr: { $eq: [{ $size: "$participants" }, 2] },
@@ -1160,6 +1209,7 @@ export const createConversation = async (req, res) => {
     }));
 
     const conversation = await Conversation.create({
+      organizationId,
       type,
       name:
         type === "group" ? groupName || fallbackGroupName || "Nhóm mới" : "",
@@ -1185,7 +1235,7 @@ export const createConversation = async (req, res) => {
 // GET /conversations/:id
 export const getConversationById = async (req, res) => {
   try {
-    const conversation = await Conversation.findById(req.params.id);
+    const conversation = await getConversationForRequest(req);
     if (!conversation) {
       return res.status(404).json({ message: "Conversation not found" });
     }
@@ -1215,7 +1265,7 @@ export const getConversationById = async (req, res) => {
 // PUT /conversations/:id
 export const updateConversation = async (req, res) => {
   try {
-    const conversation = await Conversation.findById(req.params.id);
+    const conversation = await getConversationForRequest(req);
     if (!conversation) {
       return res.status(404).json({ message: "Conversation not found" });
     }
@@ -1250,7 +1300,7 @@ export const updateConversation = async (req, res) => {
 // DELETE /conversations/:id
 export const deleteConversation = async (req, res) => {
   try {
-    const conversation = await Conversation.findById(req.params.id);
+    const conversation = await getConversationForRequest(req);
     if (!conversation) {
       return res.status(404).json({ message: "Conversation not found" });
     }
@@ -1279,7 +1329,7 @@ export const deleteConversation = async (req, res) => {
 // POST /conversations/:id/members
 export const addConversationMember = async (req, res) => {
   try {
-    const conversation = await Conversation.findById(req.params.id);
+    const conversation = await getConversationForRequest(req);
     if (!conversation) {
       return res.status(404).json({ message: "Conversation not found" });
     }
@@ -1306,6 +1356,17 @@ export const addConversationMember = async (req, res) => {
       return res.status(404).json({ message: "User not found" });
     }
 
+    const membership = await OrganizationMember.findOne({
+      organizationId: conversation.organizationId,
+      userId,
+      status: "active",
+    });
+    if (!membership) {
+      return res.status(400).json({
+        message: "User must belong to the conversation organization",
+      });
+    }
+
     if (isParticipant(conversation, userId)) {
       return res.status(400).json({ message: "User is already a participant" });
     }
@@ -1328,7 +1389,7 @@ export const addConversationMember = async (req, res) => {
 // DELETE /conversations/:id/members/:userId
 export const removeConversationMember = async (req, res) => {
   try {
-    const conversation = await Conversation.findById(req.params.id);
+    const conversation = await getConversationForRequest(req);
     if (!conversation) {
       return res.status(404).json({ message: "Conversation not found" });
     }
@@ -1373,7 +1434,7 @@ export const removeConversationMember = async (req, res) => {
 // GET /conversations/:id/messages (cursor-based pagination)
 export const getMessages = async (req, res) => {
   try {
-    const conversation = await Conversation.findById(req.params.id);
+    const conversation = await getConversationForRequest(req);
     if (!conversation) {
       return res.status(404).json({ message: "Conversation not found" });
     }
@@ -1463,7 +1524,7 @@ export const getMessages = async (req, res) => {
 // GET /conversations/:id/pinned-messages
 export const getPinnedMessages = async (req, res) => {
   try {
-    const conversation = await Conversation.findById(req.params.id);
+    const conversation = await getConversationForRequest(req);
     if (!conversation) {
       return res.status(404).json({ message: "Conversation not found" });
     }
@@ -1497,7 +1558,7 @@ export const getPinnedMessages = async (req, res) => {
 // POST /conversations/:id/read
 export const markConversationAsRead = async (req, res) => {
   try {
-    const conversation = await Conversation.findById(req.params.id);
+    const conversation = await getConversationForRequest(req);
     if (!conversation) {
       return res.status(404).json({ message: "Conversation not found" });
     }
@@ -1540,7 +1601,7 @@ export const markConversationAsRead = async (req, res) => {
 // GET /conversations/:id/attachments/download
 export const downloadConversationAttachment = async (req, res) => {
   try {
-    const conversation = await Conversation.findById(req.params.id);
+    const conversation = await getConversationForRequest(req);
     if (!conversation) {
       return res.status(404).json({ message: "Conversation not found" });
     }
@@ -1634,7 +1695,7 @@ export const downloadConversationAttachment = async (req, res) => {
 // POST /conversations/:id/attachments
 export const uploadConversationAttachment = async (req, res) => {
   try {
-    const conversation = await Conversation.findById(req.params.id);
+    const conversation = await getConversationForRequest(req);
     if (!conversation) {
       return res.status(404).json({ message: "Conversation not found" });
     }
@@ -1709,7 +1770,7 @@ export const uploadConversationAttachment = async (req, res) => {
 // POST /conversations/:id/messages
 export const sendMessage = async (req, res) => {
   try {
-    const conversation = await Conversation.findById(req.params.id);
+    const conversation = await getConversationForRequest(req);
     if (!conversation) {
       return res.status(404).json({ message: "Conversation not found" });
     }
@@ -1824,6 +1885,7 @@ export const sendMessage = async (req, res) => {
 
     const message = await Message.create({
       conversationId: conversation._id,
+      organizationId: conversation.organizationId,
       senderId: req.user._id,
       type: messageType,
       content:
@@ -1865,6 +1927,7 @@ export const sendMessage = async (req, res) => {
       } đã tạo cuộc bình chọn mới: ${pollQuestion}`;
       systemMessage = await Message.create({
         conversationId: conversation._id,
+        organizationId: conversation.organizationId,
         senderId: req.user._id,
         type: "system",
         content: systemContent,
@@ -1890,6 +1953,7 @@ export const sendMessage = async (req, res) => {
       } đã tạo nhắc hẹn mới: ${reminderTitle}`;
       systemMessage = await Message.create({
         conversationId: conversation._id,
+        organizationId: conversation.organizationId,
         senderId: req.user._id,
         type: "system",
         content: systemContent,
@@ -1965,7 +2029,7 @@ export const sendMessage = async (req, res) => {
 // PUT /conversations/:id/messages/:messageId (sender only)
 export const updateMessage = async (req, res) => {
   try {
-    const conversation = await Conversation.findById(req.params.id);
+    const conversation = await getConversationForRequest(req);
     if (!conversation) {
       return res.status(404).json({ message: "Conversation not found" });
     }
@@ -2079,7 +2143,7 @@ export const updateMessage = async (req, res) => {
 // DELETE /conversations/:id/messages/:messageId (sender only)
 export const deleteMessage = async (req, res) => {
   try {
-    const conversation = await Conversation.findById(req.params.id);
+    const conversation = await getConversationForRequest(req);
     if (!conversation) {
       return res.status(404).json({ message: "Conversation not found" });
     }
@@ -2169,7 +2233,7 @@ export const deleteMessage = async (req, res) => {
 // PATCH /conversations/:id/messages/:messageId/pin
 export const updateMessagePin = async (req, res) => {
   try {
-    const conversation = await Conversation.findById(req.params.id);
+    const conversation = await getConversationForRequest(req);
     if (!conversation) {
       return res.status(404).json({ message: "Conversation not found" });
     }
@@ -2204,6 +2268,7 @@ export const updateMessagePin = async (req, res) => {
     }`;
     const systemMessage = await Message.create({
       conversationId: conversation._id,
+      organizationId: conversation.organizationId,
       senderId: req.user._id,
       type: "system",
       content: systemContent,
@@ -2280,7 +2345,7 @@ export const updateMessagePin = async (req, res) => {
 // POST /conversations/:id/messages/:messageId/poll/votes
 export const votePoll = async (req, res) => {
   try {
-    const conversation = await Conversation.findById(req.params.id);
+    const conversation = await getConversationForRequest(req);
     if (!conversation) {
       return res.status(404).json({ message: "Conversation not found" });
     }
@@ -2331,6 +2396,7 @@ export const votePoll = async (req, res) => {
     } tham gia cuộc bình chọn: ${pollQuestion}`;
     const systemMessage = await Message.create({
       conversationId: conversation._id,
+      organizationId: conversation.organizationId,
       senderId: req.user._id,
       type: "system",
       content: systemContent,
@@ -2385,7 +2451,7 @@ export const votePoll = async (req, res) => {
 // POST /conversations/:id/messages/:messageId/poll/options
 export const addPollOptionToMessage = async (req, res) => {
   try {
-    const conversation = await Conversation.findById(req.params.id);
+    const conversation = await getConversationForRequest(req);
     if (!conversation) {
       return res.status(404).json({ message: "Conversation not found" });
     }
@@ -2438,6 +2504,7 @@ export const addPollOptionToMessage = async (req, res) => {
     } đã thêm lựa chọn "${pollOptionText}" vào cuộc bình chọn: ${pollQuestion}`;
     const systemMessage = await Message.create({
       conversationId: conversation._id,
+      organizationId: conversation.organizationId,
       senderId: req.user._id,
       type: "system",
       content: systemContent,
@@ -2493,7 +2560,7 @@ export const addPollOptionToMessage = async (req, res) => {
 // POST /conversations/:id/messages/:messageId/poll/share
 export const sharePollToConversation = async (req, res) => {
   try {
-    const conversation = await Conversation.findById(req.params.id);
+    const conversation = await getConversationForRequest(req);
     if (!conversation) {
       return res.status(404).json({ message: "Conversation not found" });
     }
@@ -2526,6 +2593,7 @@ export const sharePollToConversation = async (req, res) => {
     } đã gửi bình chọn vào nhóm: ${pollQuestion}`;
     const systemMessage = await Message.create({
       conversationId: conversation._id,
+      organizationId: conversation.organizationId,
       senderId: req.user._id,
       type: "system",
       content: systemContent,
@@ -2579,7 +2647,7 @@ export const sharePollToConversation = async (req, res) => {
 // PATCH /conversations/:id/messages/:messageId/poll/close
 export const closePollInMessage = async (req, res) => {
   try {
-    const conversation = await Conversation.findById(req.params.id);
+    const conversation = await getConversationForRequest(req);
     if (!conversation) {
       return res.status(404).json({ message: "Conversation not found" });
     }
@@ -2629,6 +2697,7 @@ export const closePollInMessage = async (req, res) => {
     } đã khóa bình chọn: ${pollQuestion}`;
     const systemMessage = await Message.create({
       conversationId: conversation._id,
+      organizationId: conversation.organizationId,
       senderId: req.user._id,
       type: "system",
       content: systemContent,
@@ -2684,7 +2753,7 @@ export const closePollInMessage = async (req, res) => {
 // POST /conversations/:id/messages/:messageId/reminder/response
 export const updateReminderResponse = async (req, res) => {
   try {
-    const conversation = await Conversation.findById(req.params.id);
+    const conversation = await getConversationForRequest(req);
     if (!conversation) {
       return res.status(404).json({ message: "Conversation not found" });
     }
@@ -2739,6 +2808,7 @@ export const updateReminderResponse = async (req, res) => {
     } xác nhận: ${responseText} ${reminderTitle}.`;
     const systemMessage = await Message.create({
       conversationId: conversation._id,
+      organizationId: conversation.organizationId,
       senderId: req.user._id,
       type: "system",
       content: systemContent,
@@ -2794,7 +2864,7 @@ export const updateReminderResponse = async (req, res) => {
 // PATCH /conversations/:id/messages/:messageId/reminder/cancel
 export const cancelReminderInMessage = async (req, res) => {
   try {
-    const conversation = await Conversation.findById(req.params.id);
+    const conversation = await getConversationForRequest(req);
     if (!conversation) {
       return res.status(404).json({ message: "Conversation not found" });
     }
@@ -2848,6 +2918,7 @@ export const cancelReminderInMessage = async (req, res) => {
     } đã hủy nhắc hẹn: ${reminderTitle}`;
     const systemMessage = await Message.create({
       conversationId: conversation._id,
+      organizationId: conversation.organizationId,
       senderId: req.user._id,
       type: "system",
       content: systemContent,
@@ -2918,6 +2989,7 @@ const processDueReminderMessage = async (message, now = new Date()) => {
   const systemContent = `Đến giờ nhắc hẹn: ${reminderTitle}`;
   const systemMessage = await Message.create({
     conversationId: conversation._id,
+    organizationId: conversation.organizationId,
     senderId: message.senderId,
     type: "system",
     content: systemContent,
@@ -2994,7 +3066,7 @@ export const startReminderScheduler = () => {
 // POST /conversations/:id/messages/:messageId/reactions
 export const addReaction = async (req, res) => {
   try {
-    const conversation = await Conversation.findById(req.params.id);
+    const conversation = await getConversationForRequest(req);
     if (!conversation) {
       return res.status(404).json({ message: "Conversation not found" });
     }
@@ -3060,7 +3132,7 @@ export const addReaction = async (req, res) => {
 // DELETE /conversations/:id/messages/:messageId/reactions
 export const removeReaction = async (req, res) => {
   try {
-    const conversation = await Conversation.findById(req.params.id);
+    const conversation = await getConversationForRequest(req);
     if (!conversation) {
       return res.status(404).json({ message: "Conversation not found" });
     }

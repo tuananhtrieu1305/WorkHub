@@ -11,6 +11,7 @@ const axiosClient = axios.create({
 
 let accessToken = null;
 let refreshToken = null;
+let activeOrganizationId = localStorage.getItem("workhub_active_organization_id");
 let isRefreshing = false;
 let failedQueue = [];
 
@@ -39,6 +40,15 @@ export const setTokens = (newAccessToken, newRefreshToken) => {
 
 export const getAccessToken = () => accessToken;
 
+export const setActiveOrganizationId = (organizationId) => {
+  activeOrganizationId = organizationId || null;
+  if (activeOrganizationId) {
+    localStorage.setItem("workhub_active_organization_id", activeOrganizationId);
+  } else {
+    localStorage.removeItem("workhub_active_organization_id");
+  }
+};
+
 export const getRefreshToken = () => {
   return refreshToken || localStorage.getItem("workhub_refresh_token");
 };
@@ -46,8 +56,10 @@ export const getRefreshToken = () => {
 export const clearTokens = () => {
   accessToken = null;
   refreshToken = null;
+  activeOrganizationId = null;
   localStorage.removeItem("workhub_refresh_token");
   localStorage.removeItem("workhub_token");
+  localStorage.removeItem("workhub_active_organization_id");
 };
 
 axiosClient.interceptors.request.use(
@@ -67,6 +79,11 @@ axiosClient.interceptors.request.use(
     const token = accessToken || localStorage.getItem("workhub_token");
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
+    }
+    const organizationId =
+      activeOrganizationId || localStorage.getItem("workhub_active_organization_id");
+    if (organizationId) {
+      config.headers["x-workhub-organization-id"] = organizationId;
     }
     return config;
   },

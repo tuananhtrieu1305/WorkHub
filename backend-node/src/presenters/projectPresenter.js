@@ -1,13 +1,24 @@
 import Project from "../models/Project.js";
 import Task from "../models/Task.js";
 import User from "../models/User.js";
+import OrganizationMember from "../models/OrganizationMember.js";
+import { getRequestOrganizationId } from "../utils/organizationScope.js";
+
+const loadProjectForRequest = async (req) => {
+  const organizationId = getRequestOrganizationId(req);
+  if (!organizationId) return null;
+  return Project.findOne({ _id: req.params.id, organizationId });
+};
 
 // GET /projects
 export const getProjects = async (req, res) => {
   try {
-    const { keyword, status, departmentId, page = 1, size = 10 } = req.query;
+    const { keyword, status, page = 1, size = 10 } = req.query;
+    const organizationId = getRequestOrganizationId(req);
 
-    const filter = {};
+    const filter = organizationId
+      ? { organizationId }
+      : { _id: { $exists: false } };
     if (keyword) {
       filter.$or = [
         { name: { $regex: keyword, $options: "i" } },
@@ -15,7 +26,6 @@ export const getProjects = async (req, res) => {
       ];
     }
     if (status) filter.status = status;
-    if (departmentId) filter.departmentIds = departmentId;
 
     const pageNum = Math.max(1, parseInt(page));
     const pageSize = Math.max(1, parseInt(size));
@@ -50,7 +60,14 @@ export const getProjects = async (req, res) => {
 // POST /projects
 export const createProject = async (req, res) => {
   try {
-    const { name, description, departmentIds, startDate, endDate, status } = req.body;
+    const { name, description, startDate, endDate, status } = req.body;
+    const organizationId = getRequestOrganizationId(req);
+    if (!organizationId) {
+      return res.status(409).json({
+        code: "NO_ACTIVE_ORGANIZATION",
+        message: "Please create or join an organization before creating a project",
+      });
+    }
 
     if (!name) {
       return res.status(400).json({ message: "Project name is required" });
@@ -59,7 +76,7 @@ export const createProject = async (req, res) => {
     const project = await Project.create({
       name,
       description: description || "",
-      departmentIds: departmentIds || [],
+      organizationId,
       startDate: startDate || null,
       endDate: endDate || null,
       status: status || "active",
@@ -71,7 +88,6 @@ export const createProject = async (req, res) => {
       id: project._id,
       name: project.name,
       description: project.description,
-      departmentIds: project.departmentIds,
       status: project.status,
       members: project.members,
       startDate: project.startDate,
@@ -89,7 +105,7 @@ export const createProject = async (req, res) => {
 // GET /projects/:id
 export const getProjectById = async (req, res) => {
   try {
-    const project = await Project.findById(req.params.id);
+    const project = await loadProjectForRequest(req);
     if (!project) {
       return res.status(404).json({ message: "Project not found" });
     }
@@ -112,7 +128,6 @@ export const getProjectById = async (req, res) => {
       id: project._id,
       name: project.name,
       description: project.description,
-      departmentIds: project.departmentIds,
       status: project.status,
       members: membersWithDetails,
       startDate: project.startDate,
@@ -133,16 +148,15 @@ export const getProjectById = async (req, res) => {
 // PUT /projects/:id
 export const updateProject = async (req, res) => {
   try {
-    const project = await Project.findById(req.params.id);
+    const project = await loadProjectForRequest(req);
     if (!project) {
       return res.status(404).json({ message: "Project not found" });
     }
 
-    const { name, description, departmentIds, startDate, endDate, status } = req.body;
+    const { name, description, startDate, endDate, status } = req.body;
 
     if (name !== undefined) project.name = name;
     if (description !== undefined) project.description = description;
-    if (departmentIds !== undefined) project.departmentIds = departmentIds;
     if (startDate !== undefined) project.startDate = startDate;
     if (endDate !== undefined) project.endDate = endDate;
     if (status !== undefined) project.status = status;
@@ -153,7 +167,6 @@ export const updateProject = async (req, res) => {
       id: project._id,
       name: project.name,
       description: project.description,
-      departmentIds: project.departmentIds,
       status: project.status,
       members: project.members,
       startDate: project.startDate,
@@ -174,13 +187,16 @@ export const updateProject = async (req, res) => {
 // DELETE /projects/:id (admin only)
 export const deleteProject = async (req, res) => {
   try {
-    const project = await Project.findById(req.params.id);
+    const project = await loadProjectForRequest(req);
     if (!project) {
       return res.status(404).json({ message: "Project not found" });
     }
 
     // Also delete related tasks
-    await Task.deleteMany({ projectId: project._id });
+    await Task.deleteMany({
+      organizationId: project.organizationId,
+      projectId: project._id,
+    });
 
     await Project.findByIdAndDelete(req.params.id);
 
@@ -197,7 +213,7 @@ export const deleteProject = async (req, res) => {
 // GET /projects/:id/members
 export const getProjectMembers = async (req, res) => {
   try {
-    const project = await Project.findById(req.params.id);
+    const project = await loadProjectForRequest(req);
     if (!project) {
       return res.status(404).json({ message: "Project not found" });
     }
@@ -229,7 +245,7 @@ export const getProjectMembers = async (req, res) => {
 // POST /projects/:id/members (only project creator)
 export const addProjectMember = async (req, res) => {
   try {
-    const project = await Project.findById(req.params.id);
+    const project = await loadProjectForRequest(req);
     if (!project) {
       return res.status(404).json({ message: "Project not found" });
     }
@@ -248,6 +264,16 @@ export const addProjectMember = async (req, res) => {
     const user = await User.findById(userId);
     if (!user) {
       return res.status(404).json({ message: "User not found" });
+    }
+    const membership = await OrganizationMember.findOne({
+      organizationId: project.organizationId,
+      userId,
+      status: "active",
+    });
+    if (!membership) {
+      return res.status(400).json({
+        message: "User must belong to the active organization",
+      });
     }
 
     // Check if already a member
@@ -274,7 +300,7 @@ export const addProjectMember = async (req, res) => {
 // PUT /projects/:id/members/:userId (only project creator)
 export const updateProjectMemberRole = async (req, res) => {
   try {
-    const project = await Project.findById(req.params.id);
+    const project = await loadProjectForRequest(req);
     if (!project) {
       return res.status(404).json({ message: "Project not found" });
     }
@@ -314,7 +340,7 @@ export const updateProjectMemberRole = async (req, res) => {
 // DELETE /projects/:id/members/:userId (only project creator)
 export const removeProjectMember = async (req, res) => {
   try {
-    const project = await Project.findById(req.params.id);
+    const project = await loadProjectForRequest(req);
     if (!project) {
       return res.status(404).json({ message: "Project not found" });
     }
@@ -356,12 +382,15 @@ export const getProjectTasks = async (req, res) => {
   try {
     const { status, assigneeId, page = 1, size = 10 } = req.query;
 
-    const project = await Project.findById(req.params.id);
+    const project = await loadProjectForRequest(req);
     if (!project) {
       return res.status(404).json({ message: "Project not found" });
     }
 
-    const filter = { projectId: project._id };
+    const filter = {
+      organizationId: project.organizationId,
+      projectId: project._id,
+    };
     if (status) filter.status = status;
     if (assigneeId) filter.assignees = assigneeId;
 

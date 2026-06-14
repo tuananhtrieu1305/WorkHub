@@ -74,6 +74,7 @@ export const createNotification = async (payload) => {
 
   return Notification.create({
     userId: payload.userId,
+    organizationId: payload.organizationId || null,
     type: payload.type,
     title: payload.title,
     message: payload.message,
@@ -107,6 +108,12 @@ export const listForUser = async (userId, filters = {}) => {
     deletedAt: null,
   };
 
+  if (filters.organizationId) {
+    query.organizationId = filters.organizationId;
+  } else if (filters.organizationId === null) {
+    query._id = { $exists: false };
+  }
+
   if (filters.unreadOnly === true || filters.unreadOnly === "true") {
     query.readAt = null;
   }
@@ -121,7 +128,7 @@ export const listForUser = async (userId, filters = {}) => {
       .skip((page - 1) * limit)
       .limit(limit),
     Notification.countDocuments(query),
-    unreadCount(userId),
+    unreadCount(userId, filters.organizationId),
   ]);
 
   return {
@@ -131,32 +138,41 @@ export const listForUser = async (userId, filters = {}) => {
   };
 };
 
-export const unreadCount = async (userId) => {
-  return Notification.countDocuments({
+export const unreadCount = async (userId, organizationId = undefined) => {
+  const query = {
     userId,
     readAt: null,
     deletedAt: null,
-  });
+  };
+  if (organizationId) query.organizationId = organizationId;
+  if (organizationId === null) query._id = { $exists: false };
+  return Notification.countDocuments(query);
 };
 
-export const markRead = async (userId, notificationId) => {
+export const markRead = async (userId, notificationId, organizationId = undefined) => {
+  const query = { _id: notificationId, userId, deletedAt: null };
+  if (organizationId) query.organizationId = organizationId;
   return Notification.findOneAndUpdate(
-    { _id: notificationId, userId, deletedAt: null },
+    query,
     { readAt: new Date() },
     { new: true },
   );
 };
 
-export const markAllRead = async (userId) => {
+export const markAllRead = async (userId, organizationId = undefined) => {
+  const query = { userId, readAt: null, deletedAt: null };
+  if (organizationId) query.organizationId = organizationId;
   return Notification.updateMany(
-    { userId, readAt: null, deletedAt: null },
+    query,
     { readAt: new Date() },
   );
 };
 
-export const softDelete = async (userId, notificationId) => {
+export const softDelete = async (userId, notificationId, organizationId = undefined) => {
+  const query = { _id: notificationId, userId, deletedAt: null };
+  if (organizationId) query.organizationId = organizationId;
   return Notification.updateOne(
-    { _id: notificationId, userId, deletedAt: null },
+    query,
     { deletedAt: new Date() },
   );
 };

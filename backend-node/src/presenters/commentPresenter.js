@@ -3,7 +3,6 @@ import Post from "../models/Post.js";
 import Like from "../models/Like.js";
 import User from "../models/User.js";
 import {
-  buildPostAttachments,
   hasPostBody,
   serializePostAttachments,
   uploadPostAttachments,
@@ -14,8 +13,13 @@ import {
   isReactionTypeError,
 } from "../services/reactionService.js";
 import { getReactionDetailsForTarget } from "../services/reactionDetailsService.js";
+import { getRequestOrganizationId } from "../utils/organizationScope.js";
 
 const getUserReactionType = (like) => (like ? getLikeReactionType(like) : null);
+
+const isCommentInActiveOrganization = (req, comment) =>
+  Boolean(comment) &&
+  String(comment.organizationId || "") === String(getRequestOrganizationId(req));
 
 let commentIoInstance = null;
 
@@ -40,7 +44,7 @@ const buildPublicReactionPayload = ({ comment, reactionDetails }) => ({
 export const getCommentById = async (req, res) => {
   try {
     const comment = await Comment.findById(req.params.id);
-    if (!comment) {
+    if (!isCommentInActiveOrganization(req, comment)) {
       return res.status(404).json({ message: "Comment not found" });
     }
 
@@ -90,7 +94,7 @@ export const getCommentById = async (req, res) => {
 export const updateComment = async (req, res) => {
   try {
     const comment = await Comment.findById(req.params.id);
-    if (!comment) {
+    if (!isCommentInActiveOrganization(req, comment)) {
       return res.status(404).json({ message: "Comment not found" });
     }
 
@@ -139,7 +143,7 @@ export const updateComment = async (req, res) => {
 export const deleteComment = async (req, res) => {
   try {
     const comment = await Comment.findById(req.params.id);
-    if (!comment) {
+    if (!isCommentInActiveOrganization(req, comment)) {
       return res.status(404).json({ message: "Comment not found" });
     }
 
@@ -197,7 +201,7 @@ export const getCommentReplies = async (req, res) => {
     const { page = 1, size = 10 } = req.query;
 
     const comment = await Comment.findById(req.params.id);
-    if (!comment) {
+    if (!isCommentInActiveOrganization(req, comment)) {
       return res.status(404).json({ message: "Comment not found" });
     }
 
@@ -205,7 +209,10 @@ export const getCommentReplies = async (req, res) => {
     const pageSize = Math.max(1, parseInt(size));
     const skip = (pageNum - 1) * pageSize;
 
-    const filter = { parentId: comment._id };
+    const filter = {
+      organizationId: getRequestOrganizationId(req),
+      parentId: comment._id,
+    };
 
     const [replies, totalElements] = await Promise.all([
       Comment.find(filter).skip(skip).limit(pageSize).sort({ createdAt: 1 }),
@@ -268,7 +275,7 @@ export const getCommentReplies = async (req, res) => {
 export const addCommentReply = async (req, res) => {
   try {
     const parentComment = await Comment.findById(req.params.id);
-    if (!parentComment) {
+    if (!isCommentInActiveOrganization(req, parentComment)) {
       return res.status(404).json({ message: "Comment not found" });
     }
 
@@ -284,6 +291,7 @@ export const addCommentReply = async (req, res) => {
     }
 
     const reply = await Comment.create({
+      organizationId: parentComment.organizationId,
       postId: parentComment.postId,
       parentId: parentComment._id,
       authorId: req.user._id,
@@ -329,7 +337,7 @@ export const addCommentReply = async (req, res) => {
 export const toggleCommentLike = async (req, res) => {
   try {
     const comment = await Comment.findById(req.params.id);
-    if (!comment) {
+    if (!isCommentInActiveOrganization(req, comment)) {
       return res.status(404).json({ message: "Comment not found" });
     }
 
@@ -355,6 +363,7 @@ export const toggleCommentLike = async (req, res) => {
       await Like.create({
         targetType: "comment",
         targetId: comment._id,
+        organizationId: comment.organizationId,
         userId: req.user._id,
         reactionType: plan.reactionType,
       });

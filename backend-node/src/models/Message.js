@@ -161,6 +161,12 @@ const messageSchema = new mongoose.Schema(
       ref: "Conversation",
       required: true,
     },
+    organizationId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Organization",
+      default: null,
+      index: true,
+    },
     senderId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
@@ -263,6 +269,7 @@ const messageSchema = new mongoose.Schema(
 );
 
 messageSchema.index({ conversationId: 1, createdAt: -1 });
+messageSchema.index({ organizationId: 1, conversationId: 1, createdAt: -1 });
 messageSchema.index({ conversationId: 1, isPinned: -1, pinnedAt: -1 });
 messageSchema.index({
   type: 1,

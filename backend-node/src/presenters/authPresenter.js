@@ -5,6 +5,7 @@ import generateToken from "../utils/generateToken.js";
 import generateRefreshToken from "../utils/generateRefreshToken.js";
 import { isInactiveUser } from "../middlewares/authMiddleware.js";
 import { getPresenceFields } from "../services/presenceService.js";
+import { buildCurrentUserPayload } from "../services/organizationService.js";
 import {
   sendVerificationEmail,
   sendResetPasswordEmail,
@@ -24,6 +25,11 @@ const generateOTP = () => {
 
 const inactiveAccountMessage =
   "Your account is not active. Please contact an administrator.";
+
+const getBaseUrl = (req) =>
+  process.env.FRONTEND_URL ||
+  req.get("origin") ||
+  `${req.protocol}://${req.get("host")}`;
 
 const getValidHttpUrl = (value) => {
   if (!value || typeof value !== "string") return "";
@@ -150,17 +156,17 @@ export const verifyEmail = async (req, res) => {
     // Clean up Redis OTP
     await deleteVerifyOTP(email);
 
-    res.status(200).json({
-      message: "Email verified successfully!",
-      _id: user._id,
-      fullName: user.fullName,
-      email: user.email,
-      role: user.role,
-      avatar: user.avatar,
-      ...getPresenceFields(user),
-      token: generateToken(user._id),
-      refreshToken: refreshToken,
-    });
+    res.status(200).json(
+      await buildCurrentUserPayload(user, {
+        baseUrl: getBaseUrl(req),
+        includeTokenFields: {
+          message: "Email verified successfully!",
+          ...getPresenceFields(user),
+          token: generateToken(user._id),
+          refreshToken,
+        },
+      }),
+    );
   } catch (error) {
     console.error("VerifyEmail error:", error.message);
     res.status(500).json({ message: "Server error, please try again" });
@@ -246,16 +252,16 @@ export const login = async (req, res) => {
     user.refreshToken = refreshToken;
     await user.save();
 
-    res.status(200).json({
-      _id: user._id,
-      fullName: user.fullName,
-      email: user.email,
-      role: user.role,
-      avatar: user.avatar,
-      ...getPresenceFields(user),
-      token: generateToken(user._id),
-      refreshToken: refreshToken,
-    });
+    res.status(200).json(
+      await buildCurrentUserPayload(user, {
+        baseUrl: getBaseUrl(req),
+        includeTokenFields: {
+          ...getPresenceFields(user),
+          token: generateToken(user._id),
+          refreshToken,
+        },
+      }),
+    );
   } catch (error) {
     console.error("Login error:", error.message);
     res.status(500).json({ message: "Server error, please try again" });
@@ -303,16 +309,16 @@ export const googleLogin = async (req, res) => {
     user.refreshToken = refreshToken;
     await user.save();
 
-    res.status(200).json({
-      _id: user._id,
-      fullName: user.fullName,
-      email: user.email,
-      role: user.role,
-      avatar: user.avatar,
-      ...getPresenceFields(user),
-      token: generateToken(user._id),
-      refreshToken: refreshToken,
-    });
+    res.status(200).json(
+      await buildCurrentUserPayload(user, {
+        baseUrl: getBaseUrl(req),
+        includeTokenFields: {
+          ...getPresenceFields(user),
+          token: generateToken(user._id),
+          refreshToken,
+        },
+      }),
+    );
   } catch (error) {
     console.error("Google verify error:", error.message);
     res
@@ -426,14 +432,12 @@ export const getMe = async (req, res) => {
     if (!user) {
       return res.status(404).json({ message: "User not found" });
     }
-    res.status(200).json({
-      _id: user._id,
-      fullName: user.fullName,
-      email: user.email,
-      role: user.role,
-      avatar: user.avatar,
-      ...getPresenceFields(user),
-    });
+    res.status(200).json(
+      await buildCurrentUserPayload(user, {
+        baseUrl: getBaseUrl(req),
+        includeTokenFields: getPresenceFields(user),
+      }),
+    );
   } catch (error) {
     console.error("GetMe error:", error.message);
     res.status(500).json({ message: "Server error, please try again" });

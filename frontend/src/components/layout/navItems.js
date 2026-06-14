@@ -66,8 +66,8 @@ export const navItems = [
     iconFill: false,
   },
   {
-    label: "Nhóm",
-    path: "/departments",
+    label: "Tổ chức",
+    path: "/organization",
     icon: "groups",
     color: "#4f46e5",
     activeBg: "#e0e7ff",

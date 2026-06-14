@@ -8,7 +8,6 @@ import {
   deleteChecklistItem,
   deleteTask,
   getTask,
-  listDepartmentTasks,
   listMyTasks,
   listProjectTasks,
   listTasks,
@@ -19,7 +18,6 @@ import {
 
 const router = express.Router();
 const projectTaskRouter = express.Router();
-const departmentTaskRouter = express.Router();
 
 router.post("/", protect, asyncHandler(createTask));
 router.get("/", protect, asyncHandler(listTasks));
@@ -34,11 +32,6 @@ router.patch("/:id/checklist/:itemId", protect, asyncHandler(updateChecklistItem
 router.delete("/:id/checklist/:itemId", protect, asyncHandler(deleteChecklistItem));
 
 projectTaskRouter.get("/:projectId/tasks", protect, asyncHandler(listProjectTasks));
-departmentTaskRouter.get(
-  "/:departmentId/tasks",
-  protect,
-  asyncHandler(listDepartmentTasks),
-);
 
-export { projectTaskRouter, departmentTaskRouter };
+export { projectTaskRouter };
 export default router;

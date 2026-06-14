@@ -1,4 +1,5 @@
-import { createContext, useContext, useEffect, useMemo, useCallback } from "react";
+/* eslint-disable react-refresh/only-export-components */
+import { createContext, useContext, useEffect, useMemo } from "react";
 import { io } from "socket.io-client";
 import { getAccessToken } from "../api/axiosClient";
 import { useAuth } from "./AuthContext";
@@ -66,7 +67,7 @@ export const SocketProvider = ({ children }) => {
   // Global listener: activity_status_changed
   // This runs on every page, ensuring the current user's status is always up-to-date
   useEffect(() => {
-    if (!socket || !user) return undefined;
+    if (!socket || !user?._id) return undefined;
 
     const handleActivityStatusChanged = (event) => {
       if (toComparableId(event.userId) === toComparableId(user._id)) {

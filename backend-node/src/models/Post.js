@@ -7,6 +7,12 @@ const postSchema = new mongoose.Schema(
       ref: "User",
       required: true,
     },
+    organizationId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Organization",
+      default: null,
+      index: true,
+    },
     type: {
       type: String,
       enum: ["announcement", "post", "task_update", "document_share"],
@@ -26,15 +32,9 @@ const postSchema = new mongoose.Schema(
     targetAudience: {
       type: {
         type: String,
-        enum: ["all", "department", "project", "custom"],
+        enum: ["all", "project", "custom"],
         default: "all",
       },
-      departmentIds: [
-        {
-          type: mongoose.Schema.Types.ObjectId,
-          ref: "Department",
-        },
-      ],
       projectIds: [
         {
           type: mongoose.Schema.Types.ObjectId,
@@ -78,6 +78,7 @@ const postSchema = new mongoose.Schema(
 );
 
 postSchema.index({ authorId: 1, createdAt: -1 });
+postSchema.index({ organizationId: 1, createdAt: -1 });
 postSchema.index({ "targetAudience.type": 1 });
 
 const Post = mongoose.model("Post", postSchema);

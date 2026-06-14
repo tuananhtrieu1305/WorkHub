@@ -67,13 +67,14 @@ const formatTime = (dateStr) => {
 };
 
 const Header = ({ overlay = false }) => {
-  const { user, logout, updateCurrentUser } = useAuth();
+  const { user, logout, updateCurrentUser, switchActiveOrganization } = useAuth();
   const { socket } = useSocket();
   const navigate = useNavigate();
   const location = useLocation();
   const [showDropdown, setShowDropdown] = useState(false);
   const [showNotificationPanel, setShowNotificationPanel] = useState(false);
   const [showMobileMenu, setShowMobileMenu] = useState(false);
+  const [showOrganizationMenu, setShowOrganizationMenu] = useState(false);
   const [hoveredDurationStatus, setHoveredDurationStatus] = useState(null);
   const [isUpdatingStatus, setIsUpdatingStatus] = useState(false);
   const [inboxTab, setInboxTab] = useState("all");
@@ -84,6 +85,7 @@ const Header = ({ overlay = false }) => {
   const dropdownRef = useRef(null);
   const notificationRef = useRef(null);
   const mobileMenuRef = useRef(null);
+  const organizationRef = useRef(null);
 
   const isActiveNavItem = (path) => {
     if (path === "/") return location.pathname === "/";
@@ -133,6 +135,12 @@ const Header = ({ overlay = false }) => {
       if (mobileMenuRef.current && !mobileMenuRef.current.contains(e.target)) {
         setShowMobileMenu(false);
       }
+      if (
+        organizationRef.current &&
+        !organizationRef.current.contains(e.target)
+      ) {
+        setShowOrganizationMenu(false);
+      }
     };
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
@@ -140,6 +148,7 @@ const Header = ({ overlay = false }) => {
 
   useEffect(() => {
     setShowMobileMenu(false);
+    setShowOrganizationMenu(false);
   }, [location.pathname]);
 
   useEffect(() => {
@@ -221,6 +230,11 @@ const Header = ({ overlay = false }) => {
 
   const userInitial = user?.fullName?.charAt(0)?.toUpperCase() || "U";
   const currentStatusMeta = getActivityStatusMeta(user?.activityStatus);
+  const organizations = user?.organizations || [];
+  const activeOrganization = user?.activeOrganization || null;
+  const activeOrganizationId = activeOrganization?.id || activeOrganization?._id || "";
+  const activeOrganizationInitial =
+    activeOrganization?.name?.charAt(0)?.toUpperCase() || "O";
 
   const avatarUrl = getAvatarUrl(user?.avatar);
   const filteredNotifications = filterNotificationsByTab(notifications, inboxTab);
@@ -236,6 +250,7 @@ const Header = ({ overlay = false }) => {
     if (next) {
       setShowNotificationPanel(false);
       setShowMobileMenu(false);
+      setShowOrganizationMenu(false);
     } else {
       setHoveredDurationStatus(null);
     }
@@ -247,6 +262,7 @@ const Header = ({ overlay = false }) => {
     if (next) {
       setShowDropdown(false);
       setShowMobileMenu(false);
+      setShowOrganizationMenu(false);
       setHoveredDurationStatus(null);
       loadNotificationPanelData();
     }
@@ -258,9 +274,32 @@ const Header = ({ overlay = false }) => {
     if (next) {
       setShowDropdown(false);
       setShowNotificationPanel(false);
+      setShowOrganizationMenu(false);
       setHoveredDurationStatus(null);
     }
     setShowMobileMenu(next);
+  };
+
+  const toggleOrganizationMenu = () => {
+    const next = !showOrganizationMenu;
+    if (next) {
+      setShowDropdown(false);
+      setShowNotificationPanel(false);
+      setShowMobileMenu(false);
+      setHoveredDurationStatus(null);
+    }
+    setShowOrganizationMenu(next);
+  };
+
+  const handleSwitchOrganization = async (organizationId) => {
+    if (!organizationId || organizationId === activeOrganizationId) return;
+
+    try {
+      await switchActiveOrganization?.(organizationId);
+      setShowOrganizationMenu(false);
+    } catch (error) {
+      console.error("Failed to switch organization:", error);
+    }
   };
 
   const handleMarkAllAsRead = async () => {
@@ -471,6 +510,127 @@ const Header = ({ overlay = false }) => {
         </div>
 
         <div className="flex items-center gap-2 sm:gap-3">
+          <div className="relative hidden sm:block" ref={organizationRef}>
+            <button
+              type="button"
+              className={`flex h-10 max-w-[13rem] items-center gap-2 rounded-full border px-2.5 pr-3 text-left transition-colors duration-200 ${
+                showOrganizationMenu
+                  ? "border-indigo-200 bg-indigo-50 text-indigo-700 shadow-sm"
+                  : "border-slate-200 bg-white text-slate-700 shadow-sm hover:border-indigo-200 hover:bg-indigo-50 hover:text-indigo-700"
+              }`}
+              aria-haspopup="menu"
+              aria-expanded={showOrganizationMenu}
+              title={activeOrganization?.name || "Quản lý tổ chức"}
+              onClick={toggleOrganizationMenu}
+            >
+              <span
+                className="flex size-7 shrink-0 items-center justify-center rounded-full text-xs font-black text-white"
+                style={{
+                  background: activeOrganization?.accentColor || "#4f46e5",
+                }}
+              >
+                {activeOrganizationInitial}
+              </span>
+              <span className="hidden min-w-0 flex-1 sm:block">
+                <span className="block truncate text-xs font-black leading-4">
+                  {activeOrganization?.name || "Tổ chức"}
+                </span>
+                <span className="block truncate text-[10px] font-bold uppercase leading-3 text-slate-400">
+                  {activeOrganization?.role || "Chưa tham gia"}
+                </span>
+              </span>
+              <span className="material-symbols-outlined text-lg leading-none">
+                expand_more
+              </span>
+            </button>
+
+            {showOrganizationMenu && (
+              <div
+                className="absolute right-0 top-full z-50 mt-2 w-[min(22rem,calc(100vw-2rem))] overflow-hidden rounded-2xl border border-slate-200 bg-white text-slate-900 shadow-[0_22px_70px_rgba(15,23,42,0.18)]"
+                role="menu"
+              >
+                <div className="border-b border-slate-100 px-4 py-3">
+                  <p className="text-sm font-black text-slate-950">
+                    Không gian tổ chức
+                  </p>
+                  <p className="mt-1 text-xs font-medium leading-5 text-slate-500">
+                    Dữ liệu bảng tin, tin nhắn, tài liệu và công việc sẽ đổi theo
+                    tổ chức đang chọn.
+                  </p>
+                </div>
+
+                <div className="max-h-72 overflow-y-auto p-2">
+                  {organizations.length === 0 ? (
+                    <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 px-4 py-6 text-center">
+                      <span className="material-symbols-outlined text-3xl leading-none text-slate-300">
+                        domain_add
+                      </span>
+                      <p className="mt-2 text-sm font-bold text-slate-500">
+                        Bạn chưa có tổ chức nào
+                      </p>
+                    </div>
+                  ) : (
+                    organizations.map((organization) => {
+                      const organizationId = organization.id || organization._id;
+                      const isActive = organizationId === activeOrganizationId;
+
+                      return (
+                        <button
+                          key={organizationId}
+                          type="button"
+                          className={`flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left transition-colors duration-200 ${
+                            isActive
+                              ? "bg-indigo-50 text-indigo-700"
+                              : "hover:bg-slate-50"
+                          }`}
+                          disabled={isActive}
+                          onClick={() => handleSwitchOrganization(organizationId)}
+                          role="menuitem"
+                        >
+                          <span
+                            className="flex size-9 shrink-0 items-center justify-center rounded-xl text-sm font-black text-white"
+                            style={{
+                              background: organization.accentColor || "#4f46e5",
+                            }}
+                          >
+                            {organization.name?.charAt(0)?.toUpperCase() || "O"}
+                          </span>
+                          <span className="min-w-0 flex-1">
+                            <span className="block truncate text-sm font-black">
+                              {organization.name}
+                            </span>
+                            <span className="block truncate text-xs font-semibold text-slate-500">
+                              {organization.role || "member"}
+                            </span>
+                          </span>
+                          <span className="material-symbols-outlined text-xl leading-none">
+                            {isActive ? "check_circle" : "sync_alt"}
+                          </span>
+                        </button>
+                      );
+                    })
+                  )}
+                </div>
+
+                <div className="border-t border-slate-100 p-2">
+                  <button
+                    type="button"
+                    className="flex w-full items-center justify-center gap-2 rounded-xl bg-slate-950 px-4 py-2.5 text-sm font-extrabold text-white transition hover:bg-slate-800"
+                    onClick={() => {
+                      navigate("/organization");
+                      setShowOrganizationMenu(false);
+                    }}
+                  >
+                    <span className="material-symbols-outlined text-xl leading-none">
+                      settings
+                    </span>
+                    Quản lý tổ chức
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+
           <div className="relative" ref={notificationRef}>
             <button
               type="button"

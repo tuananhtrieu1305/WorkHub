@@ -31,14 +31,15 @@ const activityLogSchema = new Schema(
       type: Schema.Types.ObjectId,
       default: null,
     },
+    organizationId: {
+      type: Schema.Types.ObjectId,
+      ref: "Organization",
+      default: null,
+      index: true,
+    },
     projectId: {
       type: Schema.Types.ObjectId,
       ref: "Project",
-      default: null,
-    },
-    departmentId: {
-      type: Schema.Types.ObjectId,
-      ref: "Department",
       default: null,
     },
     targetUserId: {
@@ -94,10 +95,10 @@ const activityLogSchema = new Schema(
 );
 
 activityLogSchema.index({ entityType: 1, entityId: 1, createdAt: -1 });
+activityLogSchema.index({ organizationId: 1, createdAt: -1 });
 activityLogSchema.index({ actorId: 1, createdAt: -1 });
 activityLogSchema.index({ targetUserId: 1, createdAt: -1 });
 activityLogSchema.index({ projectId: 1, createdAt: -1 });
-activityLogSchema.index({ departmentId: 1, createdAt: -1 });
 activityLogSchema.index({ action: 1, createdAt: -1 });
 activityLogSchema.index({ targetType: 1, targetId: 1 });
 activityLogSchema.index({ userId: 1, createdAt: -1 });

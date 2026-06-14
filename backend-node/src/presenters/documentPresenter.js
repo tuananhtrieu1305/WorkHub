@@ -12,6 +12,10 @@ import { buildR2ObjectKey, getR2StorageService } from "../services/r2StorageServ
 import permission from "../services/documentPermissionService.js";
 import { setFileHeaders } from "../utils/fileResponse.js";
 import { validateUploadedFile } from "../services/fileValidationService.js";
+import {
+  assertResourceInActiveOrganization,
+  getRequestOrganizationId,
+} from "../utils/organizationScope.js";
 
 const cleanupTempFile = async (file) => {
   if (!file?.path) return;
@@ -33,6 +37,9 @@ const hashToken = (token) => {
 
 const assertDocumentReadable = (user, document) => {
   if (!document || document.deletedAt || document.status === "deleted") {
+    throw new ApiError(404, "Document not found");
+  }
+  if (String(document.organizationId || "") !== String(user?.activeOrganizationId || "")) {
     throw new ApiError(404, "Document not found");
   }
   if (!permission.canRead(user, document)) {
@@ -84,6 +91,7 @@ export const uploadDocumentToFolder = async (req, res) => {
     if (!folder || folder.deletedAt) {
       throw new ApiError(404, "Folder not found");
     }
+    assertResourceInActiveOrganization(req, folder, "Folder");
     if (!permission.canUploadToFolder(req.user, folder)) {
       throw new ApiError(403, "You cannot upload to this folder");
     }
@@ -96,6 +104,7 @@ export const uploadDocumentToFolder = async (req, res) => {
     const idempotencyKey = req.get("Idempotency-Key") || null;
     if (idempotencyKey) {
       const existing = await Document.findOne({
+        organizationId: getRequestOrganizationId(req),
         createdBy: req.user._id,
         idempotencyKey,
       });
@@ -109,7 +118,7 @@ export const uploadDocumentToFolder = async (req, res) => {
       name: validation.safeName,
       description: req.body.description || "",
       folderId: folder._id,
-      departmentId: folder.departmentId,
+      organizationId: folder.organizationId,
       ownerId: req.user._id,
       createdBy: req.user._id,
       status: "uploading",

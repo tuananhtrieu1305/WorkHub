@@ -65,6 +65,12 @@ const meetingSchema = new Schema(
       ref: "User",
       required: true,
     },
+    organizationId: {
+      type: Schema.Types.ObjectId,
+      ref: "Organization",
+      default: null,
+      index: true,
+    },
     status: {
       type: String,
       enum: ["active", "ended", "cancelled"],
@@ -74,11 +80,6 @@ const meetingSchema = new Schema(
     projectId: {
       type: Schema.Types.ObjectId,
       ref: "Project",
-      default: null,
-    },
-    departmentId: {
-      type: Schema.Types.ObjectId,
-      ref: "Department",
       default: null,
     },
     startedAt: {
@@ -100,11 +101,11 @@ const meetingSchema = new Schema(
 );
 
 meetingSchema.index({ createdBy: 1, createdAt: -1 });
+meetingSchema.index({ organizationId: 1, status: 1, createdAt: -1 });
 meetingSchema.index({ hostUserId: 1, createdAt: -1 });
 meetingSchema.index({ _id: 1, "participants.userId": 1 });
 meetingSchema.index({ status: 1, createdAt: -1 });
 meetingSchema.index({ projectId: 1, status: 1 });
-meetingSchema.index({ departmentId: 1, status: 1 });
 
 const Meeting = mongoose.model("Meeting", meetingSchema);
 

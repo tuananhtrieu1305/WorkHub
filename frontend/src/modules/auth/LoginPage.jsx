@@ -63,7 +63,7 @@ const LoginPage = () => {
         try {
           await resendOTP(err.response.data.email);
         } catch {
-          
+          // Verification screen can still request a fresh code if resend fails here.
         }
         navigate(
           `/verify-email?email=${encodeURIComponent(err.response.data.email)}`

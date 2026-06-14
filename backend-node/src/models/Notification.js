@@ -9,6 +9,12 @@ const notificationSchema = new Schema(
       ref: "User",
       required: true,
     },
+    organizationId: {
+      type: Schema.Types.ObjectId,
+      ref: "Organization",
+      default: null,
+      index: true,
+    },
     type: {
       type: String,
       required: true,
@@ -72,6 +78,7 @@ const notificationSchema = new Schema(
 );
 
 notificationSchema.index({ userId: 1, readAt: 1, createdAt: -1 });
+notificationSchema.index({ userId: 1, organizationId: 1, createdAt: -1 });
 notificationSchema.index({ userId: 1, deletedAt: 1, createdAt: -1 });
 notificationSchema.index({ entityType: 1, entityId: 1 });
 notificationSchema.index({ userId: 1, isRead: 1, createdAt: -1 });

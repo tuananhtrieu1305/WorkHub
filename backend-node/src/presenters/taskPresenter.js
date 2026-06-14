@@ -3,10 +3,15 @@ import mongoose from "mongoose";
 import User from "../models/User.js";
 import Task from "../models/Task.js";
 import TaskAssignee from "../models/TaskAssignee.js";
+import OrganizationMember from "../models/OrganizationMember.js";
 import ChecklistItem from "../models/ChecklistItem.js";
 import { logActivity, listByEntity } from "../services/activityLogService.js";
 import permission from "../services/taskPermissionService.js";
 import { emitTaskEvent } from "../services/taskEventService.js";
+import {
+  getRequestOrganizationId,
+  requireActiveOrganization,
+} from "../utils/organizationScope.js";
 
 const TASK_UPDATE_FIELDS = [
   "title",
@@ -16,7 +21,6 @@ const TASK_UPDATE_FIELDS = [
   "startAt",
   "endAt",
   "projectId",
-  "departmentId",
   "ownerId",
   "archivedAt",
 ];
@@ -58,7 +62,7 @@ const buildSearchRegex = (value) => {
 
 const activeStatus = (user) => !user?.status || user.status === "active";
 
-const validateAssignableUsers = async (userIds) => {
+const validateAssignableUsers = async (userIds, organizationId = null) => {
   if (userIds.length === 0) return [];
 
   const invalidIds = userIds.filter((userId) => !mongoose.Types.ObjectId.isValid(userId));
@@ -76,6 +80,19 @@ const validateAssignableUsers = async (userIds) => {
   const inactiveUserIds = userIds.filter((userId) => !activeStatus(usersById.get(userId)));
   if (inactiveUserIds.length > 0) {
     throw new ApiError(400, "Locked or disabled users cannot be assigned to tasks");
+  }
+
+  if (organizationId) {
+    const memberships = await OrganizationMember.find({
+      organizationId,
+      userId: { $in: userIds },
+      status: "active",
+    }).select("userId");
+    const memberIds = new Set(memberships.map((membership) => toId(membership.userId)));
+    const outsideOrganizationIds = userIds.filter((userId) => !memberIds.has(userId));
+    if (outsideOrganizationIds.length > 0) {
+      throw new ApiError(400, "Assignees must belong to the active organization");
+    }
   }
 
   return users;
@@ -141,8 +158,8 @@ const createActivity = async (req, task, action, metadata = {}) => {
     action,
     entityType: "task",
     entityId: task._id,
+    organizationId: task.organizationId || getRequestOrganizationId(req),
     projectId: task.projectId || null,
-    departmentId: task.departmentId || null,
     metadata,
     ...requestAuditContext(req),
   });
@@ -154,9 +171,15 @@ const buildTaskQuery = async (filters = {}) => {
   };
   const andClauses = [];
 
-  ["status", "priority", "projectId", "departmentId", "createdBy"].forEach((key) => {
+  ["status", "priority", "projectId", "createdBy"].forEach((key) => {
     if (filters[key]) query[key] = filters[key];
   });
+
+  if (filters.organizationId) {
+    query.organizationId = filters.organizationId;
+  } else {
+    query._id = { $exists: false };
+  }
 
   if (filters.dueBefore || filters.dueAfter) {
     query.endAt = {};
@@ -202,11 +225,11 @@ const buildTaskQuery = async (filters = {}) => {
 };
 
 export const createTask = async (req, res) => {
+  const organizationId = requireActiveOrganization(req);
   const {
     title,
     description = "",
     projectId = null,
-    departmentId = null,
     assigneeIds = [],
     checklist = [],
     startAt = null,
@@ -219,18 +242,18 @@ export const createTask = async (req, res) => {
     throw new ApiError(400, "Task title is required");
   }
 
-  if (!permission.canCreateTask(req.user, { projectId, departmentId })) {
+  if (!permission.canCreateTask(req.user, { projectId })) {
     throw new ApiError(403, "You cannot create a task in this scope");
   }
 
   const assignedUserIds = uniqueIds(assigneeIds);
-  await validateAssignableUsers(assignedUserIds);
+  await validateAssignableUsers(assignedUserIds, organizationId);
 
   const task = await Task.create({
     title,
     description,
+    organizationId,
     projectId,
-    departmentId,
     createdBy: req.user._id,
     ownerId: req.user._id,
     status,
@@ -288,7 +311,11 @@ export const createTask = async (req, res) => {
 export const listTasks = async (req, res) => {
   const page = parsePage(req.query.page);
   const size = parseSize(req.query.size);
-  const query = await buildTaskQuery({ ...req.query, currentUser: req.user });
+  const query = await buildTaskQuery({
+    ...req.query,
+    currentUser: req.user,
+    organizationId: getRequestOrganizationId(req),
+  });
   const [tasks, totalElements] = await Promise.all([
     Task.find(query)
       .sort({ createdAt: -1 })
@@ -320,11 +347,6 @@ export const listMyTasks = async (req, res) => {
 
 export const listProjectTasks = async (req, res) => {
   req.query.projectId = req.params.projectId;
-  return listTasks(req, res);
-};
-
-export const listDepartmentTasks = async (req, res) => {
-  req.query.departmentId = req.params.departmentId;
   return listTasks(req, res);
 };
 
@@ -402,7 +424,7 @@ export const addAssignees = async (req, res) => {
   if (userIds.length === 0) {
     throw new ApiError(400, "At least one assignee is required");
   }
-  await validateAssignableUsers(userIds);
+  await validateAssignableUsers(userIds, task.organizationId);
 
   const assignees = [];
   for (const userId of userIds) {

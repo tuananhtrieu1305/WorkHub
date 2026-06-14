@@ -5,6 +5,7 @@ import Message from "../models/Message.js";
 import User from "../models/User.js";
 import ApiError from "../utils/apiError.js";
 import { getRealtimeMeetingService } from "../services/realtimeMeetingService.js";
+import { getRequestOrganizationId } from "../utils/organizationScope.js";
 import {
   acquireUserLock,
   releaseCallLocks,
@@ -63,6 +64,9 @@ const getCallRole = (call, user) => {
 };
 
 const assertCallParticipant = (call, user) => {
+  if (toId(call?.organizationId) !== toId(user?.activeOrganizationId)) {
+    throw new ApiError(404, "Call not found");
+  }
   const role = getCallRole(call, user);
   if (!role) {
     throw new ApiError(403, "You are not a participant of this call");
@@ -92,6 +96,7 @@ const serializeCall = (call) => {
 
   return {
     id: toId(data._id),
+    organizationId: toId(data.organizationId),
     callerUserId: toId(data.callerUserId),
     calleeUserId: toId(data.calleeUserId),
     conversationId: toId(data.conversationId),
@@ -201,6 +206,7 @@ const createCallSystemMessage = async (call, eventType) => {
 
   const message = await Message.create({
     conversationId: call.conversationId,
+    organizationId: call.organizationId,
     senderId: call.callerUserId,
     type: "system",
     content: getSystemMessageContent(call, eventType),
@@ -234,8 +240,16 @@ const createCallSystemMessage = async (call, eventType) => {
   return message;
 };
 
-const loadConversationForCall = async (conversationId, callerUserId, calleeUserId) => {
-  const conversation = await Conversation.findById(conversationId);
+const loadConversationForCall = async (
+  conversationId,
+  callerUserId,
+  calleeUserId,
+  organizationId,
+) => {
+  const conversation = await Conversation.findOne({
+    _id: conversationId,
+    organizationId,
+  });
   if (!conversation) throw new ApiError(404, "Conversation not found");
   if (conversation.type !== "private") {
     throw new ApiError(400, "Calls are only supported in private conversations");
@@ -366,7 +380,20 @@ export const prepareCall = async (req, res) => {
     throw new ApiError(400, "Cannot call yourself");
   }
 
-  await loadConversationForCall(conversationId, req.user._id, calleeUserId);
+  const activeOrganizationId = getRequestOrganizationId(req);
+  if (!activeOrganizationId) {
+    throw new ApiError(
+      409,
+      "Please create or join an organization before starting a call",
+      "NO_ACTIVE_ORGANIZATION",
+    );
+  }
+  const conversation = await loadConversationForCall(
+    conversationId,
+    req.user._id,
+    calleeUserId,
+    activeOrganizationId,
+  );
   const callee = await User.findById(calleeUserId).select("_id activityStatus");
   if (!callee) throw new ApiError(404, "Callee not found");
   if (!isUserOnline(calleeUserId) || callee.activityStatus === "invisible") {
@@ -384,6 +411,7 @@ export const prepareCall = async (req, res) => {
       callerUserId: req.user._id,
       calleeUserId,
       conversationId,
+      organizationId: conversation.organizationId,
       mediaType,
       status: "preparing",
       callerBrowserDeviceId: browserDeviceId,
@@ -461,6 +489,7 @@ export const answerIntent = async (req, res) => {
   const call = await Call.findOneAndUpdate(
     {
       _id: req.params.id,
+      organizationId: getRequestOrganizationId(req),
       calleeUserId: req.user._id,
       status: "ringing",
     },

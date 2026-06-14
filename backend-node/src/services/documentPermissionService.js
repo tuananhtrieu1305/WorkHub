@@ -18,11 +18,14 @@ const hasExplicitRole = (user, permissions, allowedRoles) => {
   );
 };
 
-const sameDepartment = (user, resource) => {
-  const userDepartmentId = toId(user?.departmentId);
-  const resourceDepartmentId = toId(resource?.departmentId);
-  return Boolean(userDepartmentId && resourceDepartmentId && userDepartmentId === resourceDepartmentId);
+const sameOrganization = (user, resource) => {
+  const userOrganizationId = toId(user?.activeOrganizationId);
+  const resourceOrganizationId = toId(resource?.organizationId);
+  return Boolean(userOrganizationId && resourceOrganizationId && userOrganizationId === resourceOrganizationId);
 };
+
+const isOrganizationVisible = (resource) =>
+  resource?.permissions?.visibility === "organization";
 
 const isOwnerOrCreator = (user, resource) => {
   const userId = toId(user?._id);
@@ -35,7 +38,7 @@ const isOwnerOrCreator = (user, resource) => {
 export const canReadFolder = (user, folder) => {
   if (!user || !folder || folder.deletedAt) return false;
   if (isAdmin(user) || isOwnerOrCreator(user, folder)) return true;
-  if (folder.permissions?.visibility === "department" && sameDepartment(user, folder)) return true;
+  if (isOrganizationVisible(folder) && sameOrganization(user, folder)) return true;
   return hasExplicitRole(user, folder.permissions, ["viewer", "editor"]);
 };
 
@@ -48,7 +51,7 @@ export const canUploadToFolder = (user, folder) => {
 export const canRead = (user, document) => {
   if (!user || !document || document.deletedAt || document.status === "deleted") return false;
   if (isAdmin(user) || isOwnerOrCreator(user, document)) return true;
-  if (document.permissions?.visibility === "department" && sameDepartment(user, document)) return true;
+  if (isOrganizationVisible(document) && sameOrganization(user, document)) return true;
   return hasExplicitRole(user, document.permissions, ["viewer", "editor"]);
 };
 

@@ -32,10 +32,11 @@ const folderSchema = new Schema(
       ref: "Folder",
       default: null,
     },
-    departmentId: {
+    organizationId: {
       type: Schema.Types.ObjectId,
-      ref: "Department",
+      ref: "Organization",
       default: null,
+      index: true,
     },
     ownerId: {
       type: Schema.Types.ObjectId,
@@ -60,7 +61,7 @@ const folderSchema = new Schema(
     permissions: {
       visibility: {
         type: String,
-        enum: ["private", "department", "custom"],
+        enum: ["private", "organization", "custom"],
         default: "private",
       },
       users: {
@@ -78,7 +79,7 @@ const folderSchema = new Schema(
   },
 );
 
-folderSchema.index({ parentId: 1, departmentId: 1, deletedAt: 1 });
+folderSchema.index({ organizationId: 1, parentId: 1, deletedAt: 1 });
 folderSchema.index({ ownerId: 1 });
 
 const Folder = mongoose.model("Folder", folderSchema);

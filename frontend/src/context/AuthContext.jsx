@@ -1,3 +1,4 @@
+/* eslint-disable react-refresh/only-export-components */
 import { createContext, useContext, useState, useEffect, useCallback } from "react";
 import {
   loginUser,
@@ -7,7 +8,20 @@ import {
   verifyEmail as verifyEmailAPI,
   logoutUser,
 } from "../api/authApi";
-import { setTokens, getRefreshToken, clearTokens } from "../api/axiosClient";
+import {
+  setTokens,
+  getRefreshToken,
+  clearTokens,
+  setActiveOrganizationId,
+} from "../api/axiosClient";
+import {
+  createOrganization as createOrganizationApi,
+  getMyOrganizations,
+  joinOrganization as joinOrganizationApi,
+  leaveOrganization as leaveOrganizationApi,
+  switchOrganization as switchOrganizationApi,
+  updateOrganization as updateOrganizationApi,
+} from "../api/organizationApi";
 
 const AuthContext = createContext(null);
 
@@ -23,6 +37,11 @@ export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
 
+  const applyUser = useCallback((userData) => {
+    setUser(userData);
+    setActiveOrganizationId(userData?.activeOrganization?.id || null);
+  }, []);
+
   const initAuth = useCallback(async () => {
     const storedToken = localStorage.getItem("workhub_token");
     const storedRefreshToken = getRefreshToken();
@@ -31,16 +50,17 @@ export const AuthProvider = ({ children }) => {
       setTokens(storedToken, storedRefreshToken);
       try {
         const userData = await getMe();
-        setUser(userData);
+        applyUser(userData);
       } catch {
         clearTokens();
         setUser(null);
       }
     }
     setLoading(false);
-  }, []);
+  }, [applyUser]);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     initAuth();
   }, [initAuth]);
 
@@ -57,7 +77,7 @@ export const AuthProvider = ({ children }) => {
     const data = await loginUser(email, password);
     localStorage.setItem("workhub_token", data.token);
     setTokens(data.token, data.refreshToken);
-    setUser(data);
+    applyUser(data);
     return data;
   };
 
@@ -65,7 +85,7 @@ export const AuthProvider = ({ children }) => {
     const data = await googleLoginUser(googleToken);
     localStorage.setItem("workhub_token", data.token);
     setTokens(data.token, data.refreshToken);
-    setUser(data);
+    applyUser(data);
     return data;
   };
 
@@ -79,7 +99,7 @@ export const AuthProvider = ({ children }) => {
     if (data.token) {
       localStorage.setItem("workhub_token", data.token);
       setTokens(data.token, data.refreshToken);
-      setUser(data);
+      applyUser(data);
     }
     return data;
   };
@@ -103,6 +123,73 @@ export const AuthProvider = ({ children }) => {
     );
   }, []);
 
+  const refreshOrganizations = useCallback(async () => {
+    const context = await getMyOrganizations();
+    setActiveOrganizationId(context.activeOrganization?.id || null);
+    setUser((currentUser) =>
+      currentUser ? { ...currentUser, ...context } : currentUser
+    );
+    return context;
+  }, []);
+
+  const createOrganization = useCallback(async (payload) => {
+    const context = await createOrganizationApi(payload);
+    setActiveOrganizationId(context.activeOrganization?.id || null);
+    setUser((currentUser) =>
+      currentUser ? { ...currentUser, ...context } : currentUser
+    );
+    return context;
+  }, []);
+
+  const joinOrganization = useCallback(async (inviteLink) => {
+    const context = await joinOrganizationApi(inviteLink);
+    setActiveOrganizationId(context.activeOrganization?.id || null);
+    setUser((currentUser) =>
+      currentUser ? { ...currentUser, ...context } : currentUser
+    );
+    return context;
+  }, []);
+
+  const switchActiveOrganization = useCallback(async (organizationId) => {
+    const context = await switchOrganizationApi(organizationId);
+    setActiveOrganizationId(context.activeOrganization?.id || null);
+    setUser((currentUser) =>
+      currentUser ? { ...currentUser, ...context } : currentUser
+    );
+    return context;
+  }, []);
+
+  const updateOrganization = useCallback(async (organizationId, payload) => {
+    const organization = await updateOrganizationApi(organizationId, payload);
+    setUser((currentUser) => {
+      if (!currentUser) return currentUser;
+      const nextOrganizations = (currentUser.organizations || []).map((item) =>
+        item.id === organization.id ? organization : item
+      );
+      const nextActiveOrganization =
+        currentUser.activeOrganization?.id === organization.id
+          ? organization
+          : currentUser.activeOrganization;
+
+      return {
+        ...currentUser,
+        organizations: nextOrganizations,
+        activeOrganization: nextActiveOrganization,
+        activeOrganizationId: nextActiveOrganization?.id || null,
+      };
+    });
+    return organization;
+  }, []);
+
+  const leaveOrganization = useCallback(async (organizationId) => {
+    const context = await leaveOrganizationApi(organizationId);
+    setActiveOrganizationId(context.activeOrganization?.id || null);
+    setUser((currentUser) =>
+      currentUser ? { ...currentUser, ...context } : currentUser
+    );
+    return context;
+  }, []);
+
   return (
     <AuthContext.Provider
       value={{
@@ -114,6 +201,12 @@ export const AuthProvider = ({ children }) => {
         verifyAndLogin,
         logout,
         updateCurrentUser,
+        refreshOrganizations,
+        createOrganization,
+        joinOrganization,
+        switchActiveOrganization,
+        updateOrganization,
+        leaveOrganization,
       }}
     >
       {children}

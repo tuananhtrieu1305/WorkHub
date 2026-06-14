@@ -56,9 +56,9 @@ const userSchema = new mongoose.Schema(
       type: String,
       default: "",
     },
-    departmentId: {
+    activeOrganizationId: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: "Department",
+      ref: "Organization",
       default: null,
     },
     status: {

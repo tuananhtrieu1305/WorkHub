@@ -38,10 +38,11 @@ const documentSchema = new Schema(
       ref: "Folder",
       required: true,
     },
-    departmentId: {
+    organizationId: {
       type: Schema.Types.ObjectId,
-      ref: "Department",
+      ref: "Organization",
       default: null,
+      index: true,
     },
     ownerId: {
       type: Schema.Types.ObjectId,
@@ -91,7 +92,7 @@ const documentSchema = new Schema(
       },
       visibility: {
         type: String,
-        enum: ["private", "department", "custom"],
+        enum: ["private", "organization", "custom"],
         default: "private",
       },
       users: {
@@ -109,8 +110,7 @@ const documentSchema = new Schema(
   },
 );
 
-documentSchema.index({ folderId: 1, status: 1, deletedAt: 1 });
-documentSchema.index({ departmentId: 1, status: 1 });
+documentSchema.index({ organizationId: 1, folderId: 1, status: 1, deletedAt: 1 });
 documentSchema.index({ ownerId: 1 });
 documentSchema.index({ currentVersionId: 1 });
 documentSchema.index(

@@ -3,6 +3,10 @@ import Meeting from "../models/Meeting.js";
 import ApiError from "../utils/apiError.js";
 import { logActivity } from "../services/activityLogService.js";
 import { getRealtimeMeetingService } from "../services/realtimeMeetingService.js";
+import {
+  getRequestOrganizationId,
+  requireActiveOrganization,
+} from "../utils/organizationScope.js";
 
 const DEFAULT_PAGE = 1;
 const DEFAULT_LIMIT = 20;
@@ -39,7 +43,6 @@ const isOwnerOrHost = (user, meeting) => {
   );
 };
 
-// Centralize meeting access rules so project/department permissions can be added here later.
 const buildActiveMeetingConditions = () => [
   { status: "active" },
   { status: { $exists: false }, endedAt: null },
@@ -58,10 +61,14 @@ const getMeetingStatus = (meeting) => {
 const isSystemVisibleMeeting = (meeting) => isActiveMeeting(meeting);
 
 const canReadMeeting = (user, meeting) =>
-  isAdmin(user) || isOwnerOrHost(user, meeting) || isSystemVisibleMeeting(meeting);
+  toId(user?.activeOrganizationId) === toId(meeting?.organizationId) &&
+  (isAdmin(user) || isOwnerOrHost(user, meeting) || isSystemVisibleMeeting(meeting));
 
 const buildReadableMeetingQuery = (user, filters = {}) => {
-  const query = {};
+  const organizationId = toId(user?.activeOrganizationId);
+  const query = organizationId
+    ? { organizationId }
+    : { _id: { $exists: false } };
 
   if (filters.status === "active") {
     query.$or = buildActiveMeetingConditions();
@@ -71,10 +78,6 @@ const buildReadableMeetingQuery = (user, filters = {}) => {
 
   if (filters.projectId) {
     query.projectId = filters.projectId;
-  }
-
-  if (filters.departmentId) {
-    query.departmentId = filters.departmentId;
   }
 
   if (!isAdmin(user) && filters.status !== "active") {
@@ -101,9 +104,9 @@ const serializeMeeting = (meeting) => {
     cloudflareMeetingId: data.cloudflareMeetingId,
     createdBy: toId(data.createdBy) || null,
     hostUserId: toId(data.hostUserId) || null,
+    organizationId: toId(data.organizationId) || null,
     status: getMeetingStatus(data),
     projectId: data.projectId ? toId(data.projectId) : null,
-    departmentId: data.departmentId ? toId(data.departmentId) : null,
     startedAt: data.startedAt || null,
     endedAt: data.endedAt || null,
     createdAt: data.createdAt,
@@ -289,8 +292,8 @@ const logMeetingActivity = async ({ req, action, meeting, metadata = {} }) => {
     action,
     entityType: "meeting",
     entityId: meeting?._id,
+    organizationId: meeting?.organizationId || getRequestOrganizationId(req),
     projectId: meeting?.projectId || null,
-    departmentId: meeting?.departmentId || null,
     metadata,
     ipAddress: req.ip,
     userAgent: req.get("user-agent"),
@@ -309,6 +312,7 @@ const callRealtimeProvider = async (operation, safeMessage) => {
 };
 
 export const createMeeting = async (req, res) => {
+  const organizationId = requireActiveOrganization(req);
   const title = String(req.body?.title || "WorkHub meeting").trim();
   if (!title) {
     throw new ApiError(400, "Meeting title is required");
@@ -338,10 +342,10 @@ export const createMeeting = async (req, res) => {
   const meeting = await Meeting.create({
     title,
     cloudflareMeetingId,
+    organizationId,
     createdBy: req.user._id,
     hostUserId: req.user._id,
     projectId: req.body?.projectId || null,
-    departmentId: req.body?.departmentId || null,
     status: "active",
     startedAt: new Date(),
     participants: [

@@ -2,12 +2,19 @@ import ApiError from "../utils/apiError.js";
 import Folder from "../models/Folder.js";
 import Document from "../models/Document.js";
 import permission from "../services/documentPermissionService.js";
+import {
+  assertResourceInActiveOrganization,
+  getRequestOrganizationId,
+  requireActiveOrganization,
+} from "../utils/organizationScope.js";
 
 const toId = (value) => {
   if (!value) return null;
   if (typeof value === "string") return value;
   return value._id?.toString?.() || value.toString?.() || null;
 };
+
+const ALLOWED_VISIBILITIES = new Set(["private", "organization", "custom"]);
 
 const parsePage = (value, fallback) => {
   const parsed = Number.parseInt(value, 10);
@@ -21,6 +28,7 @@ const readableDocumentScope = (user) => {
   const clauses = [
     { ownerId: userId },
     { createdBy: userId },
+    { "permissions.visibility": "organization" },
     {
       "permissions.users": {
         $elemMatch: {
@@ -31,14 +39,18 @@ const readableDocumentScope = (user) => {
     },
   ];
 
-  if (user?.departmentId) {
-    clauses.push({
-      departmentId: user.departmentId,
-      "permissions.visibility": "department",
-    });
-  }
-
   return { $or: clauses };
+};
+
+const normalizePermissions = (permissions) => {
+  if (!permissions || typeof permissions !== "object") return permissions;
+  const normalizedVisibility = ALLOWED_VISIBILITIES.has(permissions.visibility)
+    ? permissions.visibility
+    : "private";
+  return {
+    ...permissions,
+    visibility: normalizedVisibility,
+  };
 };
 
 const assertFolderAccess = (user, folder) => {
@@ -50,8 +62,18 @@ const assertFolderAccess = (user, folder) => {
   }
 };
 
+const assertFolderInActiveOrganization = (req, folder) => {
+  assertResourceInActiveOrganization(req, folder, "Folder");
+};
+
 export const listFolders = async (req, res) => {
+  const organizationId = getRequestOrganizationId(req);
+  if (!organizationId) {
+    return res.json([]);
+  }
+
   const query = {
+    organizationId,
     deletedAt: null,
   };
 
@@ -59,10 +81,6 @@ export const listFolders = async (req, res) => {
     query.parentId = req.query.parentId;
   } else {
     query.parentId = null;
-  }
-
-  if (req.query.departmentId) {
-    query.departmentId = req.query.departmentId;
   }
 
   const folders = await Folder.find(query).sort({ name: 1 });
@@ -74,7 +92,8 @@ export const listFolders = async (req, res) => {
 };
 
 export const createFolder = async (req, res) => {
-  const { name, parentId = null, departmentId = null, permissions } = req.body;
+  const organizationId = requireActiveOrganization(req);
+  const { name, parentId = null, permissions } = req.body;
 
   if (!name?.trim()) {
     throw new ApiError(400, "Folder name is required");
@@ -82,6 +101,7 @@ export const createFolder = async (req, res) => {
 
   if (parentId) {
     const parent = await Folder.findById(parentId);
+    assertFolderInActiveOrganization(req, parent);
     assertFolderAccess(req.user, parent);
     if (!permission.canUploadToFolder(req.user, parent)) {
       throw new ApiError(403, "You cannot create folders here");
@@ -90,11 +110,11 @@ export const createFolder = async (req, res) => {
 
   const folder = await Folder.create({
     name,
+    organizationId,
     parentId,
-    departmentId,
     ownerId: req.user._id,
     createdBy: req.user._id,
-    permissions,
+    permissions: normalizePermissions(permissions),
   });
 
   res.status(201).json(folder);
@@ -102,11 +122,13 @@ export const createFolder = async (req, res) => {
 
 export const getFolder = async (req, res) => {
   const folder = await Folder.findById(req.params.id);
+  assertFolderInActiveOrganization(req, folder);
   assertFolderAccess(req.user, folder);
 
   const [folders, documents] = await Promise.all([
     Folder.find({ parentId: folder._id, deletedAt: null }).sort({ name: 1 }),
     Document.find({
+      organizationId: getRequestOrganizationId(req),
       folderId: folder._id,
       deletedAt: null,
       status: { $ne: "deleted" },
@@ -127,6 +149,7 @@ export const getFolder = async (req, res) => {
 
 export const updateFolder = async (req, res) => {
   const folder = await Folder.findById(req.params.id);
+  assertFolderInActiveOrganization(req, folder);
   assertFolderAccess(req.user, folder);
 
   if (!permission.canUploadToFolder(req.user, folder)) {
@@ -135,7 +158,9 @@ export const updateFolder = async (req, res) => {
 
   const update = { updatedBy: req.user._id };
   if (req.body.name !== undefined) update.name = req.body.name;
-  if (req.body.permissions !== undefined) update.permissions = req.body.permissions;
+  if (req.body.permissions !== undefined) {
+    update.permissions = normalizePermissions(req.body.permissions);
+  }
 
   const updated = await Folder.findByIdAndUpdate(req.params.id, update, {
     new: true,
@@ -147,6 +172,7 @@ export const updateFolder = async (req, res) => {
 
 export const deleteFolder = async (req, res) => {
   const folder = await Folder.findById(req.params.id);
+  assertFolderInActiveOrganization(req, folder);
   assertFolderAccess(req.user, folder);
 
   if (!permission.canUploadToFolder(req.user, folder)) {
@@ -163,11 +189,13 @@ export const deleteFolder = async (req, res) => {
 
 export const listFolderDocuments = async (req, res) => {
   const folder = await Folder.findById(req.params.id);
+  assertFolderInActiveOrganization(req, folder);
   assertFolderAccess(req.user, folder);
 
   const page = parsePage(req.query.page, 1);
   const size = Math.min(parsePage(req.query.size, 20), 100);
   const query = {
+    organizationId: getRequestOrganizationId(req),
     folderId: folder._id,
     deletedAt: null,
     status: "active",

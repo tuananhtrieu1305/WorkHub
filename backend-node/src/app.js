@@ -14,7 +14,7 @@ import {
 import { setUserIo } from "./presenters/userPresenter.js";
 import authRoutes from "./views/authView.js";
 import userRoutes from "./views/userView.js";
-import departmentRoutes from "./views/departmentView.js";
+import organizationRoutes from "./views/organizationView.js";
 import projectRoutes from "./views/projectView.js";
 import postRoutes from "./views/postView.js";
 import commentRoutes from "./views/commentView.js";
@@ -23,7 +23,6 @@ import conversationRoutes from "./views/conversationView.js";
 import folderRoutes from "./views/folderView.js";
 import documentRoutes, { shareRouter } from "./views/documentView.js";
 import taskRoutes, {
-  departmentTaskRouter,
   projectTaskRouter,
 } from "./views/taskView.js";
 import notificationRoutes from "./views/notificationView.js";
@@ -54,7 +53,7 @@ export const createApp = () => {
 
   app.use("/api/auth", authRoutes);
   app.use("/api/users", userRoutes);
-  app.use("/api/departments", departmentRoutes);
+  app.use("/api/organizations", organizationRoutes);
   app.use("/api/projects", projectRoutes);
   app.use("/api/projects", projectTaskRouter);
   app.use("/api/posts", postRoutes);
@@ -64,7 +63,6 @@ export const createApp = () => {
   app.use("/api/documents", documentRoutes);
   app.use("/api/share", shareRouter);
   app.use("/api/tasks", taskRoutes);
-  app.use("/api/departments", departmentTaskRouter);
   app.use("/api/notifications", notificationRoutes);
   app.use("/api/admin", adminRoutes);
   app.use("/api/meetings", meetingRoutes);

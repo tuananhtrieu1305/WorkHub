@@ -87,6 +87,12 @@ const callSchema = new Schema(
       required: true,
       index: true,
     },
+    organizationId: {
+      type: Schema.Types.ObjectId,
+      ref: "Organization",
+      default: null,
+      index: true,
+    },
     mediaType: {
       type: String,
       enum: ["audio", "video"],
@@ -185,6 +191,7 @@ const callSchema = new Schema(
 );
 
 callSchema.index({ callerUserId: 1, createdAt: -1 });
+callSchema.index({ organizationId: 1, status: 1, updatedAt: -1 });
 callSchema.index({ calleeUserId: 1, createdAt: -1 });
 callSchema.index({ conversationId: 1, createdAt: -1 });
 callSchema.index({ status: 1, updatedAt: -1 });

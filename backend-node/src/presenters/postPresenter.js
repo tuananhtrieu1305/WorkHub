@@ -20,6 +20,7 @@ import {
   buildR2AttachmentKey,
   getR2StorageService,
 } from "../services/r2StorageService.js";
+import { emptyPage, getRequestOrganizationId } from "../utils/organizationScope.js";
 
 const POST_ATTACHMENT_R2_PREFIX = "attachments/posts/";
 
@@ -137,6 +138,31 @@ export const hasPostBody = (content, attachments = []) => {
   return hasContent || attachments.length > 0;
 };
 
+const TARGET_AUDIENCE_TYPES = new Set(["all", "project", "custom"]);
+
+const normalizeIdList = (ids) => (Array.isArray(ids) ? ids.filter(Boolean) : []);
+
+const normalizeTargetAudience = (targetAudience = { type: "all" }) => {
+  const audience =
+    targetAudience && typeof targetAudience === "object"
+      ? targetAudience
+      : { type: "all" };
+
+  const type = TARGET_AUDIENCE_TYPES.has(audience.type)
+    ? audience.type
+    : "all";
+
+  if (type === "project") {
+    return { type, projectIds: normalizeIdList(audience.projectIds) };
+  }
+
+  if (type === "custom") {
+    return { type, userIds: normalizeIdList(audience.userIds) };
+  }
+
+  return { type: "all" };
+};
+
 export const serializePostAttachments = (attachments = []) =>
   attachments.map((attachment) => {
     const plain =
@@ -183,18 +209,19 @@ const findPostAttachmentPath = (storedFileName) => {
 export const getPosts = async (req, res) => {
   try {
     const { type, page = 1, size = 10 } = req.query;
+    const organizationId = getRequestOrganizationId(req);
+    if (!organizationId) {
+      return res.status(200).json(emptyPage(page, size));
+    }
 
-    const filter = {};
+    const filter = { organizationId };
     if (type) filter.type = type;
 
-    // Filter by target audience visibility
     const userId = req.user._id;
-    const user = req.user;
 
-    // User can see posts with: all, their department, their projects, or custom with their userId
+    // Organization-scoped feed: non-project/custom posts are organization-wide.
     filter.$or = [
-      { "targetAudience.type": "all" },
-      { "targetAudience.departmentIds": user.departmentId },
+      { "targetAudience.type": { $nin: ["project", "custom"] } },
       { "targetAudience.userIds": userId },
       { authorId: userId },
     ];
@@ -226,7 +253,7 @@ export const getPosts = async (req, res) => {
           content: post.content,
           mentions: post.mentions,
           tags: post.tags,
-          targetAudience: post.targetAudience,
+          targetAudience: normalizeTargetAudience(post.targetAudience),
           attachments: serializePostAttachments(post.attachments),
           likesCount: post.likesCount,
           commentsCount: post.commentsCount,
@@ -257,6 +284,13 @@ export const getPosts = async (req, res) => {
 export const createPost = async (req, res) => {
   try {
     const { type, content, mentions, tags, targetAudience } = req.body;
+    const organizationId = getRequestOrganizationId(req);
+    if (!organizationId) {
+      return res.status(409).json({
+        code: "NO_ACTIVE_ORGANIZATION",
+        message: "Please create or join an organization before posting",
+      });
+    }
 
     // Upload attachments to R2
     const attachments = await uploadPostAttachments(req.files || []);
@@ -299,12 +333,13 @@ export const createPost = async (req, res) => {
     }
 
     const post = await Post.create({
+      organizationId,
       authorId: req.user._id,
       type: type || "post",
       content: postContent,
       mentions: parsedMentions || [],
       tags: parsedTags || [],
-      targetAudience: parsedAudience || { type: "all" },
+      targetAudience: normalizeTargetAudience(parsedAudience || { type: "all" }),
       attachments,
     });
 
@@ -319,7 +354,7 @@ export const createPost = async (req, res) => {
       content: post.content,
       mentions: post.mentions,
       tags: post.tags,
-      targetAudience: post.targetAudience,
+      targetAudience: normalizeTargetAudience(post.targetAudience),
       attachments: serializePostAttachments(post.attachments),
       likesCount: post.likesCount,
       commentsCount: post.commentsCount,
@@ -336,7 +371,10 @@ export const createPost = async (req, res) => {
 export const getPostById = async (req, res) => {
   try {
     const post = await Post.findById(req.params.id);
-    if (!post) {
+    if (
+      !post ||
+      String(post.organizationId || "") !== String(getRequestOrganizationId(req))
+    ) {
       return res.status(404).json({ message: "Post not found" });
     }
 
@@ -356,7 +394,7 @@ export const getPostById = async (req, res) => {
       content: post.content,
       mentions: post.mentions,
       tags: post.tags,
-      targetAudience: post.targetAudience,
+      targetAudience: normalizeTargetAudience(post.targetAudience),
       attachments: serializePostAttachments(post.attachments),
       likesCount: post.likesCount,
       commentsCount: post.commentsCount,
@@ -378,7 +416,10 @@ export const getPostById = async (req, res) => {
 export const updatePost = async (req, res) => {
   try {
     const post = await Post.findById(req.params.id);
-    if (!post) {
+    if (
+      !post ||
+      String(post.organizationId || "") !== String(getRequestOrganizationId(req))
+    ) {
       return res.status(404).json({ message: "Post not found" });
     }
 
@@ -397,7 +438,9 @@ export const updatePost = async (req, res) => {
     if (content !== undefined) post.content = content;
     if (mentions !== undefined) post.mentions = mentions;
     if (tags !== undefined) post.tags = tags;
-    if (targetAudience !== undefined) post.targetAudience = targetAudience;
+    if (targetAudience !== undefined) {
+      post.targetAudience = normalizeTargetAudience(targetAudience);
+    }
 
     await post.save();
 
@@ -412,7 +455,7 @@ export const updatePost = async (req, res) => {
       content: post.content,
       mentions: post.mentions,
       tags: post.tags,
-      targetAudience: post.targetAudience,
+      targetAudience: normalizeTargetAudience(post.targetAudience),
       attachments: serializePostAttachments(post.attachments),
       likesCount: post.likesCount,
       commentsCount: post.commentsCount,
@@ -432,7 +475,10 @@ export const updatePost = async (req, res) => {
 export const deletePost = async (req, res) => {
   try {
     const post = await Post.findById(req.params.id);
-    if (!post) {
+    if (
+      !post ||
+      String(post.organizationId || "") !== String(getRequestOrganizationId(req))
+    ) {
       return res.status(404).json({ message: "Post not found" });
     }
 
@@ -446,11 +492,11 @@ export const deletePost = async (req, res) => {
     }
 
     // Delete related comments and likes
+    const commentIds = await Comment.find({ postId: post._id }).select("_id");
     await Comment.deleteMany({ postId: post._id });
     await Like.deleteMany({ targetType: "post", targetId: post._id });
 
     // Delete comment likes too
-    const commentIds = await Comment.find({ postId: post._id }).select("_id");
     if (commentIds.length > 0) {
       await Like.deleteMany({
         targetType: "comment",
@@ -562,7 +608,10 @@ export const getPostComments = async (req, res) => {
     const { page = 1, size = 10 } = req.query;
 
     const post = await Post.findById(req.params.id);
-    if (!post) {
+    if (
+      !post ||
+      String(post.organizationId || "") !== String(getRequestOrganizationId(req))
+    ) {
       return res.status(404).json({ message: "Post not found" });
     }
 
@@ -571,7 +620,11 @@ export const getPostComments = async (req, res) => {
     const skip = (pageNum - 1) * pageSize;
 
     // Only get root comments (no parentId)
-    const filter = { postId: post._id, parentId: null };
+    const filter = {
+      organizationId: getRequestOrganizationId(req),
+      postId: post._id,
+      parentId: null,
+    };
 
     const [comments, totalElements] = await Promise.all([
       Comment.find(filter).skip(skip).limit(pageSize).sort({ createdAt: -1 }),
@@ -634,7 +687,10 @@ export const getPostComments = async (req, res) => {
 export const addPostComment = async (req, res) => {
   try {
     const post = await Post.findById(req.params.id);
-    if (!post) {
+    if (
+      !post ||
+      String(post.organizationId || "") !== String(getRequestOrganizationId(req))
+    ) {
       return res.status(404).json({ message: "Post not found" });
     }
 
@@ -663,6 +719,7 @@ export const addPostComment = async (req, res) => {
     }
 
     const comment = await Comment.create({
+      organizationId: post.organizationId,
       postId: post._id,
       parentId: parentId || null,
       authorId: req.user._id,
@@ -708,7 +765,10 @@ export const getPostLikes = async (req, res) => {
     const { page = 1, size = 10 } = req.query;
 
     const post = await Post.findById(req.params.id);
-    if (!post) {
+    if (
+      !post ||
+      String(post.organizationId || "") !== String(getRequestOrganizationId(req))
+    ) {
       return res.status(404).json({ message: "Post not found" });
     }
 
@@ -761,7 +821,10 @@ export const getPostLikes = async (req, res) => {
 export const togglePostLike = async (req, res) => {
   try {
     const post = await Post.findById(req.params.id);
-    if (!post) {
+    if (
+      !post ||
+      String(post.organizationId || "") !== String(getRequestOrganizationId(req))
+    ) {
       return res.status(404).json({ message: "Post not found" });
     }
 
@@ -787,6 +850,7 @@ export const togglePostLike = async (req, res) => {
       await Like.create({
         targetType: "post",
         targetId: post._id,
+        organizationId: post.organizationId,
         userId: req.user._id,
         reactionType: plan.reactionType,
       });

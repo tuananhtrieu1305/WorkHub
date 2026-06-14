@@ -31,10 +31,3 @@ export const getProjectTasks = async (projectId, params = {}) => {
   });
   return data;
 };
-
-export const getDepartmentTasks = async (departmentId, params = {}) => {
-  const { data } = await axiosClient.get(`/departments/${departmentId}/tasks`, {
-    params,
-  });
-  return data;
-};

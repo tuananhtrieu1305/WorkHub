@@ -7,6 +7,12 @@ const commentSchema = new mongoose.Schema(
       ref: "Post",
       required: true,
     },
+    organizationId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Organization",
+      default: null,
+      index: true,
+    },
     parentId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Comment",
@@ -56,6 +62,7 @@ commentSchema.pre("validate", function validateCommentBody() {
 });
 
 commentSchema.index({ postId: 1, createdAt: -1 });
+commentSchema.index({ organizationId: 1, createdAt: -1 });
 commentSchema.index({ parentId: 1 });
 
 const Comment = mongoose.model("Comment", commentSchema);

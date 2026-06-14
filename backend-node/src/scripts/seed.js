@@ -2,7 +2,7 @@
  * Seed Script - Tạo dữ liệu mẫu cho WorkHub
  * Chạy: node src/scripts/seed.js
  *
- * Tạo: 5 Users, 3 Departments, 5 Projects, 5 Posts, Comments,
+ * Tạo: 5 Users, 1 Organization, 5 Projects, 5 Posts, Comments,
  *       Likes, Conversations, Messages, Tasks
  * Tất cả data có liên hệ logic chặt chẽ giữa các bảng.
  */
@@ -13,7 +13,8 @@ import path from "path";
 import { fileURLToPath } from "url";
 
 import User from "../models/User.js";
-import Department from "../models/Department.js";
+import Organization from "../models/Organization.js";
+import OrganizationMember from "../models/OrganizationMember.js";
 import Project from "../models/Project.js";
 import Post from "../models/Post.js";
 import Comment from "../models/Comment.js";
@@ -34,9 +35,15 @@ async function seed() {
 
     // ─── CLEANUP ───
     console.log("🗑️  Cleaning existing seed data...");
+    const seedOrganizations = await Organization.find({
+      slug: { $regex: /^seed-workhub-/ },
+    }).select("_id");
+    await OrganizationMember.deleteMany({
+      organizationId: { $in: seedOrganizations.map((org) => org._id) },
+    });
     await Promise.all([
       User.deleteMany({ email: { $regex: /^seed/ } }),
-      Department.deleteMany({}),
+      Organization.deleteMany({ slug: { $regex: /^seed-workhub-/ } }),
       Project.deleteMany({}),
       Post.deleteMany({}),
       Comment.deleteMany({}),
@@ -63,36 +70,35 @@ async function seed() {
     console.log(`   ✓ Created ${users.length} users`);
 
     // ═══════════════════════════════════════
-    // 2. DEPARTMENTS (3 departments)
+    // 2. ORGANIZATION
     // ═══════════════════════════════════════
-    console.log("🏢 Creating departments...");
-    const deptEngineering = await Department.create({
-      name: "Phòng Kỹ thuật",
-      description: "Phát triển phần mềm và hạ tầng hệ thống",
-      managerId: admin._id,
+    console.log("🏢 Creating organization...");
+    const organization = await Organization.create({
+      name: "Seed WorkHub Organization",
+      slug: `seed-workhub-${Date.now()}`,
+      description: "Không gian dữ liệu mẫu cho WorkHub",
+      ownerId: admin._id,
+      createdBy: admin._id,
+      inviteCode: `seed-${Date.now()}`,
+      accentColor: "#2563eb",
     });
 
-    const deptDesign = await Department.create({
-      name: "Phòng Thiết kế",
-      description: "UI/UX Design và Brand Identity",
-      managerId: binh._id,
-    });
+    await OrganizationMember.create(
+      users.map((user) => ({
+        organizationId: organization._id,
+        userId: user._id,
+        role: user._id.equals(admin._id) ? "owner" : "member",
+        status: "active",
+        invitedBy: admin._id,
+      })),
+    );
 
-    const deptQA = await Department.create({
-      name: "Phòng QA",
-      description: "Kiểm thử và đảm bảo chất lượng sản phẩm",
-      managerId: em._id,
-      parentId: deptEngineering._id,
-    });
+    await User.updateMany(
+      { _id: { $in: users.map((user) => user._id) } },
+      { activeOrganizationId: organization._id },
+    );
 
-    // Cập nhật departmentId cho users
-    await User.findByIdAndUpdate(admin._id, { departmentId: deptEngineering._id });
-    await User.findByIdAndUpdate(binh._id, { departmentId: deptEngineering._id });
-    await User.findByIdAndUpdate(cuong._id, { departmentId: deptEngineering._id });
-    await User.findByIdAndUpdate(dung._id, { departmentId: deptDesign._id });
-    await User.findByIdAndUpdate(em._id, { departmentId: deptQA._id });
-
-    console.log("   ✓ Created 3 departments (Engineering > QA, Design)");
+    console.log("   ✓ Created seed organization and memberships");
 
     // ═══════════════════════════════════════
     // 3. PROJECTS (5 projects)
@@ -103,8 +109,8 @@ async function seed() {
         name: "WorkHub Platform",
         description: "Nền tảng cộng tác nội bộ doanh nghiệp",
         status: "active",
+        organizationId: organization._id,
         createdBy: admin._id,
-        departmentIds: [deptEngineering._id],
         members: [
           { userId: admin._id, role: "lead" },
           { userId: binh._id, role: "member" },
@@ -117,8 +123,8 @@ async function seed() {
         name: "Mobile App v2",
         description: "Phiên bản mobile với React Native",
         status: "active",
+        organizationId: organization._id,
         createdBy: binh._id,
-        departmentIds: [deptEngineering._id, deptDesign._id],
         members: [
           { userId: binh._id, role: "lead" },
           { userId: dung._id, role: "member" },
@@ -131,8 +137,8 @@ async function seed() {
         name: "Design System",
         description: "Hệ thống thiết kế thống nhất cho tất cả sản phẩm",
         status: "active",
+        organizationId: organization._id,
         createdBy: dung._id,
-        departmentIds: [deptDesign._id],
         members: [
           { userId: dung._id, role: "lead" },
           { userId: binh._id, role: "contributor" },
@@ -143,8 +149,8 @@ async function seed() {
         name: "API Gateway Migration",
         description: "Chuyển đổi hệ thống API sang kiến trúc microservices",
         status: "active",
+        organizationId: organization._id,
         createdBy: cuong._id,
-        departmentIds: [deptEngineering._id],
         members: [
           { userId: cuong._id, role: "lead" },
           { userId: admin._id, role: "member" },
@@ -156,8 +162,8 @@ async function seed() {
         name: "Automation Testing Suite",
         description: "Bộ test tự động cho toàn bộ hệ thống",
         status: "completed",
+        organizationId: organization._id,
         createdBy: em._id,
-        departmentIds: [deptQA._id],
         members: [
           { userId: em._id, role: "lead" },
           { userId: cuong._id, role: "contributor" },
@@ -179,7 +185,7 @@ async function seed() {
         title: "Setup CI/CD Pipeline",
         description: "Cấu hình GitHub Actions cho auto deploy",
         projectId: projects[0]._id,
-        departmentId: deptEngineering._id,
+        organizationId: organization._id,
         status: "done",
         createdBy: admin._id,
         assignees: [cuong._id],
@@ -194,7 +200,7 @@ async function seed() {
         title: "Implement Chat realtime",
         description: "Tích hợp Socket.IO cho tính năng nhắn tin",
         projectId: projects[0]._id,
-        departmentId: deptEngineering._id,
+        organizationId: organization._id,
         status: "in_progress",
         createdBy: admin._id,
         assignees: [cuong._id, binh._id],
@@ -210,7 +216,7 @@ async function seed() {
         title: "Thiết kế màn hình Dashboard",
         description: "Wireframe + Mockup cho trang Dashboard chính",
         projectId: projects[1]._id,
-        departmentId: deptDesign._id,
+        organizationId: organization._id,
         status: "in_progress",
         createdBy: dung._id,
         assignees: [dung._id],
@@ -225,7 +231,7 @@ async function seed() {
         title: "Viết API documentation",
         description: "Document toàn bộ REST API endpoints bằng Swagger",
         projectId: projects[3]._id,
-        departmentId: deptEngineering._id,
+        organizationId: organization._id,
         status: "todo",
         createdBy: cuong._id,
         assignees: [cuong._id, admin._id],
@@ -240,7 +246,7 @@ async function seed() {
         title: "Viết E2E test cho flow đăng nhập",
         description: "Playwright tests cho login, register, forgot password",
         projectId: projects[4]._id,
-        departmentId: deptQA._id,
+        organizationId: organization._id,
         status: "done",
         createdBy: em._id,
         assignees: [em._id],
@@ -263,6 +269,7 @@ async function seed() {
     console.log("📝 Creating posts...");
     const postsData = [
       {
+        organizationId: organization._id,
         authorId: admin._id,
         type: "announcement",
         content: "🎉 Chào mừng tất cả mọi người đến với WorkHub! Hãy cập nhật thông tin cá nhân và bắt đầu kết nối với đồng nghiệp nhé.",
@@ -272,25 +279,28 @@ async function seed() {
         commentsCount: 3,
       },
       {
+        organizationId: organization._id,
         authorId: binh._id,
         type: "post",
         content: "Vừa hoàn thành redesign trang Dashboard. Mọi người review giúp mình nhé! 🎨 Figma link: https://figma.com/file/example",
         mentions: [dung._id, admin._id],
         tags: ["design", "review"],
-        targetAudience: { type: "department", departmentIds: [deptEngineering._id, deptDesign._id] },
+        targetAudience: { type: "all" },
         likesCount: 3,
         commentsCount: 2,
       },
       {
+        organizationId: organization._id,
         authorId: cuong._id,
         type: "task_update",
         content: "API Gateway migration đã hoàn thành 60%. Dự kiến xong trước deadline 2 tuần. Performance tăng 35% so với monolith cũ 🚀",
         tags: ["backend", "progress"],
-        targetAudience: { type: "department", departmentIds: [deptEngineering._id] },
+        targetAudience: { type: "all" },
         likesCount: 2,
         commentsCount: 1,
       },
       {
+        organizationId: organization._id,
         authorId: dung._id,
         type: "document_share",
         content: "Mình vừa update bộ Design Tokens mới cho Q2. File đính kèm bên dưới, mọi người sync lại nhé 📄",
@@ -303,11 +313,12 @@ async function seed() {
         commentsCount: 2,
       },
       {
+        organizationId: organization._id,
         authorId: em._id,
         type: "post",
         content: "🐛 Bug report tuần này: Tổng 12 bugs found, 10 resolved, 2 pending. Chi tiết trong Jira board. Great job team QA! 💪",
         tags: ["qa", "weekly-report"],
-        targetAudience: { type: "department", departmentIds: [deptQA._id, deptEngineering._id] },
+        targetAudience: { type: "all" },
         likesCount: 3,
         commentsCount: 1,
       },
@@ -339,6 +350,11 @@ async function seed() {
 
     // Comment cho post[4]
     const c8 = await Comment.create({ postId: posts[4]._id, authorId: cuong._id, content: "2 bugs pending là gì vậy Em? Mình fix luôn" });
+
+    await Comment.updateMany(
+      { _id: { $in: [c1._id, c2._id, c2Reply._id, c3._id, c4._id, c5._id, c6._id, c7._id, c8._id] } },
+      { organizationId: organization._id },
+    );
 
     console.log("   ✓ Created 9 comments (incl. 1 reply)");
 
@@ -375,7 +391,12 @@ async function seed() {
       { targetType: "comment", targetId: c5._id, userId: cuong._id },
     ];
 
-    await Like.create(likesData);
+    await Like.create(
+      likesData.map((like) => ({
+        ...like,
+        organizationId: organization._id,
+      })),
+    );
     console.log(`   ✓ Created ${likesData.length} likes`);
 
     // ═══════════════════════════════════════
@@ -385,6 +406,7 @@ async function seed() {
 
     const conv1 = await Conversation.create({
       type: "private",
+      organizationId: organization._id,
       participants: [
         { userId: admin._id },
         { userId: cuong._id },
@@ -394,6 +416,7 @@ async function seed() {
 
     const conv2 = await Conversation.create({
       type: "private",
+      organizationId: organization._id,
       participants: [
         { userId: binh._id },
         { userId: dung._id },
@@ -403,6 +426,7 @@ async function seed() {
 
     const conv3 = await Conversation.create({
       type: "group",
+      organizationId: organization._id,
       name: "Team Engineering",
       participants: [
         { userId: admin._id },
@@ -414,6 +438,7 @@ async function seed() {
 
     const conv4 = await Conversation.create({
       type: "group",
+      organizationId: organization._id,
       name: "WorkHub Core Team",
       participants: [
         { userId: admin._id },
@@ -427,6 +452,7 @@ async function seed() {
 
     const conv5 = await Conversation.create({
       type: "group",
+      organizationId: organization._id,
       name: "Design Review",
       participants: [
         { userId: binh._id },
@@ -465,6 +491,11 @@ async function seed() {
     const m11 = await Message.create({ conversationId: conv5._id, senderId: dung._id, type: "text", content: "Mọi người review mockup Dashboard mới giúp mình nhé" });
     const m12 = await Message.create({ conversationId: conv5._id, senderId: binh._id, type: "text", content: "Nhìn OK rồi, nhưng spacing section header cần tăng lên 24px", replyTo: m11._id });
 
+    await Message.updateMany(
+      { _id: { $in: [m1._id, m2._id, m3._id, m4._id, m5._id, m6._id, m7._id, m8._id, m9._id, m10._id, m11._id, m12._id] } },
+      { organizationId: organization._id },
+    );
+
     // Update lastMessage cho conversations
     await Conversation.findByIdAndUpdate(conv1._id, { lastMessage: { content: m3.content, senderId: m3.senderId, createdAt: m3.createdAt } });
     await Conversation.findByIdAndUpdate(conv2._id, { lastMessage: { content: m5.content, senderId: m5.senderId, createdAt: m5.createdAt } });
@@ -481,7 +512,7 @@ async function seed() {
     console.log("║       🌱 SEED COMPLETED SUCCESSFULLY    ║");
     console.log("╠════════════════════════════════════════╣");
     console.log(`║  👤 Users:          ${users.length}                  ║`);
-    console.log(`║  🏢 Departments:    3                  ║`);
+    console.log(`║  🏢 Organizations:  1                  ║`);
     console.log(`║  📁 Projects:       ${projects.length}                  ║`);
     console.log(`║  ✅ Tasks:          ${tasks.length}                  ║`);
     console.log(`║  📝 Posts:          ${posts.length}                  ║`);

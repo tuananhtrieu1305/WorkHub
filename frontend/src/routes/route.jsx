@@ -1,3 +1,4 @@
+/* eslint-disable react-refresh/only-export-components */
 import { lazy, Suspense } from "react";
 import { createBrowserRouter } from "react-router-dom";
 import AuthLayout from "../components/AuthLayout";
@@ -15,6 +16,7 @@ const MeetingRoomPage = lazy(() => import("../modules/meeting/MeetingRoomPage"))
 const CallRoomPage = lazy(() => import("../modules/call/CallRoomPage"));
 const FeedPage = lazy(() => import("../modules/feed/FeedPage"));
 const ChatPage = lazy(() => import("../modules/chat/ChatPage"));
+const OrganizationPage = lazy(() => import("../modules/organization/OrganizationPage"));
 
 const LazyFallback = () => (
   <div className="route-loading-screen">
@@ -80,6 +82,22 @@ export const router = createBrowserRouter([
             element: (
               <Suspense fallback={<LazyFallback />}>
                 <CallRoomPage />
+              </Suspense>
+            ),
+          },
+          {
+            path: "organization",
+            element: (
+              <Suspense fallback={<LazyFallback />}>
+                <OrganizationPage />
+              </Suspense>
+            ),
+          },
+          {
+            path: "organization/join/:inviteCode",
+            element: (
+              <Suspense fallback={<LazyFallback />}>
+                <OrganizationPage />
               </Suspense>
             ),
           },

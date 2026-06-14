@@ -7,6 +7,12 @@ const conversationSchema = new mongoose.Schema(
       enum: ["private", "group"],
       required: true,
     },
+    organizationId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Organization",
+      default: null,
+      index: true,
+    },
     name: {
       type: String,
       default: "",
@@ -53,6 +59,7 @@ const conversationSchema = new mongoose.Schema(
 );
 
 conversationSchema.index({ "participants.userId": 1 });
+conversationSchema.index({ organizationId: 1, "participants.userId": 1 });
 conversationSchema.index({ updatedAt: -1 });
 conversationSchema.index({
   "participants.userId": 1,

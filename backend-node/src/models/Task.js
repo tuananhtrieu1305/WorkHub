@@ -22,10 +22,11 @@ const taskSchema = new Schema(
       ref: "Project",
       default: null,
     },
-    departmentId: {
+    organizationId: {
       type: Schema.Types.ObjectId,
-      ref: "Department",
+      ref: "Organization",
       default: null,
+      index: true,
     },
     createdBy: {
       type: Schema.Types.ObjectId,
@@ -88,9 +89,8 @@ const taskSchema = new Schema(
 );
 
 taskSchema.index({ projectId: 1, status: 1, endAt: 1 });
-taskSchema.index({ departmentId: 1, status: 1, endAt: 1 });
+taskSchema.index({ organizationId: 1, status: 1, endAt: 1 });
 taskSchema.index({ deletedAt: 1, projectId: 1, status: 1, endAt: 1 });
-taskSchema.index({ deletedAt: 1, departmentId: 1, status: 1, endAt: 1 });
 taskSchema.index({ deletedAt: 1, createdBy: 1, createdAt: -1 });
 taskSchema.index({ deletedAt: 1, ownerId: 1, createdAt: -1 });
 taskSchema.index({ createdBy: 1, createdAt: -1 });

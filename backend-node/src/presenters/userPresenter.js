@@ -1,6 +1,6 @@
 import User from "../models/User.js";
 import Conversation from "../models/Conversation.js";
-import Department from "../models/Department.js";
+import OrganizationMember from "../models/OrganizationMember.js";
 import Project from "../models/Project.js";
 import UserPreference from "../models/UserPreference.js";
 import ActivityLog from "../models/ActivityLog.js";
@@ -18,6 +18,7 @@ import {
   getR2StorageService,
 } from "../services/r2StorageService.js";
 import { contentDisposition } from "../utils/fileResponse.js";
+import { buildUserOrganizationContext } from "../services/organizationService.js";
 
 let ioInstance = null;
 const activityStatusExpiryTimers = new Map();
@@ -137,8 +138,7 @@ const scheduleActivityStatusExpiry = (user) => {
   activityStatusExpiryTimers.set(key, timer);
 };
 
-// Hàm format user summary (cho danh sách)
-const formatUserSummary = (user, department, projects) => ({
+const formatUserSummary = (user, projects) => ({
   id: user._id,
   fullName: user.fullName,
   email: user.email,
@@ -147,13 +147,6 @@ const formatUserSummary = (user, department, projects) => ({
   ...getPresenceFields(user),
   position: user.position,
   phone: user.phone,
-  department: department
-    ? {
-        id: department._id,
-        name: department.name,
-        description: department.description,
-      }
-    : null,
   projects: projects
     ? projects.map((project) => ({
         id: project._id,
@@ -188,9 +181,9 @@ const parsePositiveInt = (value, fallback) => {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
 };
 
-// Hàm format user detail (chi tiết user)
-const formatUserDetail = (user, department, projects) => ({
+const formatUserDetail = (user, projects, organizationContext = {}) => ({
   id: user._id,
+  _id: user._id,
   fullName: user.fullName,
   email: user.email,
   phone: user.phone,
@@ -201,13 +194,6 @@ const formatUserDetail = (user, department, projects) => ({
   avatar: user.avatar,
   isVerified: user.isVerified,
   authProvider: user.authProvider,
-  department: department
-    ? {
-        id: department._id,
-        name: department.name,
-        description: department.description,
-      }
-    : null,
   projects: projects
     ? projects.map((project) => ({
         id: project._id,
@@ -216,6 +202,9 @@ const formatUserDetail = (user, department, projects) => ({
         status: project.status,
       }))
     : [],
+  activeOrganizationId: organizationContext.activeOrganization?.id || null,
+  activeOrganization: organizationContext.activeOrganization || null,
+  organizations: organizationContext.organizations || [],
   createdAt: user.createdAt,
   updatedAt: user.updatedAt,
 });
@@ -224,7 +213,6 @@ export const getUsers = async (req, res) => {
   try {
     const {
       keyword,
-      departmentId,
       fullName,
       email,
       phone,
@@ -243,7 +231,6 @@ export const getUsers = async (req, res) => {
         { phone: { $regex: keyword, $options: "i" } },
       ];
     }
-    if (departmentId) filter.departmentId = departmentId;
     if (role) filter.role = role;
     if (status) filter.status = status;
     if (fullName) filter.fullName = { $regex: fullName, $options: "i" };
@@ -261,20 +248,13 @@ export const getUsers = async (req, res) => {
 
     const totalPages = Math.ceil(totalElements / pageSize);
 
-    // Populate department and projects for each user
     const content = await Promise.all(
       users.map(async (user) => {
-        let department = null;
-        if (user.departmentId) {
-          department = await Department.findById(user.departmentId);
-        }
-
-        // Find projects where this user is a member
         const projects = await Project.find({
           "members.userId": user._id,
         }).select("_id name description status");
 
-        return formatUserSummary(user, department, projects);
+        return formatUserSummary(user, projects);
       }),
     );
 
@@ -305,6 +285,20 @@ export const searchUsersForChat = async (req, res) => {
       _id: { $ne: req.user._id },
       status: "active",
     };
+
+    if (req.organizationId) {
+      const memberships = await OrganizationMember.find({
+        organizationId: req.organizationId,
+        status: "active",
+      }).select("userId");
+
+      filter._id = {
+        $in: memberships.map((membership) => membership.userId),
+        $ne: req.user._id,
+      };
+    } else {
+      filter._id = { $in: [] };
+    }
 
     if (normalizedKeyword) {
       const safeKeyword = escapeRegex(normalizedKeyword);
@@ -341,8 +335,7 @@ export const searchUsersForChat = async (req, res) => {
 
 export const createUser = async (req, res) => {
   try {
-    const { email, password, fullName, phone, position, departmentId, role } =
-      req.body;
+    const { email, password, fullName, phone, position, role } = req.body;
 
     // Validation
     if (!email || !password || !fullName) {
@@ -372,7 +365,6 @@ export const createUser = async (req, res) => {
       password,
       phone: phone || "",
       position: position || "",
-      departmentId: departmentId || null,
       role: role || "user",
       isVerified: true, // Admin-created users are pre-verified
     });
@@ -399,18 +391,18 @@ export const getUserById = async (req, res) => {
       return res.status(404).json({ message: "User not found" });
     }
 
-    // Get department info
-    let department = null;
-    if (user.departmentId) {
-      department = await Department.findById(user.departmentId);
-    }
-
-    // Get projects where this user is a member
     const projects = await Project.find({
       "members.userId": user._id,
     }).select("_id name description status");
 
-    res.status(200).json(formatUserDetail(user, department, projects));
+    const organizationContext = await buildUserOrganizationContext(user, {
+      baseUrl: process.env.FRONTEND_URL || `${req.protocol}://${req.get("host")}`,
+      persistFallback: true,
+    });
+
+    res
+      .status(200)
+      .json(formatUserDetail(user, projects, organizationContext));
   } catch (error) {
     console.error("GetUserById error:", error.message);
     if (error.kind === "ObjectId") {
@@ -423,7 +415,7 @@ export const getUserById = async (req, res) => {
 export const updateUser = async (req, res) => {
   try {
     const { id } = req.params;
-    const { fullName, phone, position, departmentId, role, status } = req.body;
+    const { fullName, phone, position, role, status } = req.body;
 
     const user = await User.findById(id);
 
@@ -435,22 +427,23 @@ export const updateUser = async (req, res) => {
     if (fullName !== undefined) user.fullName = fullName;
     if (phone !== undefined) user.phone = phone;
     if (position !== undefined) user.position = position;
-    if (departmentId !== undefined) user.departmentId = departmentId;
     if (role !== undefined) user.role = role;
     if (status !== undefined) user.status = status;
 
     await user.save();
 
-    // Get department and projects info
-    let department = null;
-    if (user.departmentId) {
-      department = await Department.findById(user.departmentId);
-    }
     const projects = await Project.find({
       "members.userId": user._id,
     }).select("_id name description status");
 
-    res.status(200).json(formatUserDetail(user, department, projects));
+    const organizationContext = await buildUserOrganizationContext(user, {
+      baseUrl: process.env.FRONTEND_URL || `${req.protocol}://${req.get("host")}`,
+      persistFallback: true,
+    });
+
+    res
+      .status(200)
+      .json(formatUserDetail(user, projects, organizationContext));
   } catch (error) {
     console.error("UpdateUser error:", error.message);
     if (error.kind === "ObjectId") {
@@ -489,16 +482,18 @@ export const getMe = async (req, res) => {
       return res.status(404).json({ message: "User not found" });
     }
 
-    // Get department and projects info
-    let department = null;
-    if (user.departmentId) {
-      department = await Department.findById(user.departmentId);
-    }
     const projects = await Project.find({
       "members.userId": user._id,
     }).select("_id name description status");
 
-    res.status(200).json(formatUserDetail(user, department, projects));
+    const organizationContext = await buildUserOrganizationContext(user, {
+      baseUrl: process.env.FRONTEND_URL || `${req.protocol}://${req.get("host")}`,
+      persistFallback: true,
+    });
+
+    res
+      .status(200)
+      .json(formatUserDetail(user, projects, organizationContext));
   } catch (error) {
     console.error("GetMe error:", error.message);
     res.status(500).json({ message: "Server error, please try again" });
@@ -522,16 +517,18 @@ export const updateProfile = async (req, res) => {
 
     await user.save();
 
-    // Get department and projects info
-    let department = null;
-    if (user.departmentId) {
-      department = await Department.findById(user.departmentId);
-    }
     const projects = await Project.find({
       "members.userId": user._id,
     }).select("_id name description status");
 
-    res.status(200).json(formatUserDetail(user, department, projects));
+    const organizationContext = await buildUserOrganizationContext(user, {
+      baseUrl: process.env.FRONTEND_URL || `${req.protocol}://${req.get("host")}`,
+      persistFallback: true,
+    });
+
+    res
+      .status(200)
+      .json(formatUserDetail(user, projects, organizationContext));
   } catch (error) {
     console.error("UpdateProfile error:", error.message);
     res.status(500).json({ message: "Server error, please try again" });

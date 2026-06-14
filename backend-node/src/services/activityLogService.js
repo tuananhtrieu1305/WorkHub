@@ -115,7 +115,6 @@ const applyOptionalFilters = (query, filters = {}) => {
     "actorType",
     "targetUserId",
     "projectId",
-    "departmentId",
     "entityType",
     "entityId",
   ];
@@ -159,8 +158,8 @@ export const logActivity = async (payload) => {
     action: payload.action,
     entityType: payload.entityType,
     entityId: payload.entityId || null,
+    organizationId: payload.organizationId || null,
     projectId: payload.projectId || null,
-    departmentId: payload.departmentId || null,
     targetUserId: payload.targetUserId || null,
     metadata: redactSensitiveMetadata(payload.metadata || {}),
     ipAddress: payload.ipAddress || null,

@@ -11,10 +11,11 @@ const projectSchema = new mongoose.Schema(
       type: String,
       default: "",
     },
-    departmentIds: {
-      type: [mongoose.Schema.Types.ObjectId],
-      ref: "Department",
-      default: [],
+    organizationId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Organization",
+      default: null,
+      index: true,
     },
     members: [
       {
