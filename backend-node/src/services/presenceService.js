@@ -44,6 +44,8 @@ export const isUserOnline = (userId) => {
   return Boolean(activeSocketsByUser.get(userId.toString())?.size);
 };
 
+export const getOnlineUserIds = () => Array.from(activeSocketsByUser.keys());
+
 export const getPresenceFields = (user) => ({
   activityStatus: normalizeActivityStatus(user?.activityStatus),
   activityStatusExpiresAt: serializeActivityStatusExpiresAt(

@@ -68,6 +68,15 @@ export const buildR2OrganizationLogoKey = (organizationId, filename) => {
   return `organizations/${organizationId}/logos/${timestamp}-${filename}`;
 };
 
+export const buildR2OrganizationBannerKey = (organizationId, filename) => {
+  if (!organizationId) {
+    throw new Error("organizationId is required to build organization banner R2 key");
+  }
+
+  const timestamp = Date.now();
+  return `organizations/${organizationId}/banners/${timestamp}-${filename}`;
+};
+
 export const buildR2AttachmentKey = (type, filename) => {
   if (!type) {
     throw new Error("type is required to build attachment R2 key");

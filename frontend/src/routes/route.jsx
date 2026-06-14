@@ -17,6 +17,9 @@ const CallRoomPage = lazy(() => import("../modules/call/CallRoomPage"));
 const FeedPage = lazy(() => import("../modules/feed/FeedPage"));
 const ChatPage = lazy(() => import("../modules/chat/ChatPage"));
 const OrganizationPage = lazy(() => import("../modules/organization/OrganizationPage"));
+const OrganizationDetailPage = lazy(
+  () => import("../modules/organization/OrganizationDetailPage"),
+);
 
 const LazyFallback = () => (
   <div className="route-loading-screen">
@@ -90,6 +93,14 @@ export const router = createBrowserRouter([
             element: (
               <Suspense fallback={<LazyFallback />}>
                 <OrganizationPage />
+              </Suspense>
+            ),
+          },
+          {
+            path: "organization/:organizationId",
+            element: (
+              <Suspense fallback={<LazyFallback />}>
+                <OrganizationDetailPage />
               </Suspense>
             ),
           },

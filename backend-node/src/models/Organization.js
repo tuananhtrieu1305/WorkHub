@@ -33,6 +33,17 @@ const organizationSchema = new mongoose.Schema(
       default: "",
       select: false,
     },
+    bannerUrl: {
+      type: String,
+      trim: true,
+      default: "",
+    },
+    bannerStorageKey: {
+      type: String,
+      trim: true,
+      default: "",
+      select: false,
+    },
     ownerId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
@@ -53,6 +64,32 @@ const organizationSchema = new mongoose.Schema(
     inviteEnabled: {
       type: Boolean,
       default: true,
+    },
+    settings: {
+      requireApproval: {
+        type: Boolean,
+        default: true,
+      },
+      allowMemberInvites: {
+        type: Boolean,
+        default: true,
+      },
+      memberDirectoryVisible: {
+        type: Boolean,
+        default: true,
+      },
+      defaultRoleKey: {
+        type: String,
+        trim: true,
+        lowercase: true,
+        default: "member",
+      },
+      joinMessage: {
+        type: String,
+        trim: true,
+        maxlength: 500,
+        default: "",
+      },
     },
     accentColor: {
       type: String,

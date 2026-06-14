@@ -29,9 +29,22 @@ export const switchOrganization = async (organizationId) => {
   return data;
 };
 
-export const getOrganizationMembers = async (organizationId) => {
+export const getOrganizationMembers = async (organizationId, params = {}) => {
   const { data } = await axiosClient.get(
     `/organizations/${organizationId}/members`,
+    { params },
+  );
+  return data;
+};
+
+export const getOrganizationDetail = async (organizationId) => {
+  const { data } = await axiosClient.get(`/organizations/${organizationId}`);
+  return data;
+};
+
+export const getOrganizationOverview = async (organizationId) => {
+  const { data } = await axiosClient.get(
+    `/organizations/${organizationId}/overview`,
   );
   return data;
 };
@@ -39,6 +52,87 @@ export const getOrganizationMembers = async (organizationId) => {
 export const getOrganizationInvite = async (organizationId) => {
   const { data } = await axiosClient.get(
     `/organizations/${organizationId}/invite`,
+  );
+  return data;
+};
+
+export const getOrganizationRoles = async (organizationId) => {
+  const { data } = await axiosClient.get(`/organizations/${organizationId}/roles`);
+  return data;
+};
+
+export const createOrganizationRole = async (organizationId, payload) => {
+  const { data } = await axiosClient.post(
+    `/organizations/${organizationId}/roles`,
+    payload,
+  );
+  return data;
+};
+
+export const updateOrganizationRole = async (organizationId, roleId, payload) => {
+  const { data } = await axiosClient.patch(
+    `/organizations/${organizationId}/roles/${roleId}`,
+    payload,
+  );
+  return data;
+};
+
+export const deleteOrganizationRole = async (organizationId, roleId) => {
+  await axiosClient.delete(`/organizations/${organizationId}/roles/${roleId}`);
+};
+
+export const updateOrganizationMember = async (
+  organizationId,
+  memberId,
+  payload,
+) => {
+  const { data } = await axiosClient.patch(
+    `/organizations/${organizationId}/members/${memberId}`,
+    payload,
+  );
+  return data;
+};
+
+export const getOrganizationInvites = async (organizationId, params = {}) => {
+  const { data } = await axiosClient.get(
+    `/organizations/${organizationId}/invites`,
+    { params },
+  );
+  return data;
+};
+
+export const createOrganizationInvite = async (organizationId, payload) => {
+  const { data } = await axiosClient.post(
+    `/organizations/${organizationId}/invites`,
+    payload,
+  );
+  return data;
+};
+
+export const updateOrganizationInvite = async (
+  organizationId,
+  inviteId,
+  payload,
+) => {
+  const { data } = await axiosClient.patch(
+    `/organizations/${organizationId}/invites/${inviteId}`,
+    payload,
+  );
+  return data;
+};
+
+export const pauseOrganizationInvites = async (organizationId, payload) => {
+  const { data } = await axiosClient.patch(
+    `/organizations/${organizationId}/invites/pause`,
+    payload,
+  );
+  return data;
+};
+
+export const updateOrganizationSettings = async (organizationId, payload) => {
+  const { data } = await axiosClient.patch(
+    `/organizations/${organizationId}/settings`,
+    payload,
   );
   return data;
 };
@@ -57,6 +151,36 @@ export const updateOrganizationLogo = async (organizationId, file) => {
   const { data } = await axiosClient.patch(
     `/organizations/${organizationId}/logo`,
     formData,
+  );
+  return data;
+};
+
+export const updateOrganizationBanner = async (organizationId, file) => {
+  const formData = new FormData();
+  formData.append("banner", file);
+  const { data } = await axiosClient.patch(
+    `/organizations/${organizationId}/banner`,
+    formData,
+  );
+  return data;
+};
+
+export const updateOrganizationFavorite = async (organizationId, isFavorite) => {
+  const { data } = await axiosClient.patch(
+    `/organizations/${organizationId}/favorite`,
+    { isFavorite },
+  );
+  return data;
+};
+
+export const reviewOrganizationJoinRequest = async (
+  organizationId,
+  memberId,
+  action,
+) => {
+  const { data } = await axiosClient.patch(
+    `/organizations/${organizationId}/members/${memberId}/review`,
+    { action },
   );
   return data;
 };

@@ -14,15 +14,26 @@ const organizationMemberSchema = new mongoose.Schema(
     },
     role: {
       type: String,
-      enum: ["owner", "admin", "member"],
+      trim: true,
+      lowercase: true,
+      maxlength: 64,
       default: "member",
       required: true,
     },
+    roleId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "OrganizationRole",
+      default: null,
+    },
     status: {
       type: String,
-      enum: ["active", "invited", "removed"],
+      enum: ["active", "invited", "pending", "removed"],
       default: "active",
       required: true,
+    },
+    isFavorite: {
+      type: Boolean,
+      default: false,
     },
     invitedBy: {
       type: mongoose.Schema.Types.ObjectId,
@@ -48,6 +59,7 @@ organizationMemberSchema.index(
   { unique: true },
 );
 organizationMemberSchema.index({ userId: 1, status: 1, updatedAt: -1 });
+organizationMemberSchema.index({ userId: 1, isFavorite: 1, updatedAt: -1 });
 organizationMemberSchema.index({ organizationId: 1, status: 1, role: 1 });
 
 const OrganizationMember = mongoose.model(
