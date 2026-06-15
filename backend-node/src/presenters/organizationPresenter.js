@@ -12,6 +12,7 @@ import {
   buildR2OrganizationLogoKey,
   getR2StorageService,
 } from "../services/r2StorageService.js";
+import { logActivity } from "../services/activityLogService.js";
 import { contentDisposition } from "../utils/fileResponse.js";
 import {
   hasOrganizationPermission,
@@ -926,6 +927,20 @@ export const updateOrganizationBanner = async (req, res) => {
   organization.bannerStorageKey = storageKey;
   organization.bannerUrl = buildOrganizationBannerProxyUrl(storageKey);
   await organization.save();
+
+  await logActivity({
+    actorId: req.user._id,
+    action: "Cập nhật ảnh biểu ngữ",
+    entityType: "organization",
+    entityId: organization._id,
+    organizationId: organization._id,
+    metadata: {
+      mediaType: "banner",
+      mimeType: validation.mimeType,
+    },
+    ipAddress: req.ip,
+    userAgent: req.get("user-agent"),
+  });
 
   if (oldStorageKey && oldStorageKey !== storageKey) {
     storage.deleteObject({ key: oldStorageKey }).catch(() => {});

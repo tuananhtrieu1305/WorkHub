@@ -64,8 +64,7 @@ const OrganizationListSection = ({
       </div>
     ) : (
       <div className="mt-5 rounded-3xl border border-dashed border-slate-300 bg-slate-50 px-5 py-8 text-sm font-semibold text-slate-500">
-        Bạn chưa tham gia tổ chức nào. Hãy tạo tổ chức mới hoặc dùng link mời để
-        bắt đầu.
+        Bạn chưa tham gia tổ chức nào. Hãy tạo tổ chức mới hoặc dùng link mời để bắt đầu.
       </div>
     )}
   </SectionShell>

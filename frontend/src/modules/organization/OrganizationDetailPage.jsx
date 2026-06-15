@@ -28,7 +28,11 @@ const OrganizationDetailPage = () => {
   return (
     <main className="organization-page min-h-full px-4 py-5 text-slate-950 sm:px-6 lg:px-8">
       <div className="mx-auto flex w-full max-w-7xl flex-col gap-5">
-        <OrganizationWorkspaceHeader organization={state.activeOrganization} />
+        <OrganizationWorkspaceHeader
+          isUpdatingBanner={state.loading.banner}
+          onUpdateBanner={actions.updateBannerImage}
+          organization={state.activeOrganization}
+        />
 
         <OrganizationWorkspaceTabs
           onSelect={actions.setTab}
@@ -36,60 +40,62 @@ const OrganizationDetailPage = () => {
           tabs={state.availableTabs}
         />
 
-        {state.selectedTab === "overview" && (
-          <OrganizationOverviewSection
-            isLoading={state.loading.overview}
-            overview={state.overview}
-          />
-        )}
+        <div key={state.selectedTab} className="organization-tab-panel">
+          {state.selectedTab === "overview" && (
+            <OrganizationOverviewSection
+              isLoading={state.loading.overview}
+              overview={state.overview}
+            />
+          )}
 
-        {state.selectedTab === "members" && (
-          <OrganizationMembersSection
-            filters={state.memberFilters}
-            isLoading={state.loading.members}
-            members={state.members}
-            onChangeFilters={actions.setMemberFilters}
-            onChangeRole={actions.changeMemberRole}
-            organization={state.activeOrganization}
-            roles={state.roles}
-          />
-        )}
+          {state.selectedTab === "members" && (
+            <OrganizationMembersSection
+              filters={state.memberFilters}
+              isLoading={state.loading.members}
+              members={state.members}
+              onChangeFilters={actions.setMemberFilters}
+              onChangeRole={actions.changeMemberRole}
+              organization={state.activeOrganization}
+              roles={state.roles}
+            />
+          )}
 
-        {state.selectedTab === "roles" && (
-          <OrganizationRolesSection
-            isLoading={state.loading.roles}
-            onDeleteRole={actions.removeRole}
-            onOpenRoleModal={actions.openRoleModal}
-            organization={state.activeOrganization}
-            permissionKeys={state.permissionKeys}
-            roles={state.roles}
-          />
-        )}
+          {state.selectedTab === "roles" && (
+            <OrganizationRolesSection
+              isLoading={state.loading.roles}
+              onDeleteRole={actions.removeRole}
+              onOpenRoleModal={actions.openRoleModal}
+              organization={state.activeOrganization}
+              permissionKeys={state.permissionKeys}
+              roles={state.roles}
+            />
+          )}
 
-        {state.selectedTab === "invites" && (
-          <OrganizationInvitesSection
-            invites={state.invites}
-            isLoading={state.loading.invites}
-            onCopyInvite={actions.copyInvite}
-            onOpenCreateInvite={() => actions.setInviteModalOpen(true)}
-            onOpenPauseInvites={() => actions.setPauseModalOpen(true)}
-            onSetInviteStatus={actions.setInviteStatus}
-            organization={state.activeOrganization}
-          />
-        )}
+          {state.selectedTab === "invites" && (
+            <OrganizationInvitesSection
+              invites={state.invites}
+              isLoading={state.loading.invites}
+              onCopyInvite={actions.copyInvite}
+              onOpenCreateInvite={() => actions.setInviteModalOpen(true)}
+              onOpenPauseInvites={() => actions.setPauseModalOpen(true)}
+              onSetInviteStatus={actions.setInviteStatus}
+              organization={state.activeOrganization}
+            />
+          )}
 
-        {state.selectedTab === "advanced" && (
-          <OrganizationAdvancedSection
-            form={state.advancedForm}
-            isLeaving={state.leaving}
-            isSaving={state.loading.settings}
-            onChange={actions.setAdvancedForm}
-            onLeave={actions.leaveCurrentOrganization}
-            onSubmit={actions.saveSettings}
-            organization={state.activeOrganization}
-            roles={state.roles}
-          />
-        )}
+          {state.selectedTab === "advanced" && (
+            <OrganizationAdvancedSection
+              form={state.advancedForm}
+              isLeaving={state.leaving}
+              isSaving={state.loading.settings}
+              onChange={actions.setAdvancedForm}
+              onLeave={actions.leaveCurrentOrganization}
+              onSubmit={actions.saveSettings}
+              organization={state.activeOrganization}
+              roles={state.roles}
+            />
+          )}
+        </div>
       </div>
 
       <OrganizationRoleModal

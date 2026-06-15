@@ -97,7 +97,12 @@ export const useOrganizationWorkspace = () => {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const { message } = App.useApp();
-  const { user, refreshOrganizations, leaveOrganization } = useAuth();
+  const {
+    user,
+    refreshOrganizations,
+    leaveOrganization,
+    updateOrganizationBanner,
+  } = useAuth();
 
   const [organization, setOrganization] = useState(null);
   const [isLoadingOrganization, setIsLoadingOrganization] = useState(true);
@@ -117,6 +122,7 @@ export const useOrganizationWorkspace = () => {
     roles: false,
     invites: false,
     settings: false,
+    banner: false,
   });
   const [roleModal, setRoleModal] = useState(null);
   const [roleForm, setRoleForm] = useState(defaultRoleForm);
@@ -467,6 +473,31 @@ export const useOrganizationWorkspace = () => {
     [activeOrganization, advancedForm, message, organizationId, refreshOrganizations],
   );
 
+  const updateBannerImage = useCallback(
+    async (file) => {
+      if (!organizationId || !file) return null;
+      if (!hasPermission(activeOrganization, "manageOrganization")) {
+        message.error("Bạn không có quyền cập nhật ảnh biểu ngữ");
+        return null;
+      }
+
+      setLoading((current) => ({ ...current, banner: true }));
+      try {
+        const updatedOrganization = await updateOrganizationBanner(organizationId, file);
+        setOrganization(updatedOrganization);
+        message.success("Đã cập nhật ảnh biểu ngữ");
+        return updatedOrganization;
+      } catch (error) {
+        console.error("Failed to update organization banner:", error);
+        message.error(getErrorMessage(error, "Không thể cập nhật ảnh biểu ngữ"));
+        return null;
+      } finally {
+        setLoading((current) => ({ ...current, banner: false }));
+      }
+    },
+    [activeOrganization, message, organizationId, updateOrganizationBanner],
+  );
+
   const leaveCurrentOrganization = useCallback(async () => {
     if (!organizationId || activeOrganization?.role === "owner" || leaving) return;
 
@@ -565,6 +596,7 @@ export const useOrganizationWorkspace = () => {
       setPauseScope,
       setRoleForm,
       setTab,
+      updateBannerImage,
     },
   };
 };

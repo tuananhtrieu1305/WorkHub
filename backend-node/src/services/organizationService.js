@@ -612,29 +612,162 @@ const buildMonthKey = (date) => {
   return `${value.getFullYear()}-${String(month).padStart(2, "0")}`;
 };
 
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+const startOfDay = (date = new Date()) => {
+  const value = new Date(date);
+  value.setHours(0, 0, 0, 0);
+  return value;
+};
+
+const shiftDays = (date, days) => new Date(date.getTime() + days * DAY_MS);
+
+const buildDayKey = (date) => startOfDay(date).toISOString().slice(0, 10);
+
+const buildDayLabel = (date) =>
+  new Intl.DateTimeFormat("vi-VN", {
+    day: "2-digit",
+    month: "2-digit",
+  }).format(date);
+
+const buildCountMap = (rows = []) =>
+  new Map(rows.map((row) => [row._id, Number(row.count || 0)]));
+
+const buildDailySeries = (startDate, length, rows = []) => {
+  const countMap = buildCountMap(rows);
+
+  return Array.from({ length }, (_, index) => {
+    const date = shiftDays(startDate, index);
+    const key = buildDayKey(date);
+    const value = Number(countMap.get(key) || 0);
+    return {
+      key,
+      date: key,
+      label: buildDayLabel(date),
+      value,
+    };
+  });
+};
+
+const buildWeeklySeries = (startDate, rowsByType = {}) => {
+  const maps = Object.entries(rowsByType).reduce((acc, [key, rows]) => {
+    acc[key] = buildCountMap(rows);
+    return acc;
+  }, {});
+
+  return Array.from({ length: 8 }, (_, index) => {
+    const start = shiftDays(startDate, index * 7);
+    const end = shiftDays(start, 6);
+    const item = {
+      key: `${buildDayKey(start)}:${buildDayKey(end)}`,
+      label: `${buildDayLabel(start)}-${buildDayLabel(end)}`,
+    };
+
+    Object.entries(maps).forEach(([seriesKey, countMap]) => {
+      item[seriesKey] = Array.from({ length: 7 }, (_, dayIndex) => {
+        const dateKey = buildDayKey(shiftDays(start, dayIndex));
+        return Number(countMap.get(dateKey) || 0);
+      }).reduce((sum, value) => sum + value, 0);
+    });
+
+    item.total = Number(item.tasks || 0) + Number(item.documents || 0) + Number(item.posts || 0);
+    return item;
+  });
+};
+
+const buildDelta = (current = 0, previous = 0) => {
+  const difference = Number(current || 0) - Number(previous || 0);
+  const percent = previous
+    ? Math.round((difference / Math.max(previous, 1)) * 100)
+    : current
+      ? 100
+      : 0;
+
+  return {
+    value: difference,
+    percent: Math.abs(percent),
+    direction: difference > 0 ? "up" : difference < 0 ? "down" : "flat",
+  };
+};
+
+const getActivityDisplay = (activity) => {
+  const action = String(activity.action || "").toLowerCase();
+  const entityType = String(activity.entityType || "").toLowerCase();
+
+  if (action.includes("mời") || entityType.includes("invite")) {
+    return { icon: "person_add", tone: "emerald" };
+  }
+  if (action.includes("vai trò") || entityType.includes("role")) {
+    return { icon: "admin_panel_settings", tone: "blue" };
+  }
+  if (action.includes("quyền")) {
+    return { icon: "lock_open", tone: "amber" };
+  }
+  if (action.includes("thu hồi") || action.includes("xóa")) {
+    return { icon: "person_remove", tone: "rose" };
+  }
+  if (action.includes("duyệt") || action.includes("hoàn thành")) {
+    return { icon: "check_circle", tone: "emerald" };
+  }
+  if (action.includes("biểu ngữ") || action.includes("banner")) {
+    return { icon: "wallpaper", tone: "cyan" };
+  }
+
+  return { icon: "bolt", tone: "slate" };
+};
+
 export const buildOrganizationDashboard = async (organizationId) => {
   const organizationObjectId = toObjectId(organizationId);
   const now = new Date();
+  const today = startOfDay(now);
+  const last7Start = shiftDays(today, -6);
+  const previous7Start = shiftDays(last7Start, -7);
+  const last30Start = shiftDays(today, -29);
+  const previous30Start = shiftDays(last30Start, -30);
+  const next7End = shiftDays(today, 7);
+  const eightWeeksAgo = shiftDays(today, -55);
   const sixMonthsAgo = new Date(now);
   sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 5);
   sixMonthsAgo.setDate(1);
   sixMonthsAgo.setHours(0, 0, 0, 0);
 
   const [
+    roles,
     memberCount,
     pendingCount,
     projectCount,
     taskCount,
     openTaskCount,
+    doneTaskCount,
     documentCount,
     postCount,
     meetingCount,
     conversationCount,
+    activeInviteCount,
+    totalInviteCount,
+    newMembersLast30,
+    newMembersPrevious30,
+    invitesLast7,
+    invitesPrevious7,
+    pendingLast7,
+    pendingPrevious7,
+    activitiesLast7,
+    activitiesPrevious7,
+    dueSoonCount,
+    overdueCount,
     taskStatusRows,
     roleRows,
     memberGrowthRows,
+    activityTrendRows,
+    weeklyTaskRows,
+    weeklyCompletedTaskRows,
+    weeklyDocumentRows,
+    weeklyPostRows,
+    projectStatusRows,
+    focusTasks,
     recentActivities,
   ] = await Promise.all([
+    getOrganizationRoles(organizationId),
     countDocuments(OrganizationMember, { organizationId, status: "active" }),
     countDocuments(OrganizationMember, { organizationId, status: "pending" }),
     countDocuments(Project, { organizationId, status: { $ne: "archived" } }),
@@ -644,6 +777,7 @@ export const buildOrganizationDashboard = async (organizationId) => {
       deletedAt: null,
       status: { $nin: ["done", "cancelled"] },
     }),
+    countDocuments(Task, { organizationId, deletedAt: null, status: "done" }),
     countDocuments(Document, {
       organizationId,
       deletedAt: null,
@@ -652,6 +786,60 @@ export const buildOrganizationDashboard = async (organizationId) => {
     countDocuments(Post, { organizationId }),
     countDocuments(Meeting, { organizationId }),
     countDocuments(Conversation, { organizationId }),
+    countDocuments(OrganizationInvite, {
+      organizationId,
+      status: "active",
+      $or: [{ expiresAt: null }, { expiresAt: { $gt: now } }],
+    }),
+    countDocuments(OrganizationInvite, { organizationId }),
+    countDocuments(OrganizationMember, {
+      organizationId,
+      status: "active",
+      joinedAt: { $gte: last30Start },
+    }),
+    countDocuments(OrganizationMember, {
+      organizationId,
+      status: "active",
+      joinedAt: { $gte: previous30Start, $lt: last30Start },
+    }),
+    countDocuments(OrganizationInvite, {
+      organizationId,
+      createdAt: { $gte: last7Start },
+    }),
+    countDocuments(OrganizationInvite, {
+      organizationId,
+      createdAt: { $gte: previous7Start, $lt: last7Start },
+    }),
+    countDocuments(OrganizationMember, {
+      organizationId,
+      status: "pending",
+      createdAt: { $gte: last7Start },
+    }),
+    countDocuments(OrganizationMember, {
+      organizationId,
+      status: "pending",
+      createdAt: { $gte: previous7Start, $lt: last7Start },
+    }),
+    countDocuments(ActivityLog, {
+      organizationId,
+      createdAt: { $gte: last7Start },
+    }),
+    countDocuments(ActivityLog, {
+      organizationId,
+      createdAt: { $gte: previous7Start, $lt: last7Start },
+    }),
+    countDocuments(Task, {
+      organizationId,
+      deletedAt: null,
+      status: { $nin: ["done", "cancelled"] },
+      endAt: { $gte: today, $lte: next7End },
+    }),
+    countDocuments(Task, {
+      organizationId,
+      deletedAt: null,
+      status: { $nin: ["done", "cancelled"] },
+      endAt: { $lt: today },
+    }),
     Task.aggregate([
       { $match: { organizationId: organizationObjectId, deletedAt: null } },
       { $group: { _id: "$status", count: { $sum: 1 } } },
@@ -679,12 +867,105 @@ export const buildOrganizationDashboard = async (organizationId) => {
       },
       { $sort: { "_id.year": 1, "_id.month": 1 } },
     ]),
+    ActivityLog.aggregate([
+      {
+        $match: {
+          organizationId: organizationObjectId,
+          createdAt: { $gte: last30Start },
+        },
+      },
+      {
+        $group: {
+          _id: { $dateToString: { format: "%Y-%m-%d", date: "$createdAt" } },
+          count: { $sum: 1 },
+        },
+      },
+      { $sort: { _id: 1 } },
+    ]),
+    Task.aggregate([
+      {
+        $match: {
+          organizationId: organizationObjectId,
+          deletedAt: null,
+          createdAt: { $gte: eightWeeksAgo },
+        },
+      },
+      {
+        $group: {
+          _id: { $dateToString: { format: "%Y-%m-%d", date: "$createdAt" } },
+          count: { $sum: 1 },
+        },
+      },
+      { $sort: { _id: 1 } },
+    ]),
+    Task.aggregate([
+      {
+        $match: {
+          organizationId: organizationObjectId,
+          deletedAt: null,
+          completedAt: { $gte: eightWeeksAgo },
+        },
+      },
+      {
+        $group: {
+          _id: { $dateToString: { format: "%Y-%m-%d", date: "$completedAt" } },
+          count: { $sum: 1 },
+        },
+      },
+      { $sort: { _id: 1 } },
+    ]),
+    Document.aggregate([
+      {
+        $match: {
+          organizationId: organizationObjectId,
+          deletedAt: null,
+          status: { $ne: "deleted" },
+          createdAt: { $gte: eightWeeksAgo },
+        },
+      },
+      {
+        $group: {
+          _id: { $dateToString: { format: "%Y-%m-%d", date: "$createdAt" } },
+          count: { $sum: 1 },
+        },
+      },
+      { $sort: { _id: 1 } },
+    ]),
+    Post.aggregate([
+      {
+        $match: {
+          organizationId: organizationObjectId,
+          createdAt: { $gte: eightWeeksAgo },
+        },
+      },
+      {
+        $group: {
+          _id: { $dateToString: { format: "%Y-%m-%d", date: "$createdAt" } },
+          count: { $sum: 1 },
+        },
+      },
+      { $sort: { _id: 1 } },
+    ]),
+    Project.aggregate([
+      { $match: { organizationId: organizationObjectId } },
+      { $group: { _id: "$status", count: { $sum: 1 } } },
+    ]),
+    Task.find({
+      organizationId,
+      deletedAt: null,
+      status: { $nin: ["done", "cancelled"] },
+      endAt: { $ne: null, $lte: next7End },
+    })
+      .populate("ownerId", "_id fullName email avatar")
+      .sort({ endAt: 1 })
+      .limit(5),
     ActivityLog.find({ organizationId })
       .populate("actorId", "_id fullName email avatar")
       .sort({ createdAt: -1 })
-      .limit(8),
+      .limit(10),
   ]);
 
+  const taskStatus = buildStatusCounts(taskStatusRows);
   const growthByMonth = new Map(
     memberGrowthRows.map((row) => [
       `${row._id.year}-${String(row._id.month).padStart(2, "0")}`,
@@ -697,27 +978,145 @@ export const buildOrganizationDashboard = async (organizationId) => {
     const key = buildMonthKey(date);
     return { month: key, count: Number(growthByMonth.get(key) || 0) };
   });
+  const roleMap = new Map(roles.map((role) => [role.key, serializeOrganizationRole(role)]));
+  const roleDistribution = buildStatusCounts(roleRows);
+  const roleBreakdown = roleRows.map((row) => {
+    const role = roleMap.get(row._id);
+    return {
+      key: row._id || "unknown",
+      label: role?.name || row._id || "Không rõ",
+      color: role?.color || "#64748b",
+      count: Number(row.count || 0),
+    };
+  });
+  const projectStatus = buildStatusCounts(projectStatusRows);
+  const activityTrend = buildDailySeries(last30Start, 30, activityTrendRows);
+  const weeklyThroughput = buildWeeklySeries(eightWeeksAgo, {
+    tasks: weeklyTaskRows,
+    completed: weeklyCompletedTaskRows,
+    documents: weeklyDocumentRows,
+    posts: weeklyPostRows,
+  });
+  const completionRate = taskCount
+    ? Math.round((doneTaskCount / Math.max(taskCount, 1)) * 100)
+    : 0;
+  const activityRate = Math.min(
+    99,
+    Math.round(
+      completionRate * 0.56 +
+        Math.min(activitiesLast7, 30) * 1.15 +
+        Math.min(memberCount, 30) * 0.72,
+    ),
+  );
+  const activityPeak = Math.max(1, ...activityTrend.map((item) => item.value));
 
   return {
     metrics: {
       members: memberCount,
       pendingMembers: pendingCount,
+      roles: roles.length,
+      activeInvites: activeInviteCount,
+      invites: totalInviteCount,
       projects: projectCount,
       tasks: taskCount,
       openTasks: openTaskCount,
+      doneTasks: doneTaskCount,
       documents: documentCount,
       posts: postCount,
       meetings: meetingCount,
       conversations: conversationCount,
+      dueSoonTasks: dueSoonCount,
+      overdueTasks: overdueCount,
+      activityRate,
+      completionRate,
     },
-    taskStatus: buildStatusCounts(taskStatusRows),
-    roleDistribution: buildStatusCounts(roleRows),
+    statCards: [
+      {
+        key: "members",
+        icon: "groups",
+        label: "thành viên",
+        value: memberCount,
+        tone: "teal",
+        delta: buildDelta(newMembersLast30, newMembersPrevious30),
+        detail: `${newMembersLast30} mới trong 30 ngày`,
+      },
+      {
+        key: "roles",
+        icon: "shield",
+        label: "vai trò",
+        value: roles.length,
+        tone: "blue",
+        delta: { value: 0, percent: 0, direction: "flat" },
+        detail: "Không đổi",
+      },
+      {
+        key: "invites",
+        icon: "mail",
+        label: "lời mời",
+        value: activeInviteCount,
+        tone: "indigo",
+        delta: buildDelta(invitesLast7, invitesPrevious7),
+        detail: `${invitesLast7} mới tuần này`,
+      },
+      {
+        key: "pending",
+        icon: "schedule",
+        label: "yêu cầu chờ duyệt",
+        value: pendingCount,
+        tone: "amber",
+        delta: buildDelta(pendingLast7, pendingPrevious7),
+        detail: `${pendingLast7} phát sinh tuần này`,
+      },
+      {
+        key: "activity",
+        icon: "trending_up",
+        label: "hoạt động",
+        value: `${activityRate}%`,
+        tone: "emerald",
+        delta: buildDelta(activitiesLast7, activitiesPrevious7),
+        detail: "so với tuần trước",
+      },
+    ],
+    taskStatus,
+    roleDistribution,
+    roleBreakdown,
     memberGrowth,
+    activityTrend: activityTrend.map((item) => ({
+      ...item,
+      percent: Math.round((item.value / activityPeak) * 100),
+    })),
+    weeklyThroughput,
+    projectStatus,
+    health: {
+      activityRate,
+      completionRate,
+      dueSoonTasks: dueSoonCount,
+      overdueTasks: overdueCount,
+      openTasks: openTaskCount,
+      activeProjects: Number(projectStatus.active || 0),
+      completedProjects: Number(projectStatus.completed || 0),
+    },
+    focusQueue: focusTasks.map((task) => ({
+      id: toId(task._id),
+      title: task.title,
+      status: task.status,
+      priority: task.priority,
+      endAt: task.endAt,
+      owner: task.ownerId
+        ? {
+            id: toId(task.ownerId._id || task.ownerId.id),
+            fullName: task.ownerId.fullName || "",
+            email: task.ownerId.email || "",
+            avatar: task.ownerId.avatar || "",
+          }
+        : null,
+    })),
     recentActivities: recentActivities.map((activity) => ({
       id: toId(activity._id),
       action: activity.action,
       entityType: activity.entityType,
       createdAt: activity.createdAt,
+      ...getActivityDisplay(activity),
       actor: activity.actorId
         ? {
             id: toId(activity.actorId._id || activity.actorId.id),
