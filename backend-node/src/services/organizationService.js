@@ -44,8 +44,13 @@ export const buildInviteLinkFromCode = (code, baseUrl = "") => {
   return origin ? `${origin}/organization/join/${code}` : `/organization/join/${code}`;
 };
 
-export const createInviteCode = () =>
-  crypto.randomBytes(18).toString("base64url");
+const INVITE_CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+const INVITE_CODE_LENGTH = 10;
+
+export const createInviteCode = () => {
+  const bytes = crypto.randomBytes(INVITE_CODE_LENGTH);
+  return Array.from(bytes, (byte) => INVITE_CODE_ALPHABET[byte % INVITE_CODE_ALPHABET.length]).join("");
+};
 
 export const createUniqueInviteCode = async () => {
   let code = createInviteCode();
@@ -57,6 +62,29 @@ export const createUniqueInviteCode = async () => {
   }
   return code;
 };
+
+export const deleteExpiredOrganizationInvites = async (criteria = {}) =>
+  OrganizationInvite.deleteMany({
+    ...criteria,
+    expiresAt: { $ne: null, $lte: new Date() },
+  });
+
+export const resumeExpiredOrganizationInvitePauses = async (criteria = {}) =>
+  OrganizationInvite.updateMany(
+    {
+      ...criteria,
+      status: "paused",
+      pausedUntil: { $ne: null, $lte: new Date() },
+    },
+    {
+      $set: {
+        status: "active",
+        pausedAt: null,
+        pausedBy: null,
+        pausedUntil: null,
+      },
+    },
+  );
 
 const roleMapKey = (organizationId, roleKey) =>
   `${toId(organizationId)}:${normalizeRoleKey(roleKey) || "member"}`;
@@ -221,13 +249,19 @@ export const serializeOrganizationRole = (role) => {
   };
 };
 
-export const serializeOrganizationInvite = (invite, { baseUrl = "" } = {}) => {
+export const serializeOrganizationInvite = (
+  invite,
+  { baseUrl = "", canManageInvites = false, currentUserId = null } = {},
+) => {
   const doc = invite?.toObject?.() || invite;
   const inviter = doc.createdBy;
   const maxUses = doc.maxUses ?? null;
   const expiresAt = doc.expiresAt || null;
+  const pausedUntil = doc.pausedUntil || null;
   const isExpired = Boolean(expiresAt && new Date(expiresAt).getTime() <= Date.now());
   const isExhausted = Boolean(maxUses && Number(doc.usesCount || 0) >= maxUses);
+  const creatorId = toId(inviter?._id || inviter?.id || inviter);
+  const isCreator = Boolean(currentUserId && creatorId === toId(currentUserId));
 
   return {
     id: toId(doc._id || doc.id),
@@ -240,8 +274,13 @@ export const serializeOrganizationInvite = (invite, { baseUrl = "" } = {}) => {
     usesCount: Number(doc.usesCount || 0),
     remainingUses: maxUses ? Math.max(maxUses - Number(doc.usesCount || 0), 0) : null,
     expiresAt,
+    pausedAt: doc.pausedAt || null,
+    pausedUntil,
+    bypassApproval: Boolean(doc.bypassApproval),
     isExpired,
     note: doc.note || "",
+    canDelete: Boolean(canManageInvites || isCreator),
+    canUpdate: Boolean(canManageInvites || isCreator),
     createdAt: doc.createdAt,
     updatedAt: doc.updatedAt,
     inviter: inviter
@@ -424,6 +463,11 @@ export const findInviteTarget = async (inviteInput) => {
   const inviteCode = normalizeInviteCode(inviteInput);
   if (!inviteCode) return null;
 
+  await Promise.all([
+    deleteExpiredOrganizationInvites(),
+    resumeExpiredOrganizationInvitePauses(),
+  ]);
+
   const invite = await OrganizationInvite.findOne({
     code: inviteCode,
     status: "active",
@@ -492,7 +536,13 @@ export const ensureOrganizationMember = async (
 export const ensureOrganizationJoinRequest = async (
   organizationId,
   userId,
-  { invitedBy = null, requireApproval = true, role = "member" } = {},
+  {
+    invitedBy = null,
+    inviteId = null,
+    inviteUsageCountedAt = null,
+    requireApproval = true,
+    role = "member",
+  } = {},
 ) => {
   const existing = await OrganizationMember.findOne({ organizationId, userId });
   const nextStatus = requireApproval ? "pending" : "active";
@@ -504,6 +554,12 @@ export const ensureOrganizationJoinRequest = async (
     existing.status = nextStatus;
     existing.role = existing.role || role;
     existing.invitedBy = existing.invitedBy || invitedBy;
+    const previousInviteId = toId(existing.inviteId);
+    if (inviteId) existing.inviteId = inviteId;
+    existing.inviteUsageCountedAt =
+      inviteId && previousInviteId !== toId(inviteId)
+        ? inviteUsageCountedAt
+        : inviteUsageCountedAt || existing.inviteUsageCountedAt;
     existing.removedAt = null;
     existing.joinedAt = nextStatus === "active" ? new Date() : null;
     await existing.save();
@@ -519,6 +575,8 @@ export const ensureOrganizationJoinRequest = async (
         removedAt: null,
         joinedAt: nextStatus === "active" ? new Date() : null,
         invitedBy,
+        inviteId,
+        inviteUsageCountedAt,
       },
     },
     { new: true, upsert: true, setDefaultsOnInsert: true },
@@ -594,6 +652,7 @@ export const normalizeOrganizationInvitePayload = (payload = {}) => {
   return {
     expiresAt,
     maxUses,
+    bypassApproval: Boolean(payload.bypassApproval),
     note: String(payload.note || "").trim().slice(0, 300),
   };
 };
@@ -1139,6 +1198,7 @@ export default {
   createUniqueInviteCode,
   createUniqueOrganizationSlug,
   buildOrganizationStatsMap,
+  deleteExpiredOrganizationInvites,
   ensureOrganizationMember,
   ensureOrganizationJoinRequest,
   ensureDefaultOrganizationRoles,
@@ -1152,6 +1212,7 @@ export default {
   normalizeOrganizationPayload,
   normalizeOrganizationRolePayload,
   normalizeOrganizationSettingsPayload,
+  resumeExpiredOrganizationInvitePauses,
   serializeOrganizationInvite,
   serializeOrganization,
   serializeOrganizationRole,

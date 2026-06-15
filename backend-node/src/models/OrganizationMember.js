@@ -40,6 +40,15 @@ const organizationMemberSchema = new mongoose.Schema(
       ref: "User",
       default: null,
     },
+    inviteId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "OrganizationInvite",
+      default: null,
+    },
+    inviteUsageCountedAt: {
+      type: Date,
+      default: null,
+    },
     joinedAt: {
       type: Date,
       default: Date.now,

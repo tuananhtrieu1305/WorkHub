@@ -5,6 +5,7 @@ import {
   createOrganizationInvite,
   createOrganization,
   createOrganizationRole,
+  deleteOrganizationInvite,
   deleteOrganizationRole,
   getMyOrganizations,
   getOrganizationDetail,
@@ -55,6 +56,11 @@ router.patch(
   "/:id/invites/:inviteId",
   protect,
   asyncHandler(updateOrganizationInvite),
+);
+router.delete(
+  "/:id/invites/:inviteId",
+  protect,
+  asyncHandler(deleteOrganizationInvite),
 );
 router.patch("/:id/settings", protect, asyncHandler(updateOrganizationSettings));
 router.patch("/:id/favorite", protect, asyncHandler(updateOrganizationFavorite));

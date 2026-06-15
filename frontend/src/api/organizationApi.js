@@ -121,6 +121,10 @@ export const updateOrganizationInvite = async (
   return data;
 };
 
+export const deleteOrganizationInvite = async (organizationId, inviteId) => {
+  await axiosClient.delete(`/organizations/${organizationId}/invites/${inviteId}`);
+};
+
 export const pauseOrganizationInvites = async (organizationId, payload) => {
   const { data } = await axiosClient.patch(
     `/organizations/${organizationId}/invites/pause`,

@@ -4,6 +4,7 @@ import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import {
   createOrganizationInvite,
   createOrganizationRole,
+  deleteOrganizationInvite,
   deleteOrganizationRole,
   getOrganizationDetail,
   getOrganizationInvites,
@@ -70,24 +71,35 @@ const defaultRoleForm = {
 };
 
 const defaultInviteForm = {
-  expiresIn: "7",
+  expiresIn: "7d",
   maxUses: "",
   note: "",
+  bypassApproval: false,
+};
+
+const inviteExpiryDurations = {
+  "30m": 30 * 60 * 1000,
+  "1h": 60 * 60 * 1000,
+  "6h": 6 * 60 * 60 * 1000,
+  "12h": 12 * 60 * 60 * 1000,
+  "1d": 24 * 60 * 60 * 1000,
+  "7d": 7 * 24 * 60 * 60 * 1000,
 };
 
 const getErrorMessage = (error, fallback) =>
   error?.response?.data?.message || fallback;
 
 const buildInvitePayload = (form) => {
-  const days = Number(form.expiresIn);
+  const duration = inviteExpiryDurations[form.expiresIn];
   const expiresAt =
-    Number.isFinite(days) && days > 0
-      ? new Date(Date.now() + days * 24 * 60 * 60 * 1000).toISOString()
+    Number.isFinite(duration) && duration > 0
+      ? new Date(Date.now() + duration).toISOString()
       : null;
 
   return {
     expiresAt,
     maxUses: form.maxUses ? Number(form.maxUses) : null,
+    bypassApproval: Boolean(form.bypassApproval),
     note: form.note,
   };
 };
@@ -130,6 +142,7 @@ export const useOrganizationWorkspace = () => {
   const [inviteForm, setInviteForm] = useState(defaultInviteForm);
   const [pauseModalOpen, setPauseModalOpen] = useState(false);
   const [pauseScope, setPauseScope] = useState("all");
+  const [pauseDurationHours, setPauseDurationHours] = useState("1");
   const [advancedForm, setAdvancedForm] = useState(null);
   const [leaving, setLeaving] = useState(false);
 
@@ -361,8 +374,8 @@ export const useOrganizationWorkspace = () => {
         );
         setInviteModalOpen(false);
         setInviteForm(defaultInviteForm);
-        await navigator.clipboard?.writeText(invite.inviteLink);
-        message.success("Đã tạo và sao chép liên kết mời");
+        await navigator.clipboard?.writeText(invite.code);
+        message.success("Đã tạo và sao chép mã mời");
         loadInvites();
         refreshOrganization();
       } catch (error) {
@@ -375,13 +388,13 @@ export const useOrganizationWorkspace = () => {
 
   const copyInvite = useCallback(
     async (invite) => {
-      if (!invite?.inviteLink) return;
+      if (!invite?.code) return;
 
       try {
-        await navigator.clipboard.writeText(invite.inviteLink);
-        message.success("Đã sao chép liên kết mời");
+        await navigator.clipboard.writeText(invite.code);
+        message.success("Đã sao chép mã mời");
       } catch {
-        message.error("Không thể sao chép liên kết");
+        message.error("Không thể sao chép mã mời");
       }
     },
     [message],
@@ -392,7 +405,10 @@ export const useOrganizationWorkspace = () => {
       if (!organizationId || !invite?.id) return;
 
       try {
-        await updateOrganizationInvite(organizationId, invite.id, { status });
+        await updateOrganizationInvite(organizationId, invite.id, {
+          status,
+          durationHours: status === "paused" ? 1 : undefined,
+        });
         message.success(status === "paused" ? "Đã tạm dừng lời mời" : "Đã cập nhật lời mời");
         loadInvites();
       } catch (error) {
@@ -403,6 +419,23 @@ export const useOrganizationWorkspace = () => {
     [loadInvites, message, organizationId],
   );
 
+  const deleteInvite = useCallback(
+    async (invite) => {
+      if (!organizationId || !invite?.id) return;
+
+      try {
+        await deleteOrganizationInvite(organizationId, invite.id);
+        message.success("Đã xóa lời mời");
+        loadInvites();
+        refreshOrganization();
+      } catch (error) {
+        console.error("Failed to delete invite:", error);
+        message.error(getErrorMessage(error, "Không thể xóa lời mời"));
+      }
+    },
+    [loadInvites, message, organizationId, refreshOrganization],
+  );
+
   const pauseInvites = useCallback(
     async (event) => {
       event.preventDefault();
@@ -411,6 +444,7 @@ export const useOrganizationWorkspace = () => {
       try {
         const result = await pauseOrganizationInvites(organizationId, {
           scope: pauseScope,
+          durationHours: Number(pauseDurationHours),
         });
         setPauseModalOpen(false);
         message.success(`Đã tạm dừng ${result.pausedCount || 0} lời mời`);
@@ -421,7 +455,14 @@ export const useOrganizationWorkspace = () => {
         message.error(getErrorMessage(error, "Không thể tạm dừng lời mời"));
       }
     },
-    [loadInvites, message, organizationId, pauseScope, refreshOrganization],
+    [
+      loadInvites,
+      message,
+      organizationId,
+      pauseDurationHours,
+      pauseScope,
+      refreshOrganization,
+    ],
   );
 
   const saveSettings = useCallback(
@@ -563,6 +604,7 @@ export const useOrganizationWorkspace = () => {
       memberFilters,
       members,
       overview,
+      pauseDurationHours,
       pauseModalOpen,
       pauseScope,
       permissionKeys,
@@ -576,6 +618,7 @@ export const useOrganizationWorkspace = () => {
       closeRoleModal,
       copyInvite,
       createInvite,
+      deleteInvite,
       leaveCurrentOrganization,
       loadInvites,
       loadMembers,
@@ -590,6 +633,7 @@ export const useOrganizationWorkspace = () => {
       setAdvancedForm,
       setInviteForm,
       setInviteModalOpen,
+      setPauseDurationHours,
       setInviteStatus,
       setMemberFilters,
       setPauseModalOpen,

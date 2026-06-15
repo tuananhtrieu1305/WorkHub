@@ -35,6 +35,10 @@ const organizationInviteSchema = new Schema(
       default: null,
       min: 1,
     },
+    bypassApproval: {
+      type: Boolean,
+      default: false,
+    },
     usesCount: {
       type: Number,
       default: 0,
@@ -53,6 +57,11 @@ const organizationInviteSchema = new Schema(
       type: Schema.Types.ObjectId,
       ref: "User",
       default: null,
+    },
+    pausedUntil: {
+      type: Date,
+      default: null,
+      index: true,
     },
     note: {
       type: String,

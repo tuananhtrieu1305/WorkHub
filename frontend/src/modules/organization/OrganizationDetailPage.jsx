@@ -76,6 +76,7 @@ const OrganizationDetailPage = () => {
               invites={state.invites}
               isLoading={state.loading.invites}
               onCopyInvite={actions.copyInvite}
+              onDeleteInvite={actions.deleteInvite}
               onOpenCreateInvite={() => actions.setInviteModalOpen(true)}
               onOpenPauseInvites={() => actions.setPauseModalOpen(true)}
               onSetInviteStatus={actions.setInviteStatus}
@@ -113,9 +114,12 @@ const OrganizationDetailPage = () => {
         onClose={() => actions.setInviteModalOpen(false)}
         onSubmit={actions.createInvite}
         open={state.inviteModalOpen}
+        organization={state.activeOrganization}
       />
 
       <OrganizationPauseInvitesModal
+        durationHours={state.pauseDurationHours}
+        onChangeDuration={actions.setPauseDurationHours}
         onChangeScope={actions.setPauseScope}
         onClose={() => actions.setPauseModalOpen(false)}
         onSubmit={actions.pauseInvites}

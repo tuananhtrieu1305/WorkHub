@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import {
+  createInviteCode,
+  normalizeOrganizationInvitePayload,
   normalizeOrganizationPayload,
   serializeOrganization,
 } from "../src/services/organizationService.js";
@@ -53,4 +55,22 @@ test("serializeOrganization includes the member favorite flag", () => {
   assert.equal(payload.isFavorite, true);
   assert.equal(payload.memberCount, 4);
   assert.equal(payload.pendingCount, 1);
+});
+
+test("createInviteCode returns a short readable code", () => {
+  const code = createInviteCode();
+
+  assert.match(code, /^[A-Z0-9]+$/);
+  assert.ok(code.length >= 7);
+  assert.ok(code.length <= 12);
+});
+
+test("normalizeOrganizationInvitePayload keeps approval bypass flag", () => {
+  const payload = normalizeOrganizationInvitePayload({
+    bypassApproval: true,
+    maxUses: 25,
+  });
+
+  assert.equal(payload.bypassApproval, true);
+  assert.equal(payload.maxUses, 25);
 });

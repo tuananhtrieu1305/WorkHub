@@ -34,7 +34,7 @@ const OrganizationHero = ({
               <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
                 <div className="min-w-0">
                   <div className="inline-flex items-center gap-2 rounded-full bg-white/80 px-3 py-1.5 text-xs font-black text-slate-700 ring-1 ring-white/80 backdrop-blur">
-                    <Icon name="workspaces" />
+                    <Icon name="sweep" />
                     Đang sử dụng
                   </div>
                   <div className="mt-5 flex flex-col gap-4 sm:flex-row sm:items-center">

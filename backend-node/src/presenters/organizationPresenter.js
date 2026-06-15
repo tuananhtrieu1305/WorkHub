@@ -25,6 +25,7 @@ import {
   buildUserOrganizationContext,
   buildOrganizationStatsMap,
   createUniqueInviteCode,
+  deleteExpiredOrganizationInvites,
   createUniqueOrganizationSlug,
   ensureOrganizationMember,
   ensureOrganizationJoinRequest,
@@ -35,6 +36,7 @@ import {
   normalizeOrganizationPayload,
   normalizeOrganizationRolePayload,
   normalizeOrganizationSettingsPayload,
+  resumeExpiredOrganizationInvitePauses,
   serializeOrganization,
   serializeOrganizationInvite,
   serializeOrganizationRole,
@@ -56,6 +58,8 @@ const ALLOWED_LOGO_MIMES = new Set([
 const ALLOWED_LOGO_EXTENSIONS = new Set([".jpg", ".jpeg", ".png", ".gif", ".webp"]);
 const MAX_LOGO_SIZE_BYTES = 5 * 1024 * 1024;
 const MAX_BANNER_SIZE_BYTES = 8 * 1024 * 1024;
+const HOUR_MS = 60 * 60 * 1000;
+const PAUSE_DURATION_HOURS = new Set([1, 2, 4, 6, 12, 24]);
 
 const getSingleString = (value, fallback = "") => {
   if (Array.isArray(value)) return value[0] ?? fallback;
@@ -70,6 +74,11 @@ const sanitizeLogoFileName = (fileName = "") => {
     .replace(/^-+|-+$/g, "")
     .slice(0, 80);
   return `${baseName || "organization-logo"}${extension || ".png"}`;
+};
+
+const normalizePauseDurationHours = (value) => {
+  const duration = Number(value);
+  return PAUSE_DURATION_HOURS.has(duration) ? duration : 1;
 };
 
 const isOrganizationLogoStorageKey = (storageKey = "") =>
@@ -173,6 +182,41 @@ const requireOrganizationPermission = async (
     throw new ApiError(403, message || "You do not have permission");
   }
   return result;
+};
+
+const recordInviteSuccessfulUse = async (invite, membership, userId) => {
+  if (!invite || !membership || membership.inviteUsageCountedAt) return;
+  if (String(invite.createdBy?._id || invite.createdBy) === String(userId)) {
+    await membership.save();
+    return;
+  }
+
+  const maxUses = invite.maxUses ?? null;
+  if (maxUses && Number(invite.usesCount || 0) >= maxUses) {
+    throw new ApiError(400, "Invite usage limit has been reached");
+  }
+
+  const usedAt = new Date();
+  invite.usesCount = Number(invite.usesCount || 0) + 1;
+  invite.lastUsedAt = usedAt;
+  membership.inviteUsageCountedAt = usedAt;
+  if (!membership.inviteId) membership.inviteId = invite._id;
+
+  await Promise.all([invite.save(), membership.save()]);
+};
+
+const recordMembershipInviteUsage = async (membership) => {
+  if (!membership?.inviteId || membership.inviteUsageCountedAt) return;
+
+  const invite = await OrganizationInvite.findOne({
+    _id: membership.inviteId,
+    organizationId: membership.organizationId,
+  });
+  if (!invite) {
+    await membership.save();
+    return;
+  }
+  await recordInviteSuccessfulUse(invite, membership, membership.userId?._id || membership.userId);
 };
 
 const serializeOrganizationWithStats = async (organization, membership, req) => {
@@ -281,30 +325,31 @@ export const joinOrganization = async (req, res) => {
     throw new ApiError(404, "Invite link is invalid or disabled");
   }
   const { organization, invite } = inviteTarget;
-  const requireApproval = organization.settings?.requireApproval !== false;
+  const requireApproval =
+    organization.settings?.requireApproval !== false && !invite?.bypassApproval;
   const existingMembership = await OrganizationMember.findOne({
     organizationId: organization._id,
     userId: req.user._id,
   }).select("status");
+  const shouldTrackInviteUse = Boolean(
+    invite &&
+      String(invite.createdBy) !== String(req.user._id) &&
+      !["active", "pending"].includes(existingMembership?.status),
+  );
 
   const membership = await ensureOrganizationJoinRequest(
     organization._id,
     req.user._id,
     {
       invitedBy: invite?.createdBy || null,
+      inviteId: shouldTrackInviteUse ? invite?._id : null,
       requireApproval,
       role: organization.settings?.defaultRoleKey || "member",
     },
   );
 
-  if (
-    invite &&
-    String(invite.createdBy) !== String(req.user._id) &&
-    !["active", "pending"].includes(existingMembership?.status)
-  ) {
-    invite.usesCount = Number(invite.usesCount || 0) + 1;
-    invite.lastUsedAt = new Date();
-    await invite.save();
+  if (shouldTrackInviteUse && membership.status === "active") {
+    await recordInviteSuccessfulUse(invite, membership, req.user._id);
   }
 
   if (membership.status === "active") {
@@ -640,6 +685,11 @@ export const getOrganizationInvites = async (req, res) => {
   }
 
   const canManageInvites = hasOrganizationPermission(membership, "manageInvites");
+  await Promise.all([
+    deleteExpiredOrganizationInvites({ organizationId: req.params.id }),
+    resumeExpiredOrganizationInvitePauses({ organizationId: req.params.id }),
+  ]);
+
   const query = { organizationId: req.params.id };
   if (!canManageInvites) query.createdBy = req.user._id;
   if (String(req.query.status || "active") !== "all") {
@@ -652,7 +702,11 @@ export const getOrganizationInvites = async (req, res) => {
 
   res.json({
     content: invites.map((invite) =>
-      serializeOrganizationInvite(invite, { baseUrl: getBaseUrl(req) }),
+      serializeOrganizationInvite(invite, {
+        baseUrl: getBaseUrl(req),
+        canManageInvites,
+        currentUserId: req.user._id,
+      }),
     ),
     canManageInvites,
     canCreateInvites:
@@ -691,13 +745,19 @@ export const createOrganizationInvite = async (req, res) => {
     code: await createUniqueInviteCode(),
     maxUses: payload.maxUses,
     expiresAt: payload.expiresAt,
+    bypassApproval:
+      organization.settings?.requireApproval !== false && payload.bypassApproval,
     note: payload.note,
   });
   await invite.populate("createdBy", "_id fullName email avatar");
 
-  res
-    .status(201)
-    .json(serializeOrganizationInvite(invite, { baseUrl: getBaseUrl(req) }));
+  res.status(201).json(
+    serializeOrganizationInvite(invite, {
+      baseUrl: getBaseUrl(req),
+      canManageInvites: hasOrganizationPermission(membership, "manageInvites"),
+      currentUserId: req.user._id,
+    }),
+  );
 };
 
 export const updateOrganizationInvite = async (req, res) => {
@@ -731,8 +791,16 @@ export const updateOrganizationInvite = async (req, res) => {
     }
     invite.status = status;
     if (status === "paused") {
+      const pausedUntil = new Date(
+        Date.now() + normalizePauseDurationHours(req.body?.durationHours) * HOUR_MS,
+      );
       invite.pausedAt = new Date();
       invite.pausedBy = req.user._id;
+      invite.pausedUntil = pausedUntil;
+    } else if (status === "active" || status === "revoked") {
+      invite.pausedAt = null;
+      invite.pausedBy = null;
+      invite.pausedUntil = null;
     }
   }
 
@@ -742,7 +810,41 @@ export const updateOrganizationInvite = async (req, res) => {
   if (req.body.note !== undefined) invite.note = payload.note;
   await invite.save();
 
-  res.json(serializeOrganizationInvite(invite, { baseUrl: getBaseUrl(req) }));
+  res.json(
+    serializeOrganizationInvite(invite, {
+      baseUrl: getBaseUrl(req),
+      canManageInvites: canManage,
+      currentUserId: req.user._id,
+    }),
+  );
+};
+
+export const deleteOrganizationInvite = async (req, res) => {
+  const permissionContext = await getMembershipWithPermissions(
+    req.params.id,
+    req.user._id,
+  );
+  const membership = permissionContext?.membership;
+  if (!membership) {
+    throw new ApiError(403, "You are not a member of this organization");
+  }
+
+  const invite = await OrganizationInvite.findOne({
+    _id: req.params.inviteId,
+    organizationId: req.params.id,
+  });
+  if (!invite) {
+    throw new ApiError(404, "Invite not found");
+  }
+
+  const canManage = hasOrganizationPermission(membership, "manageInvites");
+  const isOwner = String(invite.createdBy) === String(req.user._id);
+  if (!canManage && !isOwner) {
+    throw new ApiError(403, "You cannot delete this invite");
+  }
+
+  await invite.deleteOne();
+  res.status(204).send();
 };
 
 export const pauseOrganizationInvites = async (req, res) => {
@@ -762,15 +864,19 @@ export const pauseOrganizationInvites = async (req, res) => {
     query.createdBy = req.user._id;
   }
 
+  const pausedUntil = new Date(
+    Date.now() + normalizePauseDurationHours(req.body?.durationHours) * HOUR_MS,
+  );
   const result = await OrganizationInvite.updateMany(query, {
     $set: {
       status: "paused",
       pausedAt: new Date(),
       pausedBy: req.user._id,
+      pausedUntil,
     },
   });
 
-  res.json({ pausedCount: result.modifiedCount || 0 });
+  res.json({ pausedCount: result.modifiedCount || 0, pausedUntil });
 };
 
 export const updateOrganizationSettings = async (req, res) => {
@@ -1069,7 +1175,11 @@ export const reviewOrganizationJoinRequest = async (req, res) => {
     membership.status = "active";
     membership.joinedAt = new Date();
     membership.removedAt = null;
-    await membership.save();
+    if (membership.inviteId && !membership.inviteUsageCountedAt) {
+      await recordMembershipInviteUsage(membership);
+    } else {
+      await membership.save();
+    }
     await User.findOneAndUpdate(
       { _id: membership.userId?._id || membership.userId, activeOrganizationId: null },
       { activeOrganizationId: req.params.id },

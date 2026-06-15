@@ -122,7 +122,7 @@ const OrganizationCard = ({
           }}
           className="inline-flex items-center gap-2 rounded-xl bg-white px-4 py-2.5 text-sm font-black text-slate-800 ring-1 ring-slate-200 transition hover:bg-slate-50 active:scale-[0.98]"
         >
-          <Icon name={canManage ? "tune" : "groups"} />
+          <Icon name={canManage ? "tune" : "visibility"} />
           <span className="hidden sm:inline">Xem nhóm</span>
         </button>
         <button
@@ -135,7 +135,7 @@ const OrganizationCard = ({
               : "bg-blue-600 text-white hover:bg-blue-700"
           }`}
         >
-          <Icon name={isActive ? "done_all" : "sync_alt"} />
+          <Icon name={isActive ? "download_done" : "sync_alt"} />
           <span className="hidden sm:inline">
             {isActive ? "Đang dùng" : "Chuyển"}
           </span>
