@@ -12,6 +12,27 @@ export const ORGANIZATION_PERMISSION_KEYS = [
   "pauseInvites",
 ];
 
+export const DEFAULT_ORGANIZATION_ACCENT_COLOR = "#2563eb";
+
+export const normalizeOrganizationAccentColor = (
+  value,
+  fallback = DEFAULT_ORGANIZATION_ACCENT_COLOR,
+) => {
+  const raw = String(value || "").trim();
+  const match = raw.match(/^#?([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/);
+  if (!match) return fallback;
+
+  let hex = match[1].toLowerCase();
+  if (hex.length === 3) {
+    hex = hex
+      .split("")
+      .map((char) => `${char}${char}`)
+      .join("");
+  }
+
+  return `#${hex}`;
+};
+
 export const DEFAULT_ORGANIZATION_ROLES = [
   {
     key: "owner",

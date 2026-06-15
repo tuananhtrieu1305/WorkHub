@@ -7,22 +7,25 @@ const PendingOrganizationSection = ({
   isLeavingId,
   onCancelPending,
   pendingOrganizations,
-}) => {
-  if (!pendingOrganizations.length) return null;
-
-  return (
-    <SectionShell>
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+}) => (
+  <SectionShell>
+    <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+      <div>
         <h2 className="text-2xl font-black text-slate-950">
           Tổ chức đang chờ phê duyệt
         </h2>
-        <span className="inline-flex w-fit items-center gap-2 rounded-xl bg-amber-50 px-3 py-2 text-xs font-black text-amber-700 ring-1 ring-amber-100">
-          <Icon name="hourglass_top" className="text-base leading-none" />
-          {pendingOrganizations.length} đang chờ
-        </span>
+        <p className="mt-2 max-w-2xl text-sm font-semibold leading-6 text-slate-600">
+          Xem các tổ chức mà bạn đã yêu cầu tham gia. Có thể bạn sẽ phải trả lời câu hỏi thì một số tổ chức mới phê duyệt yêu cầu tham gia của bạn.
+        </p>
       </div>
+      <span className="inline-flex w-fit items-center gap-2 rounded-xl bg-amber-50 px-3 py-2 text-xs font-black text-amber-700 ring-1 ring-amber-100">
+        <Icon name="hourglass_top" className="text-base leading-none" />
+        {pendingOrganizations.length} đang chờ
+      </span>
+    </div>
 
-      <div className="mt-5 grid gap-4 lg:grid-cols-2">
+    {pendingOrganizations.length > 0 ? (
+      <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
         {pendingOrganizations.map((organization) => {
           const organizationId = getOrganizationId(organization);
           const submittedAt = formatDate(
@@ -80,8 +83,12 @@ const PendingOrganizationSection = ({
           );
         })}
       </div>
-    </SectionShell>
-  );
-};
+    ) : (
+      <div className="mt-5 rounded-3xl border border-dashed border-amber-200 bg-amber-50/70 px-5 py-8 text-sm font-semibold text-amber-800">
+        Hiện không có tổ chức nào đang chờ duyệt.
+      </div>
+    )}
+  </SectionShell>
+);
 
 export default PendingOrganizationSection;

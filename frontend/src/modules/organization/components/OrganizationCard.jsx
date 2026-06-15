@@ -3,7 +3,9 @@ import {
   getOrganizationId,
   getStat,
   isManager,
+  roleLabels,
 } from "../organizationUtils";
+import { getOrganizationThemeStyle } from "../organizationTheme";
 import Icon from "./Icon";
 import OrganizationLogo from "./OrganizationLogo";
 import StatTile from "./StatTile";
@@ -16,39 +18,55 @@ const OrganizationCard = ({
   openMenuId,
   organization,
   setOpenMenuId,
+  uploadingMedia,
 }) => {
   const organizationId = getOrganizationId(organization);
   const isActive = organizationId === activeOrganizationId;
   const canManage = isManager(organization);
   const cardBannerUrl = getAvatarUrl(organization.bannerUrl);
+  const cardStyle = getOrganizationThemeStyle(organization, cardBannerUrl);
+  const isUploadingLogo =
+    uploadingMedia?.organizationId === organizationId &&
+    uploadingMedia?.type === "logo";
+  const isUploadingBanner =
+    uploadingMedia?.organizationId === organizationId &&
+    uploadingMedia?.type === "banner";
 
   return (
     <article
       onClick={() => handlers.onOpenDetails(organizationId)}
-      className={`organization-card relative overflow-visible rounded-[1.75rem] p-4 ring-1 transition ${
+      className={`organization-card organization-card-themed relative overflow-visible rounded-[1.5rem] p-4 ring-1 transition duration-200 hover:-translate-y-0.5 ${
+        openMenuId === organizationId ? "z-30" : "z-0"
+      } ${
         isActive
-          ? "bg-blue-50 text-slate-950 ring-blue-200"
-          : "bg-white text-slate-950 ring-slate-200 hover:bg-slate-50"
+          ? "organization-card-active text-slate-950"
+          : "text-slate-950 ring-white/80 hover:ring-slate-200"
       }`}
+      style={cardStyle}
     >
-      <div
-        className={`relative overflow-hidden rounded-3xl p-4 ${
-          isActive ? "bg-white" : "bg-slate-50"
-        }`}
+      <button
+        type="button"
+        onClick={(event) => handlers.onToggleFavorite(event, organization)}
+        className={`organization-favorite-button absolute right-4 top-4 z-10 inline-flex size-11 items-center justify-center rounded-2xl bg-white/90 ring-1 ring-white/90 backdrop-blur transition hover:bg-white active:scale-95 ${
+          organization.isFavorite ? "text-amber-500" : "text-slate-400"
+        } ${organization.isFavorite ? "is-favorite" : ""}`}
+        aria-label={
+          organization.isFavorite
+            ? "Bỏ ghim tổ chức yêu thích"
+            : "Ghim tổ chức yêu thích"
+        }
+        aria-pressed={Boolean(organization.isFavorite)}
       >
-        <div
-          className="absolute inset-0 opacity-70"
-          style={
-            cardBannerUrl
-              ? {
-                  backgroundImage: `linear-gradient(90deg, rgba(255,255,255,0.96), rgba(255,255,255,0.58)), url("${cardBannerUrl}")`,
-                  backgroundSize: "cover",
-                  backgroundPosition: "center",
-                }
-              : undefined
-          }
+        <Icon
+          name={organization.isFavorite ? "star" : "star_border"}
+          className="text-2xl leading-none"
         />
-        <div className="relative flex items-start gap-4">
+      </button>
+      <div
+        className="relative overflow-hidden rounded-[1.25rem] bg-white/78 p-4 ring-1 ring-white/80 backdrop-blur"
+      >
+        <div className="organization-card-banner" aria-hidden="true" />
+        <div className="relative flex items-start gap-4 pr-11">
           <OrganizationLogo
             organization={organization}
             className="size-16"
@@ -58,18 +76,6 @@ const OrganizationCard = ({
           <div className="min-w-0 flex-1">
             <div className="flex min-w-0 flex-wrap items-center gap-2">
               <h3 className="truncate text-xl font-black">{organization.name}</h3>
-              {organization.isFavorite && (
-                <span className="inline-flex items-center gap-1 rounded-lg bg-amber-100 px-2 py-1 text-xs font-black text-amber-700">
-                  <Icon name="star" className="text-sm leading-none" />
-                  Yêu thích
-                </span>
-              )}
-              {isActive && (
-                <span className="inline-flex items-center gap-1 rounded-lg bg-blue-600 px-2 py-1 text-xs font-black text-white">
-                  <Icon name="check" className="text-sm leading-none" />
-                  Đang dùng
-                </span>
-              )}
             </div>
             {organization.description && (
               <p className="mt-2 line-clamp-2 text-sm font-semibold leading-6 text-slate-600">
@@ -79,24 +85,30 @@ const OrganizationCard = ({
           </div>
         </div>
 
-        <div className="relative mt-5 grid grid-cols-3 gap-3">
+        <div className="relative mt-5 grid grid-cols-1 gap-3 min-[440px]:grid-cols-3">
           <StatTile
             icon="radio_button_checked"
             value={getStat(organization, "online")}
             label="Online"
-            active={isActive}
+            tone="emerald"
           />
           <StatTile
             icon="groups"
             value={getStat(organization, "members")}
             label="Thành viên"
-            active={isActive}
+            tone="sky"
           />
           <StatTile
-            icon="hourglass_top"
-            value={getStat(organization, "pending")}
-            label="Chờ duyệt"
-            active={isActive}
+            icon="verified_user"
+            value={
+              organization.roleLabel ||
+              roleLabels[organization.role] ||
+              organization.role ||
+              "Thành viên"
+            }
+            label="Vai trò"
+            tone="violet"
+            valueClassName="text-base leading-tight sm:text-lg"
           />
         </div>
       </div>
@@ -145,13 +157,13 @@ const OrganizationCard = ({
           {openMenuId === organizationId && (
             <div
               onClick={(event) => event.stopPropagation()}
-              className="absolute right-0 top-12 z-20 w-64 overflow-hidden rounded-2xl bg-white p-2 text-slate-900 shadow-xl ring-1 ring-slate-200"
+              className="organization-card-menu absolute bottom-12 right-0 z-50 w-64 overflow-hidden rounded-2xl bg-white p-2 text-slate-900 shadow-xl ring-1 ring-slate-200"
             >
               <button
                 type="button"
                 onClick={(event) => {
                   setOpenMenuId("");
-                  handlers.onCopyInvite(event, organization);
+                  handlers.onOpenInvite(event, organization);
                 }}
                 className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-bold transition hover:bg-slate-100"
               >
@@ -166,22 +178,41 @@ const OrganizationCard = ({
                 <Icon name="notifications" />
                 Quản lý thông báo
               </button>
+              {canManage && (
+                <>
+                  <button
+                    type="button"
+                    onClick={(event) => {
+                      setOpenMenuId("");
+                      handlers.onMediaUpload?.(event, "logo", organization);
+                    }}
+                    disabled={isUploadingLogo}
+                    className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-bold text-sky-700 transition hover:bg-sky-50 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    <Icon name={isUploadingLogo ? "progress_activity" : "upload"} />
+                    Đổi ảnh tổ chức
+                  </button>
+                  <button
+                    type="button"
+                    onClick={(event) => {
+                      setOpenMenuId("");
+                      handlers.onMediaUpload?.(event, "banner", organization);
+                    }}
+                    disabled={isUploadingBanner}
+                    className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-bold text-cyan-700 transition hover:bg-cyan-50 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    <Icon
+                      name={isUploadingBanner ? "progress_activity" : "panorama"}
+                    />
+                    Đổi biểu ngữ
+                  </button>
+                </>
+              )}
               <button
                 type="button"
                 onClick={(event) => {
                   setOpenMenuId("");
-                  handlers.onToggleFavorite(event, organization);
-                }}
-                className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-black text-amber-700 transition hover:bg-amber-50"
-              >
-                <Icon name={organization.isFavorite ? "star" : "star_border"} />
-                {organization.isFavorite ? "Bỏ yêu thích" : "Yêu thích"}
-              </button>
-              <button
-                type="button"
-                onClick={(event) => {
-                  setOpenMenuId("");
-                  handlers.onLeave(event, organization);
+                  handlers.onOpenLeave(event, organization);
                 }}
                 disabled={organization.role === "owner" || isLeavingId === organizationId}
                 className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-black text-red-700 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50"

@@ -13,6 +13,7 @@ import {
   pauseOrganizationInvites,
   updateOrganizationInvite,
   updateOrganizationMember,
+  updateOrganization,
   updateOrganizationRole,
   updateOrganizationSettings,
 } from "../../../api/organizationApi";
@@ -23,6 +24,7 @@ import {
   hasPermission,
   isManager,
 } from "../organizationUtils";
+import { DEFAULT_ORGANIZATION_ACCENT } from "../organizationTheme";
 
 export const workspaceTabs = [
   {
@@ -173,6 +175,7 @@ export const useOrganizationWorkspace = () => {
       const detail = await getOrganizationDetail(organizationId);
       setOrganization(detail);
       setAdvancedForm({
+        accentColor: detail.accentColor || DEFAULT_ORGANIZATION_ACCENT,
         requireApproval: detail.settings?.requireApproval !== false,
         allowMemberInvites: detail.settings?.allowMemberInvites !== false,
         memberDirectoryVisible: detail.settings?.memberDirectoryVisible !== false,
@@ -420,9 +423,37 @@ export const useOrganizationWorkspace = () => {
       event.preventDefault();
       if (!organizationId || !advancedForm) return;
 
+      const canUpdateSettings = hasPermission(activeOrganization, "manageSettings");
+      const canUpdateAppearance = hasPermission(
+        activeOrganization,
+        "manageOrganization",
+      );
+      if (!canUpdateSettings && !canUpdateAppearance) return;
+
       setLoading((current) => ({ ...current, settings: true }));
       try {
-        const saved = await updateOrganizationSettings(organizationId, advancedForm);
+        let saved = activeOrganization;
+
+        if (canUpdateSettings) {
+          saved = await updateOrganizationSettings(organizationId, {
+            requireApproval: advancedForm.requireApproval,
+            allowMemberInvites: advancedForm.allowMemberInvites,
+            memberDirectoryVisible: advancedForm.memberDirectoryVisible,
+            defaultRoleKey: advancedForm.defaultRoleKey,
+            joinMessage: advancedForm.joinMessage,
+          });
+        }
+
+        if (
+          canUpdateAppearance &&
+          advancedForm.accentColor &&
+          advancedForm.accentColor !== activeOrganization?.accentColor
+        ) {
+          saved = await updateOrganization(organizationId, {
+            accentColor: advancedForm.accentColor,
+          });
+        }
+
         setOrganization(saved);
         refreshOrganizations?.();
         message.success("Đã cập nhật cài đặt nâng cao");
@@ -433,7 +464,7 @@ export const useOrganizationWorkspace = () => {
         setLoading((current) => ({ ...current, settings: false }));
       }
     },
-    [advancedForm, message, organizationId, refreshOrganizations],
+    [activeOrganization, advancedForm, message, organizationId, refreshOrganizations],
   );
 
   const leaveCurrentOrganization = useCallback(async () => {

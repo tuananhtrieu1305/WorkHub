@@ -18,6 +18,7 @@ import {
   DEFAULT_ORGANIZATION_ROLES,
   ORGANIZATION_PERMISSION_KEYS,
   createOrganizationSlug,
+  normalizeOrganizationAccentColor,
   normalizeInviteCode,
   normalizeOrganizationName,
   normalizeRoleKey,
@@ -524,11 +525,21 @@ export const ensureOrganizationJoinRequest = async (
   );
 };
 
-export const normalizeOrganizationPayload = (payload = {}) => ({
-  name: normalizeOrganizationName(payload.name),
-  description: String(payload.description || "").trim().slice(0, 1000),
-  accentColor: String(payload.accentColor || "#2563eb").trim() || "#2563eb",
-});
+export const normalizeOrganizationPayload = (payload = {}) => {
+  const normalized = {
+    name: normalizeOrganizationName(payload.name),
+  };
+
+  if (Object.prototype.hasOwnProperty.call(payload, "description")) {
+    normalized.description = String(payload.description || "").trim().slice(0, 1000);
+  }
+
+  if (Object.prototype.hasOwnProperty.call(payload, "accentColor")) {
+    normalized.accentColor = normalizeOrganizationAccentColor(payload.accentColor);
+  }
+
+  return normalized;
+};
 
 export const normalizeOrganizationSettingsPayload = (payload = {}) => {
   const settings = {};

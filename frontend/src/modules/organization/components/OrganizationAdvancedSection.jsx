@@ -1,5 +1,6 @@
 import { hasPermission } from "../organizationUtils";
 import Icon from "./Icon";
+import OrganizationAccentPicker from "./OrganizationAccentPicker";
 import ToggleSwitch from "./ToggleSwitch";
 
 const OrganizationAdvancedSection = ({
@@ -13,99 +14,108 @@ const OrganizationAdvancedSection = ({
   roles,
 }) => {
   const canManageSettings = hasPermission(organization, "manageSettings");
+  const canManageAppearance = hasPermission(organization, "manageOrganization");
   const canLeave = organization?.role !== "owner";
 
   return (
     <section className="grid gap-5 xl:grid-cols-[1fr_0.55fr]">
-      <form
-        onSubmit={onSubmit}
-        className="rounded-3xl bg-white p-5 ring-1 ring-slate-200"
-      >
-        <div>
-          <h2 className="flex items-center gap-2 text-xl font-black text-slate-950">
-            <Icon name="tune" />
-            Cài đặt nâng cao
-          </h2>
-          <p className="mt-1 text-sm font-semibold text-slate-500">
-            Điều khiển chính sách tham gia, lời mời và dữ liệu thành viên.
-          </p>
-        </div>
+      <div className="grid gap-5">
+        <OrganizationAccentPicker
+          disabled={!canManageAppearance}
+          onChange={(accentColor) => onChange({ ...(form || {}), accentColor })}
+          value={form?.accentColor || organization?.accentColor}
+        />
 
-        <div className="mt-6 grid gap-3">
-          <ToggleSwitch
-            checked={Boolean(form?.requireApproval)}
-            disabled={!canManageSettings}
-            label="Yêu cầu duyệt khi tham gia"
-            onChange={(checked) => onChange({ ...form, requireApproval: checked })}
-          />
-          <ToggleSwitch
-            checked={Boolean(form?.allowMemberInvites)}
-            disabled={!canManageSettings}
-            label="Cho phép thành viên tạo liên kết mời"
-            onChange={(checked) =>
-              onChange({ ...form, allowMemberInvites: checked })
-            }
-          />
-          <ToggleSwitch
-            checked={Boolean(form?.memberDirectoryVisible)}
-            disabled={!canManageSettings}
-            label="Hiển thị danh bạ thành viên"
-            onChange={(checked) =>
-              onChange({ ...form, memberDirectoryVisible: checked })
-            }
-          />
-        </div>
+        <form
+          onSubmit={onSubmit}
+          className="rounded-3xl bg-white p-5 ring-1 ring-slate-200"
+        >
+          <div>
+            <h2 className="flex items-center gap-2 text-xl font-black text-slate-950">
+              <Icon name="tune" />
+              Cài đặt nâng cao
+            </h2>
+            <p className="mt-1 text-sm font-semibold text-slate-500">
+              Điều khiển chính sách tham gia, lời mời và dữ liệu thành viên.
+            </p>
+          </div>
 
-        <div className="mt-6 grid gap-4 sm:grid-cols-2">
-          <label className="block">
-            <span className="text-xs font-black uppercase text-slate-500">
-              Vai trò mặc định
-            </span>
-            <select
-              value={form?.defaultRoleKey || "member"}
+          <div className="mt-6 grid gap-3">
+            <ToggleSwitch
+              checked={Boolean(form?.requireApproval)}
               disabled={!canManageSettings}
-              onChange={(event) =>
-                onChange({ ...form, defaultRoleKey: event.target.value })
-              }
-              className="mt-2 h-12 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 text-sm font-bold outline-none transition focus:border-blue-300 focus:bg-white focus:ring-4 focus:ring-blue-100 disabled:bg-slate-100 disabled:text-slate-400"
-            >
-              {roles
-                .filter((role) => role.key !== "owner")
-                .map((role) => (
-                  <option key={role.key} value={role.key}>
-                    {role.name}
-                  </option>
-                ))}
-            </select>
-          </label>
-          <label className="block sm:col-span-2">
-            <span className="text-xs font-black uppercase text-slate-500">
-              Lời nhắn khi tham gia
-            </span>
-            <textarea
-              value={form?.joinMessage || ""}
-              disabled={!canManageSettings}
-              onChange={(event) =>
-                onChange({ ...form, joinMessage: event.target.value })
-              }
-              rows={4}
-              className="mt-2 w-full resize-none rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-semibold outline-none transition focus:border-blue-300 focus:bg-white focus:ring-4 focus:ring-blue-100 disabled:bg-slate-100 disabled:text-slate-400"
-              placeholder="Thông tin nội bộ hiển thị cho thành viên mới"
+              label="Yêu cầu duyệt khi tham gia"
+              onChange={(checked) => onChange({ ...form, requireApproval: checked })}
             />
-          </label>
-        </div>
+            <ToggleSwitch
+              checked={Boolean(form?.allowMemberInvites)}
+              disabled={!canManageSettings}
+              label="Cho phép thành viên tạo liên kết mời"
+              onChange={(checked) =>
+                onChange({ ...form, allowMemberInvites: checked })
+              }
+            />
+            <ToggleSwitch
+              checked={Boolean(form?.memberDirectoryVisible)}
+              disabled={!canManageSettings}
+              label="Hiển thị danh bạ thành viên"
+              onChange={(checked) =>
+                onChange({ ...form, memberDirectoryVisible: checked })
+              }
+            />
+          </div>
 
-        <div className="mt-6 flex justify-end">
-          <button
-            type="submit"
-            disabled={!canManageSettings || isSaving}
-            className="inline-flex items-center gap-2 rounded-2xl bg-blue-600 px-5 py-3 text-sm font-black text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            <Icon name={isSaving ? "progress_activity" : "save"} />
-            Lưu cài đặt
-          </button>
-        </div>
-      </form>
+          <div className="mt-6 grid gap-4 sm:grid-cols-2">
+            <label className="block">
+              <span className="text-xs font-black uppercase text-slate-500">
+                Vai trò mặc định
+              </span>
+              <select
+                value={form?.defaultRoleKey || "member"}
+                disabled={!canManageSettings}
+                onChange={(event) =>
+                  onChange({ ...form, defaultRoleKey: event.target.value })
+                }
+                className="mt-2 h-12 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 text-sm font-bold outline-none transition focus:border-blue-300 focus:bg-white focus:ring-4 focus:ring-blue-100 disabled:bg-slate-100 disabled:text-slate-400"
+              >
+                {roles
+                  .filter((role) => role.key !== "owner")
+                  .map((role) => (
+                    <option key={role.key} value={role.key}>
+                      {role.name}
+                    </option>
+                  ))}
+              </select>
+            </label>
+            <label className="block sm:col-span-2">
+              <span className="text-xs font-black uppercase text-slate-500">
+                Lời nhắn khi tham gia
+              </span>
+              <textarea
+                value={form?.joinMessage || ""}
+                disabled={!canManageSettings}
+                onChange={(event) =>
+                  onChange({ ...form, joinMessage: event.target.value })
+                }
+                rows={4}
+                className="mt-2 w-full resize-none rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-semibold outline-none transition focus:border-blue-300 focus:bg-white focus:ring-4 focus:ring-blue-100 disabled:bg-slate-100 disabled:text-slate-400"
+                placeholder="Thông tin nội bộ hiển thị cho thành viên mới"
+              />
+            </label>
+          </div>
+
+          <div className="mt-6 flex justify-end">
+            <button
+              type="submit"
+              disabled={(!canManageSettings && !canManageAppearance) || isSaving}
+              className="inline-flex items-center gap-2 rounded-2xl bg-blue-600 px-5 py-3 text-sm font-black text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <Icon name={isSaving ? "progress_activity" : "save"} />
+              Lưu cài đặt
+            </button>
+          </div>
+        </form>
+      </div>
 
       <aside className="grid gap-5">
         <div className="rounded-3xl bg-white p-5 ring-1 ring-slate-200">

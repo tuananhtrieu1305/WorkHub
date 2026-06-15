@@ -69,6 +69,7 @@ export const useOrganizationDashboard = () => {
   const [editForm, setEditForm] = useState({
     name: "",
     description: "",
+    accentColor: "#2563eb",
     inviteEnabled: true,
   });
   const [actionModal, setActionModal] = useState("");
@@ -86,6 +87,10 @@ export const useOrganizationDashboard = () => {
   const [uploadingMedia, setUploadingMedia] = useState({
     type: "",
     organizationId: "",
+  });
+  const [dashboardAction, setDashboardAction] = useState({
+    type: "",
+    organization: null,
   });
   const [notificationPanelOpen, setNotificationPanelOpen] = useState(false);
   const [notificationSettings, setNotificationSettings] = useState(null);
@@ -126,6 +131,10 @@ export const useOrganizationDashboard = () => {
       : activeOrganization?.inviteLink || "";
 
   const closeActionModal = useCallback(() => setActionModal(""), []);
+  const closeDashboardAction = useCallback(() => {
+    setDashboardAction({ type: "", organization: null });
+    setNotificationPanelOpen(false);
+  }, []);
 
   const refreshContext = useCallback(async () => {
     try {
@@ -254,6 +263,19 @@ export const useOrganizationDashboard = () => {
     [activeOrganization, message],
   );
 
+  const handleOpenInviteModal = useCallback(
+    (event, organization = activeOrganization) => {
+      event?.stopPropagation?.();
+      setOpenMenuId("");
+      if (!organization) {
+        message.warning("Chưa có tổ chức để lấy link mời");
+        return;
+      }
+      setDashboardAction({ type: "invite", organization });
+    },
+    [activeOrganization, message],
+  );
+
   const handleToggleFavorite = useCallback(
     async (event, organization) => {
       event?.stopPropagation?.();
@@ -290,15 +312,42 @@ export const useOrganizationDashboard = () => {
           setDetailMembers([]);
         }
         message.success("Đã rời tổ chức");
+        return true;
       } catch (error) {
         console.error("Failed to leave organization:", error);
         message.error(error?.response?.data?.message || "Không thể rời tổ chức");
+        return false;
       } finally {
         setIsLeavingId("");
       }
     },
     [expandedOrganizationId, isLeavingId, leaveOrganization, message],
   );
+
+  const handleOpenLeaveModal = useCallback(
+    (event, organization) => {
+      event?.stopPropagation?.();
+      setOpenMenuId("");
+      if (!organization || organization.role === "owner") return;
+      setDashboardAction({ type: "leave", organization });
+    },
+    [],
+  );
+
+  const handleConfirmLeave = useCallback(async () => {
+    if (dashboardAction.type !== "leave" || !dashboardAction.organization) return;
+
+    const didLeave = await handleLeaveOrganization(
+      undefined,
+      dashboardAction.organization,
+    );
+    if (didLeave) closeDashboardAction();
+  }, [
+    closeDashboardAction,
+    dashboardAction.organization,
+    dashboardAction.type,
+    handleLeaveOrganization,
+  ]);
 
   const handleCancelPending = useCallback(
     async (organization) => {
@@ -505,6 +554,7 @@ export const useOrganizationDashboard = () => {
   const handleOpenNotificationPanel = useCallback((event) => {
     event?.stopPropagation?.();
     setOpenMenuId("");
+    setDashboardAction({ type: "notifications", organization: null });
     setNotificationPanelOpen(true);
   }, []);
 
@@ -560,9 +610,11 @@ export const useOrganizationDashboard = () => {
     setEditForm({
       name: selectedOrganization?.name || "",
       description: selectedOrganization?.description || "",
+      accentColor: selectedOrganization?.accentColor || "#2563eb",
       inviteEnabled: selectedOrganization?.inviteEnabled !== false,
     });
   }, [
+    selectedOrganization?.accentColor,
     selectedOrganization?.description,
     selectedOrganization?.id,
     selectedOrganization?.inviteEnabled,
@@ -607,6 +659,7 @@ export const useOrganizationDashboard = () => {
       canManageSelectedOrganization,
       createForm,
       detailMembers,
+      dashboardAction,
       editForm,
       expandedOrganizationId,
       inviteLink,
@@ -632,13 +685,17 @@ export const useOrganizationDashboard = () => {
     },
     actions: {
       closeActionModal,
+      closeDashboardAction,
       handleCancelPending,
+      handleConfirmLeave,
       handleCopyInvite,
       handleCreate,
       handleJoin,
       handleLeaveOrganization,
       handleMediaFileChange,
       handleOpenDetails,
+      handleOpenInviteModal,
+      handleOpenLeaveModal,
       handleOpenNotificationPanel,
       handleReviewRequest,
       handleRotateInvite,

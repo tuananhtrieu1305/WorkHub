@@ -1,8 +1,8 @@
 import OrganizationActionModal from "./components/OrganizationActionModal";
 import OrganizationActionSection from "./components/OrganizationActionSection";
+import OrganizationDashboardActionModal from "./components/OrganizationDashboardActionModal";
 import OrganizationHero from "./components/OrganizationHero";
 import OrganizationListSection from "./components/OrganizationListSection";
-import NotificationSettingsPanel from "./components/NotificationSettingsPanel";
 import PendingOrganizationSection from "./components/PendingOrganizationSection";
 import { useOrganizationDashboard } from "./hooks/useOrganizationDashboard";
 
@@ -11,8 +11,8 @@ const OrganizationPage = () => {
   const { logoInputRef, bannerInputRef } = refs;
 
   const cardHandlers = {
-    onCopyInvite: actions.handleCopyInvite,
-    onLeave: actions.handleLeaveOrganization,
+    onOpenInvite: actions.handleOpenInviteModal,
+    onOpenLeave: actions.handleOpenLeaveModal,
     onMediaUpload: actions.openMediaUpload,
     onOpenDetails: actions.handleOpenDetails,
     onOpenNotifications: actions.handleOpenNotificationPanel,
@@ -30,7 +30,7 @@ const OrganizationPage = () => {
         <OrganizationHero
           activeInviteUrl={state.activeInviteUrl}
           activeOrganization={state.activeOrganization}
-          onCopyInvite={actions.handleCopyInvite}
+          onCopyInvite={actions.handleOpenInviteModal}
           onOpenCreate={() => actions.setActionModal("create")}
           onOpenJoin={() => actions.setActionModal("join")}
           onOpenNotifications={actions.handleOpenNotificationPanel}
@@ -50,16 +50,6 @@ const OrganizationPage = () => {
           className="hidden"
           onChange={(event) => actions.handleMediaFileChange(event, "banner")}
         />
-
-        {state.notificationPanelOpen && (
-          <NotificationSettingsPanel
-            isLoading={state.isLoadingNotifications}
-            notificationSettings={state.notificationSettings}
-            onClose={() => actions.setNotificationPanelOpen(false)}
-            onToggle={actions.handleToggleNotificationSetting}
-            savingKey={state.savingNotificationKey}
-          />
-        )}
 
         <OrganizationActionSection
           onOpenCreate={() => actions.setActionModal("create")}
@@ -104,6 +94,18 @@ const OrganizationPage = () => {
         onJoin={actions.handleJoin}
         setCreateForm={actions.setCreateForm}
         setInviteLink={actions.setInviteLink}
+      />
+      <OrganizationDashboardActionModal
+        action={state.dashboardAction.type}
+        inviteOrganization={state.dashboardAction.organization}
+        isLeavingId={state.isLeavingId}
+        isLoadingNotifications={state.isLoadingNotifications}
+        notificationSettings={state.notificationSettings}
+        onClose={actions.closeDashboardAction}
+        onConfirmLeave={actions.handleConfirmLeave}
+        onCopyInvite={actions.handleCopyInvite}
+        onToggleNotificationSetting={actions.handleToggleNotificationSetting}
+        savingNotificationKey={state.savingNotificationKey}
       />
     </main>
   );
