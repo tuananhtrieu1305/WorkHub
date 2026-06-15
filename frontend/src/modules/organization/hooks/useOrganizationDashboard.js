@@ -6,13 +6,18 @@ import {
   updateNotificationSettings,
 } from "../../../api/notificationApi";
 import {
+  createOrganizationInvite,
   getOrganizationMembers,
+  previewOrganizationJoin,
   reviewOrganizationJoinRequest,
   updateOrganizationFavorite,
 } from "../../../api/organizationApi";
 import { useAuth } from "../../../context/AuthContext";
 import {
   EMPTY_ARRAY,
+  buildShareableInviteLink,
+  canBypassInviteApproval,
+  copyTextToClipboard,
   getOrganizationId,
   isManager,
   normalizeInviteValue,
@@ -39,6 +44,49 @@ const sortOrganizations = (organizations, activeOrganizationId) =>
     return String(a.name || "").localeCompare(String(b.name || ""), "vi");
   });
 
+const buildInitialJoinAnswers = (questions = []) =>
+  questions.reduce((answers, question) => {
+    answers[question.id] = question.type === "rules" ? false : "";
+    return answers;
+  }, {});
+
+const defaultInviteForm = {
+  expiresIn: "7d",
+  maxUses: "",
+  bypassApproval: false,
+};
+
+const inviteExpiryDurations = {
+  "30m": 30 * 60 * 1000,
+  "1h": 60 * 60 * 1000,
+  "6h": 6 * 60 * 60 * 1000,
+  "12h": 12 * 60 * 60 * 1000,
+  "1d": 24 * 60 * 60 * 1000,
+  "7d": 7 * 24 * 60 * 60 * 1000,
+};
+
+const buildInvitePayload = (form, { canBypassApproval = false } = {}) => {
+  const duration = inviteExpiryDurations[form.expiresIn];
+  const expiresAt =
+    Number.isFinite(duration) && duration > 0
+      ? new Date(Date.now() + duration).toISOString()
+      : null;
+
+  return {
+    expiresAt,
+    maxUses: form.maxUses ? Number(form.maxUses) : null,
+    bypassApproval: canBypassApproval && Boolean(form.bypassApproval),
+  };
+};
+
+const hasMissingRequiredJoinAnswer = (questions = [], answers = {}) =>
+  questions.some((question) => {
+    if (!question.required) return false;
+    const value = answers[question.id];
+    if (question.type === "rules") return value !== true;
+    return !String(value || "").trim();
+  });
+
 export const useOrganizationDashboard = () => {
   const {
     user,
@@ -62,6 +110,13 @@ export const useOrganizationDashboard = () => {
   const uploadTargetRef = useRef({ type: "", organizationId: "" });
 
   const [inviteLink, setInviteLink] = useState(inviteFromUrl);
+  const [inviteForm, setInviteForm] = useState(defaultInviteForm);
+  const [inviteModalOpen, setInviteModalOpen] = useState(false);
+  const [inviteModalOrganization, setInviteModalOrganization] = useState(null);
+  const [createdInvite, setCreatedInvite] = useState(null);
+  const [joinAnswers, setJoinAnswers] = useState({});
+  const [joinInviteValue, setJoinInviteValue] = useState("");
+  const [joinPreview, setJoinPreview] = useState(null);
   const [createForm, setCreateForm] = useState({
     name: "",
     description: "",
@@ -79,6 +134,7 @@ export const useOrganizationDashboard = () => {
   const [isLoadingMembers, setIsLoadingMembers] = useState(false);
   const [isJoining, setIsJoining] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
+  const [isCreatingInvite, setIsCreatingInvite] = useState(false);
   const [isUpdating, setIsUpdating] = useState(false);
   const [isRotatingInvite, setIsRotatingInvite] = useState(false);
   const [isLeavingId, setIsLeavingId] = useState("");
@@ -125,15 +181,26 @@ export const useOrganizationDashboard = () => {
   const pendingMembers = detailMembers.filter(
     (member) => member.status === "pending",
   );
-  const activeInviteUrl =
-    activeOrganization?.inviteEnabled === false
-      ? ""
-      : activeOrganization?.inviteLink || "";
-
   const closeActionModal = useCallback(() => setActionModal(""), []);
+  const closeJoinQuestions = useCallback(() => {
+    setJoinAnswers({});
+    setJoinInviteValue("");
+    setJoinPreview(null);
+  }, []);
   const closeDashboardAction = useCallback(() => {
     setDashboardAction({ type: "", organization: null });
     setNotificationPanelOpen(false);
+  }, []);
+  const closeInviteModal = useCallback(() => {
+    setInviteModalOpen(false);
+    setInviteModalOrganization(null);
+    setInviteForm(defaultInviteForm);
+    setCreatedInvite(null);
+  }, []);
+
+  const changeInviteForm = useCallback((nextForm) => {
+    setInviteForm(nextForm);
+    setCreatedInvite(null);
   }, []);
 
   const refreshContext = useCallback(async () => {
@@ -171,6 +238,18 @@ export const useOrganizationDashboard = () => {
 
       setIsJoining(true);
       try {
+        const preview = await previewOrganizationJoin(normalizedInvite);
+        const questions = preview?.joinQuestions || [];
+        const memberStatus = preview?.organization?.memberStatus;
+
+        if (questions.length && !["active", "pending"].includes(memberStatus)) {
+          setJoinAnswers(buildInitialJoinAnswers(questions));
+          setJoinInviteValue(normalizedInvite);
+          setJoinPreview(preview);
+          closeActionModal();
+          return;
+        }
+
         const context = await joinOrganization(normalizedInvite);
         setInviteLink("");
         closeActionModal();
@@ -195,6 +274,57 @@ export const useOrganizationDashboard = () => {
       inviteLink,
       isJoining,
       joinOrganization,
+      message,
+      navigate,
+      params.inviteCode,
+    ],
+  );
+
+  const handleChangeJoinAnswer = useCallback((questionId, value) => {
+    setJoinAnswers((current) => ({ ...current, [questionId]: value }));
+  }, []);
+
+  const handleSubmitJoinQuestions = useCallback(
+    async (event) => {
+      event?.preventDefault?.();
+      if (
+        !joinInviteValue ||
+        isJoining ||
+        hasMissingRequiredJoinAnswer(joinPreview?.joinQuestions || [], joinAnswers)
+      ) {
+        return;
+      }
+
+      setIsJoining(true);
+      try {
+        const context = await joinOrganization(joinInviteValue, {
+          answers: joinAnswers,
+        });
+        setInviteLink("");
+        closeJoinQuestions();
+        const joinedOrganization = context?.organization;
+        message.success(
+          joinedOrganization?.memberStatus === "pending"
+            ? "Đã gửi yêu cầu tham gia"
+            : "Đã tham gia tổ chức",
+        );
+        if (params.inviteCode) navigate("/organization", { replace: true });
+      } catch (error) {
+        console.error("Failed to submit organization join answers:", error);
+        message.error(
+          error?.response?.data?.message || "Không thể gửi yêu cầu tham gia",
+        );
+      } finally {
+        setIsJoining(false);
+      }
+    },
+    [
+      closeJoinQuestions,
+      isJoining,
+      joinAnswers,
+      joinInviteValue,
+      joinOrganization,
+      joinPreview,
       message,
       navigate,
       params.inviteCode,
@@ -243,37 +373,91 @@ export const useOrganizationDashboard = () => {
     [activeOrganizationId, message, switchActiveOrganization],
   );
 
-  const handleCopyInvite = useCallback(
-    async (event, organization = activeOrganization) => {
-      event?.stopPropagation?.();
-      const inviteUrl =
-        organization?.inviteEnabled === false ? "" : organization?.inviteLink || "";
-      if (!inviteUrl) {
-        message.warning("Link mời đang tắt hoặc chưa có sẵn");
-        return;
-      }
-
-      try {
-        await navigator.clipboard.writeText(inviteUrl);
-        message.success("Đã sao chép link mời");
-      } catch {
-        message.error("Không thể sao chép link");
-      }
-    },
-    [activeOrganization, message],
-  );
-
   const handleOpenInviteModal = useCallback(
     (event, organization = activeOrganization) => {
       event?.stopPropagation?.();
       setOpenMenuId("");
       if (!organization) {
-        message.warning("Chưa có tổ chức để lấy link mời");
+        message.warning("Chưa có tổ chức để tạo lời mời");
         return;
       }
-      setDashboardAction({ type: "invite", organization });
+      setInviteModalOrganization(organization);
+      setInviteForm(defaultInviteForm);
+      setCreatedInvite(null);
+      setInviteModalOpen(true);
     },
     [activeOrganization, message],
+  );
+
+  const createInviteForCurrentForm = useCallback(async () => {
+    if (createdInvite?.code) return createdInvite;
+    if (isCreatingInvite) return null;
+
+    const organization = inviteModalOrganization || activeOrganization;
+    const organizationId = getOrganizationId(organization);
+    if (!organizationId) return null;
+
+    setIsCreatingInvite(true);
+    try {
+      const invite = await createOrganizationInvite(
+        organizationId,
+        buildInvitePayload(inviteForm, {
+          canBypassApproval: canBypassInviteApproval(organization),
+        }),
+      );
+      setCreatedInvite(invite);
+      refreshContext();
+      return invite;
+    } finally {
+      setIsCreatingInvite(false);
+    }
+  }, [
+    activeOrganization,
+    createdInvite,
+    inviteForm,
+    inviteModalOrganization,
+    isCreatingInvite,
+    refreshContext,
+  ]);
+
+  const handleCopyInviteCode = useCallback(async () => {
+    try {
+      if (!createdInvite?.code) {
+        const invite = await createInviteForCurrentForm();
+        if (!invite?.code) return;
+
+        message.success("Đã tạo mã mời");
+        return;
+      }
+
+      await copyTextToClipboard(createdInvite.code);
+      message.success("Đã sao chép mã mời");
+    } catch (error) {
+      console.error("Failed to copy organization invite code:", error);
+      message.error(
+        error?.response?.data?.message || "Không thể sao chép mã mời",
+      );
+    }
+  }, [createInviteForCurrentForm, createdInvite, message]);
+
+  const handleCreateInvite = useCallback(
+    async (event) => {
+      event.preventDefault();
+
+      try {
+        const shareLink = buildShareableInviteLink(createdInvite);
+        if (!shareLink) return;
+
+        await copyTextToClipboard(shareLink);
+        message.success("Đã sao chép liên kết mời");
+      } catch (error) {
+        console.error("Failed to create organization invite:", error);
+        message.error(
+          error?.response?.data?.message || "Không thể sao chép liên kết mời",
+        );
+      }
+    },
+    [createdInvite, message],
   );
 
   const handleToggleFavorite = useCallback(
@@ -651,19 +835,23 @@ export const useOrganizationDashboard = () => {
       bannerInputRef,
     },
     state: {
-      activeInviteUrl,
       activeMembers,
       activeOrganization,
       activeOrganizationId,
       actionModal,
       canManageSelectedOrganization,
       createForm,
+      createdInvite,
       detailMembers,
       dashboardAction,
       editForm,
       expandedOrganizationId,
+      inviteForm,
       inviteLink,
+      inviteModalOpen,
+      inviteModalOrganization,
       isCreating,
+      isCreatingInvite,
       isJoining,
       isLeavingId,
       isLoadingMembers,
@@ -671,6 +859,8 @@ export const useOrganizationDashboard = () => {
       isRotatingInvite,
       isSwitchingId,
       isUpdating,
+      joinAnswers,
+      joinPreview,
       notificationPanelOpen,
       notificationSettings,
       openMenuId,
@@ -688,8 +878,10 @@ export const useOrganizationDashboard = () => {
       closeDashboardAction,
       handleCancelPending,
       handleConfirmLeave,
-      handleCopyInvite,
+      handleCopyInviteCode,
+      handleCreateInvite,
       handleCreate,
+      handleChangeJoinAnswer,
       handleJoin,
       handleLeaveOrganization,
       handleMediaFileChange,
@@ -699,15 +891,19 @@ export const useOrganizationDashboard = () => {
       handleOpenNotificationPanel,
       handleReviewRequest,
       handleRotateInvite,
+      handleSubmitJoinQuestions,
       handleSwitch,
       handleToggleFavorite,
       handleToggleInvite,
       handleToggleNotificationSetting,
       handleUpdateSelectedOrganization,
       openMediaUpload,
+      closeJoinQuestions,
+      closeInviteModal,
       setActionModal,
       setCreateForm,
       setEditForm,
+      setInviteForm: changeInviteForm,
       setInviteLink,
       setNotificationPanelOpen,
       setOpenMenuId,

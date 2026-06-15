@@ -4,13 +4,6 @@ import Icon from "./Icon";
 import NotificationSettingsPanel from "./NotificationSettingsPanel";
 
 const modalMeta = {
-  invite: {
-    icon: "link",
-    label: "Liên kết mời",
-    title: "Lấy liên kết mời",
-    description:
-      "Sao chép liên kết để gửi cho thành viên mới. Link chỉ hoạt động khi lời mời của tổ chức đang được bật.",
-  },
   leave: {
     icon: "logout",
     label: "Rời nhóm",
@@ -35,7 +28,6 @@ const OrganizationDashboardActionModal = ({
   notificationSettings,
   onClose,
   onConfirmLeave,
-  onCopyInvite,
   onToggleNotificationSetting,
   savingNotificationKey,
 }) => {
@@ -51,12 +43,8 @@ const OrganizationDashboardActionModal = ({
 
   if (!action) return null;
 
-  const meta = modalMeta[action] || modalMeta.invite;
+  const meta = modalMeta[action] || modalMeta.notifications;
   const organizationId = getOrganizationId(inviteOrganization);
-  const inviteUrl =
-    inviteOrganization?.inviteEnabled === false
-      ? ""
-      : inviteOrganization?.inviteLink || "";
   const isOwner = inviteOrganization?.role === "owner";
   const isLeaving = isLeavingId === organizationId;
 
@@ -95,47 +83,6 @@ const OrganizationDashboardActionModal = ({
               onToggle={onToggleNotificationSetting}
               savingKey={savingNotificationKey}
             />
-          )}
-
-          {action === "invite" && (
-            <div className="grid gap-5">
-              <div>
-                <p className="text-xs font-black uppercase tracking-wide text-slate-500">
-                  Tổ chức
-                </p>
-                <p className="mt-1 text-lg font-black text-slate-950">
-                  {inviteOrganization?.name || "Tổ chức"}
-                </p>
-              </div>
-              <label className="block">
-                <span className="text-xs font-black uppercase tracking-wide text-slate-500">
-                  Link mời
-                </span>
-                <input
-                  readOnly
-                  value={inviteUrl || "Link mời đang tắt hoặc chưa có sẵn"}
-                  className="mt-2 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-bold text-slate-900 outline-none"
-                />
-              </label>
-              <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
-                <button
-                  type="button"
-                  onClick={onClose}
-                  className="inline-flex items-center justify-center rounded-2xl bg-slate-100 px-5 py-3 text-sm font-black text-slate-700 transition hover:bg-slate-200"
-                >
-                  Đóng
-                </button>
-                <button
-                  type="button"
-                  onClick={(event) => onCopyInvite(event, inviteOrganization)}
-                  disabled={!inviteUrl}
-                  className="inline-flex items-center justify-center gap-2 rounded-2xl bg-blue-600 px-5 py-3 text-sm font-black text-white shadow-sm shadow-blue-600/20 transition hover:bg-blue-700 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60"
-                >
-                  <Icon name="content_copy" />
-                  Sao chép link
-                </button>
-              </div>
-            </div>
           )}
 
           {action === "leave" && (

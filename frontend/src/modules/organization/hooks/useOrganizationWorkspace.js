@@ -8,10 +8,13 @@ import {
   deleteOrganizationRole,
   getOrganizationDetail,
   getOrganizationInvites,
+  getOrganizationJoinRequests,
   getOrganizationMembers,
   getOrganizationOverview,
   getOrganizationRoles,
   pauseOrganizationInvites,
+  reviewOrganizationJoinRequest,
+  transferOrganizationOwnership,
   updateOrganizationInvite,
   updateOrganizationMember,
   updateOrganization,
@@ -21,6 +24,9 @@ import {
 import { useAuth } from "../../../context/AuthContext";
 import {
   EMPTY_ARRAY,
+  buildShareableInviteLink,
+  canBypassInviteApproval,
+  copyTextToClipboard,
   getOrganizationId,
   hasPermission,
   isManager,
@@ -73,9 +79,26 @@ const defaultRoleForm = {
 const defaultInviteForm = {
   expiresIn: "7d",
   maxUses: "",
-  note: "",
   bypassApproval: false,
 };
+
+const defaultJoinQuestion = (type = "short_text") => ({
+  id: `question-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`,
+  type,
+  label:
+    type === "rules"
+      ? "Vui lòng đọc và đồng ý với quy định tổ chức"
+      : "Tại sao bạn muốn tham gia tổ chức của chúng tôi?",
+  description: "",
+  required: true,
+  options:
+    type === "multiple_choice"
+      ? [
+          { id: `option-${Date.now()}-1`, label: "Lựa chọn A" },
+          { id: `option-${Date.now()}-2`, label: "Lựa chọn B" },
+        ]
+      : [],
+});
 
 const inviteExpiryDurations = {
   "30m": 30 * 60 * 1000,
@@ -89,7 +112,7 @@ const inviteExpiryDurations = {
 const getErrorMessage = (error, fallback) =>
   error?.response?.data?.message || fallback;
 
-const buildInvitePayload = (form) => {
+const buildInvitePayload = (form, { canBypassApproval = false } = {}) => {
   const duration = inviteExpiryDurations[form.expiresIn];
   const expiresAt =
     Number.isFinite(duration) && duration > 0
@@ -99,8 +122,7 @@ const buildInvitePayload = (form) => {
   return {
     expiresAt,
     maxUses: form.maxUses ? Number(form.maxUses) : null,
-    bypassApproval: Boolean(form.bypassApproval),
-    note: form.note,
+    bypassApproval: canBypassApproval && Boolean(form.bypassApproval),
   };
 };
 
@@ -123,6 +145,8 @@ export const useOrganizationWorkspace = () => {
   const [roles, setRoles] = useState([]);
   const [permissionKeys, setPermissionKeys] = useState([]);
   const [invites, setInvites] = useState([]);
+  const [joinRequests, setJoinRequests] = useState([]);
+  const [joinRequestQuestions, setJoinRequestQuestions] = useState([]);
   const [memberFilters, setMemberFilters] = useState({
     search: "",
     status: "all",
@@ -133,6 +157,7 @@ export const useOrganizationWorkspace = () => {
     members: false,
     roles: false,
     invites: false,
+    joinRequests: false,
     settings: false,
     banner: false,
   });
@@ -140,10 +165,16 @@ export const useOrganizationWorkspace = () => {
   const [roleForm, setRoleForm] = useState(defaultRoleForm);
   const [inviteModalOpen, setInviteModalOpen] = useState(false);
   const [inviteForm, setInviteForm] = useState(defaultInviteForm);
+  const [createdInvite, setCreatedInvite] = useState(null);
+  const [isCreatingInvite, setIsCreatingInvite] = useState(false);
   const [pauseModalOpen, setPauseModalOpen] = useState(false);
   const [pauseScope, setPauseScope] = useState("all");
   const [pauseDurationHours, setPauseDurationHours] = useState("1");
   const [advancedForm, setAdvancedForm] = useState(null);
+  const [joinPreviewOpen, setJoinPreviewOpen] = useState(false);
+  const [selectedJoinRequest, setSelectedJoinRequest] = useState(null);
+  const [transferModalOpen, setTransferModalOpen] = useState(false);
+  const [isTransferringOwner, setIsTransferringOwner] = useState(false);
   const [leaving, setLeaving] = useState(false);
 
   const fallbackOrganization = useMemo(
@@ -200,6 +231,10 @@ export const useOrganizationWorkspace = () => {
         memberDirectoryVisible: detail.settings?.memberDirectoryVisible !== false,
         defaultRoleKey: detail.settings?.defaultRoleKey || "member",
         joinMessage: detail.settings?.joinMessage || "",
+        joinQuestions:
+          detail.settings?.joinQuestions?.length > 0
+            ? detail.settings.joinQuestions
+            : [defaultJoinQuestion("short_text")],
       });
       return detail;
     } catch (error) {
@@ -277,6 +312,28 @@ export const useOrganizationWorkspace = () => {
     }
   }, [message, organizationId]);
 
+  const loadJoinRequests = useCallback(async () => {
+    if (!organizationId || !hasPermission(activeOrganization, "manageMembers")) {
+      setJoinRequests([]);
+      setJoinRequestQuestions([]);
+      return;
+    }
+
+    setLoading((current) => ({ ...current, joinRequests: true }));
+    try {
+      const payload = await getOrganizationJoinRequests(organizationId);
+      setJoinRequests(payload.content || []);
+      setJoinRequestQuestions(payload.joinQuestions || []);
+    } catch (error) {
+      console.error("Failed to load organization join requests:", error);
+      message.error(getErrorMessage(error, "Không thể tải yêu cầu tham gia"));
+      setJoinRequests([]);
+      setJoinRequestQuestions([]);
+    } finally {
+      setLoading((current) => ({ ...current, joinRequests: false }));
+    }
+  }, [activeOrganization, message, organizationId]);
+
   const openRoleModal = useCallback((role = null) => {
     setRoleModal(role ? "edit" : "create");
     setRoleForm(
@@ -296,6 +353,23 @@ export const useOrganizationWorkspace = () => {
   const closeRoleModal = useCallback(() => {
     setRoleModal(null);
     setRoleForm(defaultRoleForm);
+  }, []);
+
+  const openInviteModal = useCallback(() => {
+    setInviteForm(defaultInviteForm);
+    setCreatedInvite(null);
+    setInviteModalOpen(true);
+  }, []);
+
+  const closeInviteModal = useCallback(() => {
+    setInviteModalOpen(false);
+    setInviteForm(defaultInviteForm);
+    setCreatedInvite(null);
+  }, []);
+
+  const changeInviteForm = useCallback((nextForm) => {
+    setInviteForm(nextForm);
+    setCreatedInvite(null);
   }, []);
 
   const saveRole = useCallback(
@@ -362,28 +436,77 @@ export const useOrganizationWorkspace = () => {
     [loadMembers, message, organizationId],
   );
 
+  const createInviteForCurrentForm = useCallback(async () => {
+    if (createdInvite?.code) return createdInvite;
+    if (!organizationId || isCreatingInvite) return null;
+
+    setIsCreatingInvite(true);
+    try {
+      const invite = await createOrganizationInvite(
+        organizationId,
+        buildInvitePayload(inviteForm, {
+          canBypassApproval: canBypassInviteApproval(activeOrganization),
+        }),
+      );
+      setCreatedInvite(invite);
+      loadInvites();
+      refreshOrganization();
+      return invite;
+    } finally {
+      setIsCreatingInvite(false);
+    }
+  }, [
+    activeOrganization,
+    createdInvite,
+    inviteForm,
+    isCreatingInvite,
+    loadInvites,
+    organizationId,
+    refreshOrganization,
+  ]);
+
+  const copyInviteCodeFromModal = useCallback(async () => {
+    try {
+      if (!createdInvite?.code) {
+        const invite = await createInviteForCurrentForm();
+        if (!invite?.code) return;
+
+        message.success("Đã tạo mã mời");
+        return;
+      }
+
+      await copyTextToClipboard(createdInvite.code);
+      message.success("Đã sao chép mã mời");
+    } catch (error) {
+      console.error("Failed to copy organization invite code:", error);
+      message.error(
+        error?.response
+          ? getErrorMessage(error, "Không thể tạo lời mời")
+          : "Không thể sao chép mã mời",
+      );
+    }
+  }, [createInviteForCurrentForm, createdInvite, message]);
+
   const createInvite = useCallback(
     async (event) => {
       event.preventDefault();
-      if (!organizationId) return;
 
       try {
-        const invite = await createOrganizationInvite(
-          organizationId,
-          buildInvitePayload(inviteForm),
-        );
-        setInviteModalOpen(false);
-        setInviteForm(defaultInviteForm);
-        await navigator.clipboard?.writeText(invite.code);
-        message.success("Đã tạo và sao chép mã mời");
-        loadInvites();
-        refreshOrganization();
+        const shareLink = buildShareableInviteLink(createdInvite);
+        if (!shareLink) return;
+
+        await copyTextToClipboard(shareLink);
+        message.success("Đã sao chép liên kết mời");
       } catch (error) {
         console.error("Failed to create organization invite:", error);
-        message.error(getErrorMessage(error, "Không thể tạo lời mời"));
+        message.error(
+          error?.response
+            ? getErrorMessage(error, "Không thể tạo lời mời")
+            : "Không thể sao chép liên kết mời",
+        );
       }
     },
-    [inviteForm, loadInvites, message, organizationId, refreshOrganization],
+    [createdInvite, message],
   );
 
   const copyInvite = useCallback(
@@ -467,7 +590,7 @@ export const useOrganizationWorkspace = () => {
 
   const saveSettings = useCallback(
     async (event) => {
-      event.preventDefault();
+      event?.preventDefault?.();
       if (!organizationId || !advancedForm) return;
 
       const canUpdateSettings = hasPermission(activeOrganization, "manageSettings");
@@ -488,6 +611,7 @@ export const useOrganizationWorkspace = () => {
             memberDirectoryVisible: advancedForm.memberDirectoryVisible,
             defaultRoleKey: advancedForm.defaultRoleKey,
             joinMessage: advancedForm.joinMessage,
+            joinQuestions: advancedForm.joinQuestions || [],
           });
         }
 
@@ -512,6 +636,67 @@ export const useOrganizationWorkspace = () => {
       }
     },
     [activeOrganization, advancedForm, message, organizationId, refreshOrganizations],
+  );
+
+  const reviewJoinRequest = useCallback(
+    async (member, action) => {
+      if (!organizationId || !member?.id || !action) return;
+
+      try {
+        await reviewOrganizationJoinRequest(organizationId, member.id, action);
+        message.success(
+          action === "approve"
+            ? "Đã duyệt yêu cầu tham gia"
+            : "Đã từ chối yêu cầu tham gia",
+        );
+        setSelectedJoinRequest(null);
+        loadJoinRequests();
+        loadMembers();
+        refreshOrganization();
+        refreshOrganizations?.();
+      } catch (error) {
+        console.error("Failed to review join request:", error);
+        message.error(getErrorMessage(error, "Không thể xử lý yêu cầu"));
+      }
+    },
+    [
+      loadJoinRequests,
+      loadMembers,
+      message,
+      organizationId,
+      refreshOrganization,
+      refreshOrganizations,
+    ],
+  );
+
+  const transferOwner = useCallback(
+    async (member) => {
+      if (!organizationId || !member?.id || isTransferringOwner) return;
+
+      setIsTransferringOwner(true);
+      try {
+        const payload = await transferOrganizationOwnership(organizationId, {
+          memberId: member.id,
+        });
+        setOrganization(payload.organization);
+        setTransferModalOpen(false);
+        message.success("Đã chuyển quyền sở hữu tổ chức");
+        loadMembers();
+        refreshOrganizations?.();
+      } catch (error) {
+        console.error("Failed to transfer organization ownership:", error);
+        message.error(getErrorMessage(error, "Không thể chuyển quyền sở hữu"));
+      } finally {
+        setIsTransferringOwner(false);
+      }
+    },
+    [
+      isTransferringOwner,
+      loadMembers,
+      message,
+      organizationId,
+      refreshOrganizations,
+    ],
   );
 
   const updateBannerImage = useCallback(
@@ -580,6 +765,10 @@ export const useOrganizationWorkspace = () => {
   }, [loadMembers, selectedTab]);
 
   useEffect(() => {
+    if (selectedTab === "advanced") loadMembers();
+  }, [loadMembers, selectedTab]);
+
+  useEffect(() => {
     if (selectedTab === "roles" || selectedTab === "members" || selectedTab === "advanced") {
       loadRoles();
     }
@@ -589,16 +778,26 @@ export const useOrganizationWorkspace = () => {
     if (selectedTab === "invites") loadInvites();
   }, [loadInvites, selectedTab]);
 
+  useEffect(() => {
+    if (selectedTab === "invites") loadJoinRequests();
+  }, [loadJoinRequests, selectedTab]);
+
   return {
     state: {
       activeOrganization,
       advancedForm,
       availableTabs,
       canManage,
+      createdInvite,
       inviteForm,
       inviteModalOpen,
       invites,
+      isCreatingInvite,
       isLoadingOrganization,
+      isTransferringOwner,
+      joinPreviewOpen,
+      joinRequestQuestions,
+      joinRequests,
       leaving,
       loading,
       memberFilters,
@@ -612,34 +811,45 @@ export const useOrganizationWorkspace = () => {
       roleModal,
       roles,
       selectedTab,
+      selectedJoinRequest,
+      transferModalOpen,
     },
     actions: {
       changeMemberRole,
       closeRoleModal,
+      closeInviteModal,
       copyInvite,
+      copyInviteCodeFromModal,
       createInvite,
       deleteInvite,
       leaveCurrentOrganization,
       loadInvites,
+      loadJoinRequests,
       loadMembers,
       loadOverview,
       loadRoles,
       openRoleModal,
+      openInviteModal,
       pauseInvites,
       refreshOrganization,
       removeRole,
       saveRole,
       saveSettings,
       setAdvancedForm,
-      setInviteForm,
+      setInviteForm: changeInviteForm,
       setInviteModalOpen,
+      setJoinPreviewOpen,
       setPauseDurationHours,
       setInviteStatus,
       setMemberFilters,
       setPauseModalOpen,
       setPauseScope,
       setRoleForm,
+      setSelectedJoinRequest,
       setTab,
+      setTransferModalOpen,
+      reviewJoinRequest,
+      transferOwner,
       updateBannerImage,
     },
   };

@@ -2,6 +2,8 @@ import OrganizationActionModal from "./components/OrganizationActionModal";
 import OrganizationActionSection from "./components/OrganizationActionSection";
 import OrganizationDashboardActionModal from "./components/OrganizationDashboardActionModal";
 import OrganizationHero from "./components/OrganizationHero";
+import OrganizationInviteModal from "./components/OrganizationInviteModal";
+import OrganizationJoinQuestionsModal from "./components/OrganizationJoinQuestionsModal";
 import OrganizationListSection from "./components/OrganizationListSection";
 import PendingOrganizationSection from "./components/PendingOrganizationSection";
 import { useOrganizationDashboard } from "./hooks/useOrganizationDashboard";
@@ -28,11 +30,8 @@ const OrganizationPage = () => {
     <main className="organization-page min-h-full px-4 py-5 text-slate-950 sm:px-6 lg:px-8">
       <div className="mx-auto flex w-full max-w-7xl flex-col gap-5">
         <OrganizationHero
-          activeInviteUrl={state.activeInviteUrl}
           activeOrganization={state.activeOrganization}
-          onCopyInvite={actions.handleOpenInviteModal}
-          onOpenCreate={() => actions.setActionModal("create")}
-          onOpenJoin={() => actions.setActionModal("join")}
+          onOpenInvite={actions.handleOpenInviteModal}
           onOpenNotifications={actions.handleOpenNotificationPanel}
         />
 
@@ -103,9 +102,28 @@ const OrganizationPage = () => {
         notificationSettings={state.notificationSettings}
         onClose={actions.closeDashboardAction}
         onConfirmLeave={actions.handleConfirmLeave}
-        onCopyInvite={actions.handleCopyInvite}
         onToggleNotificationSetting={actions.handleToggleNotificationSetting}
         savingNotificationKey={state.savingNotificationKey}
+      />
+      <OrganizationInviteModal
+        form={state.inviteForm}
+        invite={state.createdInvite}
+        isSubmitting={state.isCreatingInvite}
+        onChange={actions.setInviteForm}
+        onClose={actions.closeInviteModal}
+        onCopyCode={actions.handleCopyInviteCode}
+        onSubmit={actions.handleCreateInvite}
+        open={state.inviteModalOpen}
+        organization={state.inviteModalOrganization || state.activeOrganization}
+      />
+      <OrganizationJoinQuestionsModal
+        answers={state.joinAnswers}
+        isSubmitting={state.isJoining}
+        onChangeAnswer={actions.handleChangeJoinAnswer}
+        onClose={actions.closeJoinQuestions}
+        onSubmit={actions.handleSubmitJoinQuestions}
+        open={Boolean(state.joinPreview)}
+        preview={state.joinPreview}
       />
     </main>
   );

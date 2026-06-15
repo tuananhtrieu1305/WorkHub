@@ -1,11 +1,14 @@
 import OrganizationAdvancedSection from "./components/OrganizationAdvancedSection";
 import OrganizationInviteModal from "./components/OrganizationInviteModal";
 import OrganizationInvitesSection from "./components/OrganizationInvitesSection";
+import OrganizationJoinPreviewModal from "./components/OrganizationJoinPreviewModal";
+import OrganizationJoinRequestModal from "./components/OrganizationJoinRequestModal";
 import OrganizationMembersSection from "./components/OrganizationMembersSection";
 import OrganizationOverviewSection from "./components/OrganizationOverviewSection";
 import OrganizationPauseInvitesModal from "./components/OrganizationPauseInvitesModal";
 import OrganizationRoleModal from "./components/OrganizationRoleModal";
 import OrganizationRolesSection from "./components/OrganizationRolesSection";
+import OrganizationTransferOwnerModal from "./components/OrganizationTransferOwnerModal";
 import OrganizationWorkspaceHeader from "./components/OrganizationWorkspaceHeader";
 import OrganizationWorkspaceTabs from "./components/OrganizationWorkspaceTabs";
 import { useOrganizationWorkspace } from "./hooks/useOrganizationWorkspace";
@@ -75,10 +78,14 @@ const OrganizationDetailPage = () => {
             <OrganizationInvitesSection
               invites={state.invites}
               isLoading={state.loading.invites}
+              isLoadingJoinRequests={state.loading.joinRequests}
+              joinRequests={state.joinRequests}
               onCopyInvite={actions.copyInvite}
               onDeleteInvite={actions.deleteInvite}
-              onOpenCreateInvite={() => actions.setInviteModalOpen(true)}
+              onOpenCreateInvite={actions.openInviteModal}
+              onOpenJoinRequest={actions.setSelectedJoinRequest}
               onOpenPauseInvites={() => actions.setPauseModalOpen(true)}
+              onReviewJoinRequest={actions.reviewJoinRequest}
               onSetInviteStatus={actions.setInviteStatus}
               organization={state.activeOrganization}
             />
@@ -89,8 +96,11 @@ const OrganizationDetailPage = () => {
               form={state.advancedForm}
               isLeaving={state.leaving}
               isSaving={state.loading.settings}
+              members={state.members}
               onChange={actions.setAdvancedForm}
               onLeave={actions.leaveCurrentOrganization}
+              onOpenJoinPreview={() => actions.setJoinPreviewOpen(true)}
+              onOpenTransferOwner={() => actions.setTransferModalOpen(true)}
               onSubmit={actions.saveSettings}
               organization={state.activeOrganization}
               roles={state.roles}
@@ -110,8 +120,11 @@ const OrganizationDetailPage = () => {
 
       <OrganizationInviteModal
         form={state.inviteForm}
+        invite={state.createdInvite}
+        isSubmitting={state.isCreatingInvite}
         onChange={actions.setInviteForm}
-        onClose={() => actions.setInviteModalOpen(false)}
+        onClose={actions.closeInviteModal}
+        onCopyCode={actions.copyInviteCodeFromModal}
         onSubmit={actions.createInvite}
         open={state.inviteModalOpen}
         organization={state.activeOrganization}
@@ -125,6 +138,31 @@ const OrganizationDetailPage = () => {
         onSubmit={actions.pauseInvites}
         open={state.pauseModalOpen}
         scope={state.pauseScope}
+      />
+
+      <OrganizationJoinPreviewModal
+        joinMessage={state.advancedForm?.joinMessage}
+        onClose={() => actions.setJoinPreviewOpen(false)}
+        open={state.joinPreviewOpen}
+        organization={state.activeOrganization}
+        questions={state.advancedForm?.joinQuestions || []}
+      />
+
+      <OrganizationTransferOwnerModal
+        isSubmitting={state.isTransferringOwner}
+        members={state.members}
+        onClose={() => actions.setTransferModalOpen(false)}
+        onSubmit={actions.transferOwner}
+        open={state.transferModalOpen}
+        organization={state.activeOrganization}
+      />
+
+      <OrganizationJoinRequestModal
+        member={state.selectedJoinRequest}
+        onClose={() => actions.setSelectedJoinRequest(null)}
+        onReview={actions.reviewJoinRequest}
+        open={Boolean(state.selectedJoinRequest)}
+        questions={state.joinRequestQuestions}
       />
     </main>
   );

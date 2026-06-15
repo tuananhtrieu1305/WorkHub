@@ -1,5 +1,65 @@
 import mongoose from "mongoose";
 
+const joinQuestionOptionSchema = new mongoose.Schema(
+  {
+    id: {
+      type: String,
+      trim: true,
+      maxlength: 80,
+      required: true,
+    },
+    label: {
+      type: String,
+      trim: true,
+      maxlength: 120,
+      required: true,
+    },
+  },
+  { _id: false },
+);
+
+const joinQuestionSchema = new mongoose.Schema(
+  {
+    id: {
+      type: String,
+      trim: true,
+      maxlength: 80,
+      required: true,
+    },
+    type: {
+      type: String,
+      enum: ["short_text", "paragraph", "multiple_choice", "rules"],
+      default: "short_text",
+      required: true,
+    },
+    label: {
+      type: String,
+      trim: true,
+      maxlength: 240,
+      required: true,
+    },
+    description: {
+      type: String,
+      trim: true,
+      maxlength: 500,
+      default: "",
+    },
+    required: {
+      type: Boolean,
+      default: true,
+    },
+    options: {
+      type: [joinQuestionOptionSchema],
+      default: [],
+    },
+    sortOrder: {
+      type: Number,
+      default: 0,
+    },
+  },
+  { _id: false },
+);
+
 const organizationSchema = new mongoose.Schema(
   {
     name: {
@@ -89,6 +149,10 @@ const organizationSchema = new mongoose.Schema(
         trim: true,
         maxlength: 500,
         default: "",
+      },
+      joinQuestions: {
+        type: [joinQuestionSchema],
+        default: [],
       },
     },
     accentColor: {

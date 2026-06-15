@@ -143,8 +143,8 @@ export const AuthProvider = ({ children }) => {
     return context;
   }, []);
 
-  const joinOrganization = useCallback(async (inviteLink) => {
-    const context = await joinOrganizationApi(inviteLink);
+  const joinOrganization = useCallback(async (inviteLink, payload = {}) => {
+    const context = await joinOrganizationApi(inviteLink, payload);
     setActiveOrganizationId(context.activeOrganization?.id || null);
     setUser((currentUser) =>
       currentUser ? { ...currentUser, ...context } : currentUser

@@ -3,6 +3,9 @@ import { test } from "node:test";
 
 import {
   createInviteCode,
+  getMissingRequiredJoinAnswers,
+  normalizeOrganizationJoinAnswers,
+  normalizeOrganizationJoinQuestions,
   normalizeOrganizationInvitePayload,
   normalizeOrganizationPayload,
   serializeOrganization,
@@ -73,4 +76,61 @@ test("normalizeOrganizationInvitePayload keeps approval bypass flag", () => {
 
   assert.equal(payload.bypassApproval, true);
   assert.equal(payload.maxUses, 25);
+});
+
+test("normalizeOrganizationJoinQuestions keeps supported question types safely", () => {
+  const questions = normalizeOrganizationJoinQuestions([
+    {
+      id: "why",
+      type: "paragraph",
+      label: "  Vì sao bạn muốn tham gia?  ",
+      required: true,
+    },
+    {
+      id: "source",
+      type: "multiple_choice",
+      label: "Bạn biết tổ chức từ đâu?",
+      options: ["Bạn bè", { id: "search", label: "Tìm kiếm" }, ""],
+    },
+    {
+      id: "rules",
+      type: "rules",
+      label: "Đồng ý quy định",
+      description: "Không spam.",
+    },
+  ]);
+
+  assert.equal(questions.length, 3);
+  assert.equal(questions[0].label, "Vì sao bạn muốn tham gia?");
+  assert.equal(questions[1].options.length, 2);
+  assert.equal(questions[2].type, "rules");
+});
+
+test("normalizeOrganizationJoinAnswers detects missing required answers", () => {
+  const questions = normalizeOrganizationJoinQuestions([
+    { id: "why", type: "short_text", label: "Lý do", required: true },
+    {
+      id: "source",
+      type: "multiple_choice",
+      label: "Nguồn",
+      required: true,
+      options: [{ id: "friend", label: "Bạn bè" }],
+    },
+    { id: "rules", type: "rules", label: "Quy định", required: true },
+  ]);
+
+  const answers = normalizeOrganizationJoinAnswers(questions, {
+    why: "Muốn làm việc cùng nhóm",
+    source: "friend",
+    rules: true,
+  });
+
+  assert.equal(answers[1].value, "Bạn bè");
+  assert.deepEqual(getMissingRequiredJoinAnswers(questions, answers), []);
+  const incompleteAnswers = normalizeOrganizationJoinAnswers(questions, {
+    source: "friend",
+    rules: false,
+  });
+
+  assert.equal(getMissingRequiredJoinAnswers(questions, incompleteAnswers).length, 2);
 });

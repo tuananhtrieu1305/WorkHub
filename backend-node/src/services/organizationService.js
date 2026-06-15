@@ -89,6 +89,124 @@ export const resumeExpiredOrganizationInvitePauses = async (criteria = {}) =>
 const roleMapKey = (organizationId, roleKey) =>
   `${toId(organizationId)}:${normalizeRoleKey(roleKey) || "member"}`;
 
+const JOIN_QUESTION_TYPES = new Set([
+  "short_text",
+  "paragraph",
+  "multiple_choice",
+  "rules",
+]);
+
+const normalizeJoinBuilderId = (value, fallbackPrefix = "item") => {
+  const normalized = String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 80);
+
+  return normalized || `${fallbackPrefix}-${crypto.randomUUID().slice(0, 8)}`;
+};
+
+export const normalizeOrganizationJoinQuestions = (questions = []) => {
+  if (!Array.isArray(questions)) return [];
+
+  return questions
+    .slice(0, 5)
+    .map((question, index) => {
+      const type = JOIN_QUESTION_TYPES.has(question?.type)
+        ? question.type
+        : "short_text";
+      const label = String(question?.label || "")
+        .trim()
+        .replace(/\s+/g, " ")
+        .slice(0, 240);
+      if (!label) return null;
+
+      const options =
+        type === "multiple_choice" && Array.isArray(question?.options)
+          ? question.options
+              .slice(0, 10)
+              .map((option, optionIndex) => {
+                const optionLabel = String(option?.label || option || "")
+                  .trim()
+                  .replace(/\s+/g, " ")
+                  .slice(0, 120);
+                if (!optionLabel) return null;
+
+                return {
+                  id: normalizeJoinBuilderId(
+                    option?.id,
+                    `option-${optionIndex + 1}`,
+                  ),
+                  label: optionLabel,
+                };
+              })
+              .filter(Boolean)
+          : [];
+
+      return {
+        id: normalizeJoinBuilderId(question?.id, `question-${index + 1}`),
+        type,
+        label,
+        description: String(question?.description || "").trim().slice(0, 500),
+        required: question?.required !== false,
+        options,
+        sortOrder: index,
+      };
+    })
+    .filter(Boolean);
+};
+
+const getAnswerValue = (answers, questionId) => {
+  if (!answers) return undefined;
+  if (Array.isArray(answers)) {
+    return answers.find((answer) => answer?.questionId === questionId)?.value;
+  }
+  return answers[questionId];
+};
+
+export const normalizeOrganizationJoinAnswers = (questions = [], answers = {}) =>
+  normalizeOrganizationJoinQuestions(questions).map((question) => {
+    const rawValue = getAnswerValue(answers, question.id);
+    let value = "";
+
+    if (question.type === "rules") {
+      value = rawValue === true || rawValue === "true" || rawValue === "accepted";
+    } else if (question.type === "multiple_choice") {
+      const requestedValue = String(rawValue || "").trim().slice(0, 120);
+      const matchedOption = question.options.find(
+        (option) =>
+          option.id === requestedValue ||
+          option.label.toLowerCase() === requestedValue.toLowerCase(),
+      );
+      value = matchedOption?.label || requestedValue;
+    } else {
+      value = String(rawValue || "")
+        .trim()
+        .slice(0, question.type === "paragraph" ? 3000 : 1000);
+    }
+
+    return {
+      questionId: question.id,
+      questionLabel: question.label,
+      questionType: question.type,
+      value,
+    };
+  });
+
+export const getMissingRequiredJoinAnswers = (questions = [], answers = []) => {
+  const answerMap = new Map(
+    (answers || []).map((answer) => [answer.questionId, answer.value]),
+  );
+
+  return normalizeOrganizationJoinQuestions(questions).filter((question) => {
+    if (!question.required) return false;
+    const value = answerMap.get(question.id);
+    if (question.type === "rules") return value !== true;
+    return !String(value || "").trim();
+  });
+};
+
 const buildRoleMap = (roles = []) =>
   new Map(roles.map((role) => [roleMapKey(role.organizationId, role.key), role]));
 
@@ -164,6 +282,9 @@ export const serializeOrganization = (
       memberDirectoryVisible: org.settings?.memberDirectoryVisible !== false,
       defaultRoleKey: org.settings?.defaultRoleKey || "member",
       joinMessage: org.settings?.joinMessage || "",
+      joinQuestions: normalizeOrganizationJoinQuestions(
+        org.settings?.joinQuestions || [],
+      ),
     },
     memberCount,
     onlineCount,
@@ -540,6 +661,7 @@ export const ensureOrganizationJoinRequest = async (
     invitedBy = null,
     inviteId = null,
     inviteUsageCountedAt = null,
+    joinAnswers = [],
     requireApproval = true,
     role = "member",
   } = {},
@@ -548,6 +670,10 @@ export const ensureOrganizationJoinRequest = async (
   const nextStatus = requireApproval ? "pending" : "active";
   if (existing) {
     if (existing.status === "active" || existing.status === "pending") {
+      if (existing.status === "pending" && joinAnswers.length) {
+        existing.joinAnswers = joinAnswers;
+        await existing.save();
+      }
       return existing;
     }
 
@@ -562,6 +688,7 @@ export const ensureOrganizationJoinRequest = async (
         : inviteUsageCountedAt || existing.inviteUsageCountedAt;
     existing.removedAt = null;
     existing.joinedAt = nextStatus === "active" ? new Date() : null;
+    existing.joinAnswers = joinAnswers;
     await existing.save();
     return existing;
   }
@@ -577,6 +704,7 @@ export const ensureOrganizationJoinRequest = async (
         invitedBy,
         inviteId,
         inviteUsageCountedAt,
+        joinAnswers,
       },
     },
     { new: true, upsert: true, setDefaultsOnInsert: true },
@@ -616,6 +744,11 @@ export const normalizeOrganizationSettingsPayload = (payload = {}) => {
   }
   if (payload.joinMessage !== undefined) {
     settings.joinMessage = String(payload.joinMessage || "").trim().slice(0, 500);
+  }
+  if (payload.joinQuestions !== undefined) {
+    settings.joinQuestions = normalizeOrganizationJoinQuestions(
+      payload.joinQuestions,
+    );
   }
 
   return settings;
@@ -1208,6 +1341,9 @@ export default {
   getOrganizationRoles,
   getPendingOrganizationMemberships,
   getUserOrganizationMemberships,
+  getMissingRequiredJoinAnswers,
+  normalizeOrganizationJoinAnswers,
+  normalizeOrganizationJoinQuestions,
   normalizeOrganizationInvitePayload,
   normalizeOrganizationPayload,
   normalizeOrganizationRolePayload,

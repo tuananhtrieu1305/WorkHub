@@ -71,6 +71,55 @@ export const hasPermission = (organization, permissionKey) =>
   Boolean(organization?.permissions?.[permissionKey]) ||
   (organization?.role === "owner" && Boolean(permissionKey));
 
+export const canBypassInviteApproval = (organization) =>
+  hasPermission(organization, "manageInvites") ||
+  hasPermission(organization, "manageMembers") ||
+  hasPermission(organization, "manageSettings");
+
+export const buildShareableInviteLink = (invite) => {
+  const rawLink =
+    invite?.inviteLink ||
+    (invite?.code ? `/organization/join/${invite.code}` : "");
+  if (!rawLink) return "";
+  if (/^https?:\/\//i.test(rawLink)) return rawLink;
+
+  const origin =
+    typeof window !== "undefined" && window.location?.origin
+      ? window.location.origin
+      : "";
+  if (!origin) return rawLink;
+
+  try {
+    return new URL(rawLink, origin).toString();
+  } catch {
+    return `${origin}${rawLink.startsWith("/") ? "" : "/"}${rawLink}`;
+  }
+};
+
+export const copyTextToClipboard = async (text) => {
+  const value = String(text || "");
+  if (!value) throw new Error("Nothing to copy");
+
+  if (navigator.clipboard?.writeText) {
+    await navigator.clipboard.writeText(value);
+    return;
+  }
+
+  const textArea = document.createElement("textarea");
+  textArea.value = value;
+  textArea.setAttribute("readonly", "");
+  textArea.style.position = "fixed";
+  textArea.style.opacity = "0";
+  document.body.appendChild(textArea);
+  textArea.select();
+
+  try {
+    document.execCommand("copy");
+  } finally {
+    document.body.removeChild(textArea);
+  }
+};
+
 export const formatDate = (value) => {
   if (!value) return "";
   const date = new Date(value);

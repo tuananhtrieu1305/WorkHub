@@ -168,7 +168,7 @@ const OrganizationCard = ({
                 className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-bold transition hover:bg-slate-100"
               >
                 <Icon name="link" />
-                Lấy liên kết mời
+                Tạo liên kết mời
               </button>
               <button
                 type="button"

@@ -31,8 +31,11 @@ import {
   ensureOrganizationJoinRequest,
   ensureDefaultOrganizationRoles,
   findInviteTarget,
+  getMissingRequiredJoinAnswers,
   getOrganizationRoles,
+  normalizeOrganizationJoinAnswers,
   normalizeOrganizationInvitePayload,
+  normalizeOrganizationJoinQuestions,
   normalizeOrganizationPayload,
   normalizeOrganizationRolePayload,
   normalizeOrganizationSettingsPayload,
@@ -184,6 +187,11 @@ const requireOrganizationPermission = async (
   return result;
 };
 
+const canBypassInviteApproval = (membership) =>
+  hasOrganizationPermission(membership, "manageInvites") ||
+  hasOrganizationPermission(membership, "manageMembers") ||
+  hasOrganizationPermission(membership, "manageSettings");
+
 const recordInviteSuccessfulUse = async (invite, membership, userId) => {
   if (!invite || !membership || membership.inviteUsageCountedAt) return;
   if (String(invite.createdBy?._id || invite.createdBy) === String(userId)) {
@@ -240,6 +248,13 @@ const serializeOrganizationWithStats = async (organization, membership, req) => 
   });
 };
 
+const serializeJoinAnswer = (answer) => ({
+  questionId: answer.questionId,
+  questionLabel: answer.questionLabel || "",
+  questionType: answer.questionType || "short_text",
+  value: answer.value,
+});
+
 const serializeMember = (membership, roleMap = new Map()) => {
   const user = membership.userId;
   const role = roleMap.get(membership.role);
@@ -252,8 +267,11 @@ const serializeMember = (membership, roleMap = new Map()) => {
     roleColor: rolePayload?.color || "#64748b",
     permissions: rolePayload?.permissions || {},
     status: membership.status,
+    createdAt: membership.createdAt,
+    updatedAt: membership.updatedAt,
     joinedAt: membership.joinedAt,
     invitedBy: membership.invitedBy ? String(membership.invitedBy) : null,
+    joinAnswers: (membership.joinAnswers || []).map(serializeJoinAnswer),
     user: user
       ? {
           id: String(user._id || user.id),
@@ -316,6 +334,49 @@ export const createOrganization = async (req, res) => {
   });
 };
 
+export const previewOrganizationJoin = async (req, res) => {
+  const inviteInput =
+    req.body?.inviteLink || req.body?.inviteCode || req.params?.inviteCode;
+  const inviteCode = normalizeInviteCode(inviteInput);
+  const inviteTarget = await findInviteTarget(inviteCode);
+  if (!inviteTarget?.organization) {
+    throw new ApiError(404, "Invite link is invalid or disabled");
+  }
+
+  const { organization, invite } = inviteTarget;
+  const requireApproval =
+    organization.settings?.requireApproval !== false && !invite?.bypassApproval;
+  const [memberCount, existingMembership] = await Promise.all([
+    OrganizationMember.countDocuments({
+      organizationId: organization._id,
+      status: "active",
+    }),
+    OrganizationMember.findOne({
+      organizationId: organization._id,
+      userId: req.user._id,
+    }).select("status"),
+  ]);
+
+  res.json({
+    organization: {
+      id: String(organization._id),
+      name: organization.name,
+      slug: organization.slug,
+      description: organization.description || "",
+      logoUrl: organization.logoUrl || "",
+      bannerUrl: organization.bannerUrl || "",
+      accentColor: organization.accentColor || "#2563eb",
+      memberCount,
+      memberStatus: existingMembership?.status || null,
+    },
+    requireApproval,
+    joinMessage: organization.settings?.joinMessage || "",
+    joinQuestions: requireApproval
+      ? normalizeOrganizationJoinQuestions(organization.settings?.joinQuestions || [])
+      : [],
+  });
+};
+
 export const joinOrganization = async (req, res) => {
   const inviteInput =
     req.body?.inviteLink || req.body?.inviteCode || req.params?.inviteCode;
@@ -331,6 +392,24 @@ export const joinOrganization = async (req, res) => {
     organizationId: organization._id,
     userId: req.user._id,
   }).select("status");
+  const joinQuestions = requireApproval
+    ? normalizeOrganizationJoinQuestions(organization.settings?.joinQuestions || [])
+    : [];
+  const joinAnswers = normalizeOrganizationJoinAnswers(
+    joinQuestions,
+    req.body?.answers || req.body?.joinAnswers || {},
+  );
+  const missingAnswers = getMissingRequiredJoinAnswers(joinQuestions, joinAnswers);
+  if (
+    missingAnswers.length &&
+    !["active", "pending"].includes(existingMembership?.status)
+  ) {
+    throw new ApiError(
+      400,
+      "Please answer all required join questions",
+      "JOIN_QUESTIONS_REQUIRED",
+    );
+  }
   const shouldTrackInviteUse = Boolean(
     invite &&
       String(invite.createdBy) !== String(req.user._id) &&
@@ -343,6 +422,7 @@ export const joinOrganization = async (req, res) => {
     {
       invitedBy: invite?.createdBy || null,
       inviteId: shouldTrackInviteUse ? invite?._id : null,
+      joinAnswers,
       requireApproval,
       role: organization.settings?.defaultRoleKey || "member",
     },
@@ -715,6 +795,41 @@ export const getOrganizationInvites = async (req, res) => {
   });
 };
 
+export const getOrganizationJoinRequests = async (req, res) => {
+  const { roles } = await requireOrganizationPermission(
+    req.params.id,
+    req.user._id,
+    "manageMembers",
+    "Only authorized members can view join requests",
+  );
+
+  const [organization, pendingMembers] = await Promise.all([
+    Organization.findById(req.params.id),
+    OrganizationMember.find({
+      organizationId: req.params.id,
+      status: "pending",
+    })
+      .populate(
+        "userId",
+        "_id fullName email avatar position status activityStatus activityStatusExpiresAt",
+      )
+      .sort({ updatedAt: -1, createdAt: -1 }),
+  ]);
+
+  if (!organization || organization.archivedAt) {
+    throw new ApiError(404, "Organization not found");
+  }
+
+  const roleMap = new Map(roles.map((role) => [role.key, role]));
+  res.json({
+    content: pendingMembers.map((member) => serializeMember(member, roleMap)),
+    totalElements: pendingMembers.length,
+    joinQuestions: normalizeOrganizationJoinQuestions(
+      organization.settings?.joinQuestions || [],
+    ),
+  });
+};
+
 export const createOrganizationInvite = async (req, res) => {
   const organization = await Organization.findById(req.params.id);
   if (!organization || organization.archivedAt) {
@@ -739,6 +854,15 @@ export const createOrganizationInvite = async (req, res) => {
   }
 
   const payload = normalizeOrganizationInvitePayload(req.body);
+  const canBypassApproval = canBypassInviteApproval(membership);
+  if (
+    organization.settings?.requireApproval !== false &&
+    payload.bypassApproval &&
+    !canBypassApproval
+  ) {
+    throw new ApiError(403, "Only authorized members can bypass approval");
+  }
+
   const invite = await OrganizationInvite.create({
     organizationId: req.params.id,
     createdBy: req.user._id,
@@ -746,7 +870,9 @@ export const createOrganizationInvite = async (req, res) => {
     maxUses: payload.maxUses,
     expiresAt: payload.expiresAt,
     bypassApproval:
-      organization.settings?.requireApproval !== false && payload.bypassApproval,
+      organization.settings?.requireApproval !== false &&
+      canBypassApproval &&
+      payload.bypassApproval,
     note: payload.note,
   });
   await invite.populate("createdBy", "_id fullName email avatar");
@@ -1196,6 +1322,72 @@ export const reviewOrganizationJoinRequest = async (req, res) => {
       baseUrl: getBaseUrl(req),
       persistFallback: true,
     })),
+  });
+};
+
+export const transferOrganizationOwnership = async (req, res) => {
+  const { membership, roles } = await requireOrganizationPermission(
+    req.params.id,
+    req.user._id,
+    "manageOrganization",
+    "Only authorized members can transfer ownership",
+  );
+
+  if (membership.role !== "owner") {
+    throw new ApiError(403, "Only the current owner can transfer ownership");
+  }
+
+  const memberId = String(req.body?.memberId || "").trim();
+  const userId = String(req.body?.userId || "").trim();
+  if (!memberId && !userId) {
+    throw new ApiError(400, "memberId or userId is required");
+  }
+
+  const targetQuery = {
+    organizationId: req.params.id,
+    status: "active",
+  };
+  if (memberId) {
+    targetQuery._id = memberId;
+  } else {
+    targetQuery.userId = userId;
+  }
+
+  const targetMembership = await OrganizationMember.findOne(targetQuery).populate(
+    "userId",
+    "_id fullName email avatar position status activityStatus activityStatusExpiresAt",
+  );
+  if (!targetMembership) {
+    throw new ApiError(404, "Target member not found");
+  }
+  if (String(targetMembership.userId?._id || targetMembership.userId) === String(req.user._id)) {
+    throw new ApiError(400, "Choose another member to transfer ownership");
+  }
+
+  const ownerRole = roles.find((role) => role.key === "owner");
+  const fallbackRole = roles.find((role) => role.key === "admin") ||
+    roles.find((role) => role.key === "member");
+
+  membership.role = fallbackRole?.key || "member";
+  membership.roleId = fallbackRole?._id || null;
+  targetMembership.role = "owner";
+  targetMembership.roleId = ownerRole?._id || null;
+
+  const organization = await Organization.findByIdAndUpdate(
+    req.params.id,
+    { ownerId: targetMembership.userId?._id || targetMembership.userId },
+    { new: true, runValidators: true },
+  );
+  if (!organization || organization.archivedAt) {
+    throw new ApiError(404, "Organization not found");
+  }
+
+  await Promise.all([membership.save(), targetMembership.save()]);
+
+  const roleMap = new Map(roles.map((role) => [role.key, role]));
+  res.json({
+    organization: await serializeOrganizationWithStats(organization, membership, req),
+    owner: serializeMember(targetMembership, roleMap),
   });
 };
 

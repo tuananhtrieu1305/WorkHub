@@ -1,5 +1,32 @@
 import mongoose from "mongoose";
 
+const joinAnswerSchema = new mongoose.Schema(
+  {
+    questionId: {
+      type: String,
+      trim: true,
+      maxlength: 80,
+      required: true,
+    },
+    questionLabel: {
+      type: String,
+      trim: true,
+      maxlength: 240,
+      default: "",
+    },
+    questionType: {
+      type: String,
+      enum: ["short_text", "paragraph", "multiple_choice", "rules"],
+      default: "short_text",
+    },
+    value: {
+      type: mongoose.Schema.Types.Mixed,
+      default: "",
+    },
+  },
+  { _id: false },
+);
+
 const organizationMemberSchema = new mongoose.Schema(
   {
     organizationId: {
@@ -48,6 +75,10 @@ const organizationMemberSchema = new mongoose.Schema(
     inviteUsageCountedAt: {
       type: Date,
       default: null,
+    },
+    joinAnswers: {
+      type: [joinAnswerSchema],
+      default: [],
     },
     joinedAt: {
       type: Date,

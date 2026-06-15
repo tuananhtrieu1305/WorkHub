@@ -1,12 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
-import { hasPermission } from "../organizationUtils";
+import { formatDate, hasPermission } from "../organizationUtils";
 import Icon from "./Icon";
 import MemberAvatar from "./MemberAvatar";
 
 const SECOND_MS = 1000;
-const MINUTE_MS = 60 * SECOND_MS;
-const HOUR_MS = 60 * MINUTE_MS;
-const DAY_MS = 24 * HOUR_MS;
 
 const statusClasses = {
   active: "bg-emerald-50 text-emerald-700 ring-emerald-100",
@@ -68,15 +65,20 @@ const getStatusLabel = (invite, now) => {
 const OrganizationInvitesSection = ({
   invites = [],
   isLoading,
+  isLoadingJoinRequests = false,
+  joinRequests = [],
   onCopyInvite,
   onDeleteInvite,
   onOpenCreateInvite,
+  onOpenJoinRequest,
   onOpenPauseInvites,
+  onReviewJoinRequest,
   onSetInviteStatus,
   organization,
 }) => {
   const [now, setNow] = useState(null);
   const canManageInvites = hasPermission(organization, "manageInvites");
+  const canManageMembers = hasPermission(organization, "manageMembers");
   const canCreateInvites =
     hasPermission(organization, "createInvites") || canManageInvites;
 
@@ -107,7 +109,170 @@ const OrganizationInvitesSection = ({
   };
 
   return (
-    <section className="rounded-3xl bg-white p-5 ring-1 ring-slate-200">
+    <div className="grid gap-5">
+      {canManageMembers && (
+        <section className="rounded-3xl bg-white p-5 ring-1 ring-slate-200">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+            <div>
+              <h2 className="flex items-center gap-2 text-xl font-black text-slate-950">
+                <Icon name="how_to_reg" />
+                Yêu cầu tham gia
+              </h2>
+              <p className="mt-1 text-sm font-semibold text-slate-500">
+                Xem câu trả lời theo form xét duyệt và duyệt thành viên mới.
+              </p>
+            </div>
+            <div className="rounded-2xl bg-emerald-50 px-4 py-3 text-sm font-black text-emerald-700 ring-1 ring-emerald-100">
+              {joinRequests.length} đang chờ
+            </div>
+          </div>
+
+          <div className="mt-5 overflow-hidden rounded-3xl ring-1 ring-slate-200">
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[900px] table-fixed border-collapse text-left">
+                <colgroup>
+                  <col className="w-[270px]" />
+                  <col className="w-[220px]" />
+                  <col className="w-[170px]" />
+                  <col className="w-[150px]" />
+                  <col className="w-[170px]" />
+                </colgroup>
+                <thead>
+                  <tr className="text-xs font-black uppercase">
+                    <th className="bg-emerald-50 px-4 py-3 text-emerald-700">
+                      Người gửi
+                    </th>
+                    <th className="bg-blue-50 px-4 py-3 text-blue-700">
+                      Liên hệ
+                    </th>
+                    <th className="bg-violet-50 px-4 py-3 text-violet-700">
+                      Câu trả lời
+                    </th>
+                    <th className="bg-amber-50 px-4 py-3 text-amber-700">
+                      Ngày gửi
+                    </th>
+                    <th className="bg-rose-50 px-4 py-3 text-right text-rose-700">
+                      Thao tác
+                    </th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 bg-white">
+                  {isLoadingJoinRequests ? (
+                    [0, 1, 2].map((item) => (
+                      <tr key={item}>
+                        <td
+                          colSpan={5}
+                          className="h-20 animate-pulse bg-slate-50"
+                        />
+                      </tr>
+                    ))
+                  ) : joinRequests.length ? (
+                    joinRequests.map((request) => (
+                      <tr
+                        key={request.id}
+                        onClick={() => onOpenJoinRequest?.(request)}
+                        className="cursor-pointer align-middle transition hover:bg-slate-50/80"
+                      >
+                        <td className="px-4 py-4">
+                          <div className="flex min-w-0 items-center gap-3">
+                            <MemberAvatar member={request} />
+                            <div className="min-w-0">
+                              <p className="truncate text-sm font-black text-slate-950">
+                                {request.user?.fullName ||
+                                  request.user?.email ||
+                                  "Người dùng"}
+                              </p>
+                              <p className="truncate text-xs font-semibold text-slate-500">
+                                {request.user?.position || "Đang chờ xét duyệt"}
+                              </p>
+                            </div>
+                          </div>
+                        </td>
+                        <td className="px-4 py-4">
+                          <p className="truncate text-sm font-bold text-slate-700">
+                            {request.user?.email || "Chưa có email"}
+                          </p>
+                        </td>
+                        <td className="px-4 py-4">
+                          <span className="inline-flex items-center gap-2 rounded-2xl bg-violet-50 px-3 py-1.5 text-xs font-black text-violet-700 ring-1 ring-violet-100">
+                            <Icon name="question_answer" />
+                            {(request.joinAnswers || []).length} câu
+                          </span>
+                        </td>
+                        <td className="px-4 py-4">
+                          <span className="text-sm font-bold text-slate-600">
+                            {formatDate(
+                              request.createdAt ||
+                                request.updatedAt ||
+                                request.joinedAt,
+                            ) || "Mới gửi"}
+                          </span>
+                        </td>
+                        <td className="px-4 py-4">
+                          <div className="flex justify-end gap-2">
+                            <button
+                              type="button"
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                onReviewJoinRequest?.(request, "approve");
+                              }}
+                              className="inline-flex size-9 items-center justify-center rounded-xl bg-emerald-50 text-emerald-700 transition hover:bg-emerald-100"
+                              aria-label="Duyệt yêu cầu"
+                              title="Duyệt"
+                            >
+                              <Icon name="check" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                onReviewJoinRequest?.(request, "reject");
+                              }}
+                              className="inline-flex size-9 items-center justify-center rounded-xl bg-rose-50 text-rose-700 transition hover:bg-rose-100"
+                              aria-label="Từ chối yêu cầu"
+                              title="Từ chối"
+                            >
+                              <Icon name="close" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                onOpenJoinRequest?.(request);
+                              }}
+                              className="inline-flex size-9 items-center justify-center rounded-xl bg-blue-50 text-blue-700 transition hover:bg-blue-100"
+                              aria-label="Xem câu trả lời"
+                              title="Xem câu trả lời"
+                            >
+                              <Icon name="visibility" />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))
+                  ) : (
+                    <tr>
+                      <td colSpan={5}>
+                        <div className="grid place-items-center gap-2 px-4 py-12 text-center">
+                          <Icon
+                            name="assignment_turned_in"
+                            className="text-4xl leading-none text-slate-300"
+                          />
+                          <p className="text-sm font-black text-slate-600">
+                            Chưa có yêu cầu tham gia nào cần phê duyệt.
+                          </p>
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+      )}
+
+      <section className="rounded-3xl bg-white p-5 ring-1 ring-slate-200">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <h2 className="flex items-center gap-2 text-xl font-black text-slate-950">
@@ -307,7 +472,8 @@ const OrganizationInvitesSection = ({
           </table>
         </div>
       </div>
-    </section>
+      </section>
+    </div>
   );
 };
 

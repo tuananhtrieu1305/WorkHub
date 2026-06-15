@@ -10,15 +10,26 @@ export const createOrganization = async (payload) => {
   return data;
 };
 
-export const joinOrganization = async (inviteLink) => {
-  const { data } = await axiosClient.post("/organizations/join", {
+export const previewOrganizationJoin = async (inviteLink) => {
+  const { data } = await axiosClient.post("/organizations/join/preview", {
     inviteLink,
   });
   return data;
 };
 
-export const joinOrganizationByCode = async (inviteCode) => {
-  const { data } = await axiosClient.post(`/organizations/join/${inviteCode}`);
+export const joinOrganization = async (inviteLink, payload = {}) => {
+  const { data } = await axiosClient.post("/organizations/join", {
+    inviteLink,
+    ...payload,
+  });
+  return data;
+};
+
+export const joinOrganizationByCode = async (inviteCode, payload = {}) => {
+  const { data } = await axiosClient.post(
+    `/organizations/join/${inviteCode}`,
+    payload,
+  );
   return data;
 };
 
@@ -97,6 +108,13 @@ export const getOrganizationInvites = async (organizationId, params = {}) => {
   const { data } = await axiosClient.get(
     `/organizations/${organizationId}/invites`,
     { params },
+  );
+  return data;
+};
+
+export const getOrganizationJoinRequests = async (organizationId) => {
+  const { data } = await axiosClient.get(
+    `/organizations/${organizationId}/join-requests`,
   );
   return data;
 };
@@ -192,6 +210,14 @@ export const reviewOrganizationJoinRequest = async (
 export const leaveOrganization = async (organizationId) => {
   const { data } = await axiosClient.delete(
     `/organizations/${organizationId}/members/me`,
+  );
+  return data;
+};
+
+export const transferOrganizationOwnership = async (organizationId, payload) => {
+  const { data } = await axiosClient.patch(
+    `/organizations/${organizationId}/owner`,
+    payload,
   );
   return data;
 };

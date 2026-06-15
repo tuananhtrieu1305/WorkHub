@@ -10,6 +10,7 @@ import {
   getMyOrganizations,
   getOrganizationDetail,
   getOrganizationInvites,
+  getOrganizationJoinRequests,
   getOrganizationInvite,
   getOrganizationMembers,
   getOrganizationOverview,
@@ -17,10 +18,12 @@ import {
   joinOrganization,
   leaveOrganization,
   pauseOrganizationInvites,
+  previewOrganizationJoin,
   reviewOrganizationJoinRequest,
   streamOrganizationBanner,
   streamOrganizationLogo,
   switchOrganization,
+  transferOrganizationOwnership,
   updateOrganizationInvite,
   updateOrganizationMember,
   updateOrganization,
@@ -38,6 +41,7 @@ router.get("/", protect, asyncHandler(getMyOrganizations));
 router.post("/", protect, asyncHandler(createOrganization));
 router.get("/logos", asyncHandler(streamOrganizationLogo));
 router.get("/banners", asyncHandler(streamOrganizationBanner));
+router.post("/join/preview", protect, asyncHandler(previewOrganizationJoin));
 router.post("/join", protect, asyncHandler(joinOrganization));
 router.post("/join/:inviteCode", protect, asyncHandler(joinOrganization));
 router.patch("/switch", protect, asyncHandler(switchOrganization));
@@ -50,6 +54,11 @@ router.post("/:id/roles", protect, asyncHandler(createOrganizationRole));
 router.patch("/:id/roles/:roleId", protect, asyncHandler(updateOrganizationRole));
 router.delete("/:id/roles/:roleId", protect, asyncHandler(deleteOrganizationRole));
 router.get("/:id/invites", protect, asyncHandler(getOrganizationInvites));
+router.get(
+  "/:id/join-requests",
+  protect,
+  asyncHandler(getOrganizationJoinRequests),
+);
 router.post("/:id/invites", protect, asyncHandler(createOrganizationInvite));
 router.patch("/:id/invites/pause", protect, asyncHandler(pauseOrganizationInvites));
 router.patch(
@@ -73,6 +82,11 @@ router.patch(
   "/:id/members/:memberId/review",
   protect,
   asyncHandler(reviewOrganizationJoinRequest),
+);
+router.patch(
+  "/:id/owner",
+  protect,
+  asyncHandler(transferOrganizationOwnership),
 );
 router.patch(
   "/:id/logo",

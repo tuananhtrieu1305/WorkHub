@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { canBypassInviteApproval } from "../organizationUtils";
 import Icon from "./Icon";
 import ToggleSwitch from "./ToggleSwitch";
 
@@ -115,14 +116,19 @@ const InviteDropdown = ({ icon, label, onChange, options, value }) => {
 
 const OrganizationInviteModal = ({
   form,
+  invite,
+  isSubmitting = false,
   onChange,
   onClose,
+  onCopyCode,
   onSubmit,
   open,
   organization,
 }) => {
   const shouldShowApprovalBypass =
-    organization?.settings?.requireApproval !== false;
+    organization?.settings?.requireApproval !== false &&
+    canBypassInviteApproval(organization);
+  const inviteCode = invite?.code || "";
 
   if (!open) return null;
 
@@ -184,17 +190,32 @@ const OrganizationInviteModal = ({
             </div>
           )}
 
-          <label className="block">
+          <div className="rounded-[1.25rem] border border-slate-200 bg-slate-50 p-4">
             <span className="text-xs font-black uppercase text-slate-500">
-              Ghi chú nội bộ
+              Mã mời
             </span>
-            <input
-              value={form.note}
-              onChange={(event) => onChange({ ...form, note: event.target.value })}
-              placeholder="VD: mời nhóm thiết kế"
-              className="mt-2 h-12 w-full rounded-[1.25rem] border border-slate-200 bg-slate-50 px-4 text-sm font-bold outline-none transition focus:border-blue-300 focus:bg-white focus:ring-4 focus:ring-blue-100"
-            />
-          </label>
+            <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div className="min-w-0">
+                <p className="truncate text-lg font-black text-slate-950">
+                  {inviteCode || "CHƯA TẠO"}
+                </p>
+                <p className="mt-1 text-xs font-semibold text-slate-500">
+                  {inviteCode
+                    ? "Mã đang khớp với lựa chọn hiện tại."
+                    : "Mã sẽ được tạo theo lựa chọn hiện tại."}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={onCopyCode}
+                disabled={isSubmitting}
+                className="inline-flex shrink-0 items-center justify-center gap-2 rounded-2xl bg-white px-4 py-2.5 text-sm font-black text-slate-800 ring-1 ring-slate-200 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                <Icon name={inviteCode ? "content_copy" : "key"} />
+                {inviteCode ? "Sao chép mã" : "Tạo mã mời"}
+              </button>
+            </div>
+          </div>
         </div>
 
         <div className="mt-6 flex justify-end gap-3">
@@ -207,10 +228,11 @@ const OrganizationInviteModal = ({
           </button>
           <button
             type="submit"
-            className="inline-flex items-center gap-2 rounded-2xl bg-blue-600 px-5 py-3 text-sm font-black text-white shadow-lg shadow-blue-200/60 transition hover:-translate-y-0.5 hover:bg-blue-700 active:translate-y-0 active:scale-[0.98]"
+            disabled={isSubmitting || !inviteCode}
+            className="inline-flex items-center gap-2 rounded-2xl bg-blue-600 px-5 py-3 text-sm font-black text-white shadow-lg shadow-blue-200/60 transition hover:-translate-y-0.5 hover:bg-blue-700 active:translate-y-0 active:scale-[0.98] disabled:cursor-not-allowed disabled:bg-slate-300 disabled:text-slate-500 disabled:shadow-none disabled:hover:translate-y-0"
           >
-            <Icon name="add_link" />
-            Tạo liên kết
+            <Icon name="link" />
+            Sao chép liên kết
           </button>
         </div>
       </form>
