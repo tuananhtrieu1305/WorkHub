@@ -142,7 +142,12 @@ const organizationSchema = new mongoose.Schema(
         type: String,
         trim: true,
         lowercase: true,
-        default: "member",
+        default: "thanh-vien",
+      },
+      defaultRoleId: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "OrganizationRole",
+        default: null,
       },
       joinMessage: {
         type: String,

@@ -566,7 +566,7 @@ export const useOrganizationDashboard = () => {
     async (event, organization) => {
       event?.stopPropagation?.();
       const organizationId = getOrganizationId(organization);
-      if (!organizationId || organization?.role === "owner" || isLeavingId) return;
+      if (!organizationId || organization?.isOwner || isLeavingId) return;
 
       setIsLeavingId(organizationId);
       try {
@@ -599,7 +599,7 @@ export const useOrganizationDashboard = () => {
     (event, organization) => {
       event?.stopPropagation?.();
       setOpenMenuId("");
-      if (!organization || organization.role === "owner") return;
+      if (!organization || organization.isOwner) return;
       setDashboardAction({ type: "leave", organization });
     },
     [],

@@ -1,4 +1,4 @@
-import { formatDate, hasPermission, roleLabels } from "../organizationUtils";
+import { formatDate, hasPermission } from "../organizationUtils";
 import Icon from "./Icon";
 import MemberAvatar from "./MemberAvatar";
 import { PanelListSkeleton } from "../../../components/common/Skeleton";
@@ -20,6 +20,7 @@ const OrganizationMembersSection = ({
   roles,
 }) => {
   const canManageMembers = hasPermission(organization, "manageMembers");
+  const manageableRoles = roles.filter((role) => role.canManage !== false);
 
   return (
     <section className="rounded-3xl bg-white p-5 ring-1 ring-slate-200">
@@ -77,7 +78,7 @@ const OrganizationMembersSection = ({
           >
             <option value="">Mọi vai trò</option>
             {roles.map((role) => (
-              <option key={role.key} value={role.key}>
+              <option key={role.id} value={role.id}>
                 {role.name}
               </option>
             ))}
@@ -124,7 +125,7 @@ const OrganizationMembersSection = ({
                     color: member.roleColor || "#2563eb",
                   }}
                 >
-                  {member.roleLabel || roleLabels[member.role] || member.role}
+                  {member.roleLabel || "Thành viên"}
                 </span>
                 <span
                   className={`inline-flex w-fit items-center gap-2 rounded-xl px-3 py-1.5 text-xs font-black ${
@@ -141,19 +142,17 @@ const OrganizationMembersSection = ({
                   {activityLabel(member)}
                 </span>
                 <div className="flex justify-start lg:justify-end">
-                  {canManageMembers && member.role !== "owner" ? (
+                  {canManageMembers && !member.isOwner && member.canManage !== false ? (
                     <select
-                      value={member.role}
+                      value={member.roleId || ""}
                       onChange={(event) => onChangeRole(member, event.target.value)}
                       className="h-10 rounded-xl border border-slate-200 bg-white px-3 text-xs font-black outline-none transition focus:border-blue-300 focus:ring-4 focus:ring-blue-100"
                     >
-                      {roles
-                        .filter((role) => role.key !== "owner")
-                        .map((role) => (
-                          <option key={role.key} value={role.key}>
-                            {role.name}
-                          </option>
-                        ))}
+                      {manageableRoles.map((role) => (
+                        <option key={role.id} value={role.id}>
+                          {role.name}
+                        </option>
+                      ))}
                     </select>
                   ) : (
                     <span className="text-xs font-black text-slate-400">

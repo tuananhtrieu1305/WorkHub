@@ -45,7 +45,7 @@ const OrganizationDashboardActionModal = ({
 
   const meta = modalMeta[action] || modalMeta.notifications;
   const organizationId = getOrganizationId(inviteOrganization);
-  const isOwner = inviteOrganization?.role === "owner";
+  const isOwner = Boolean(inviteOrganization?.isOwner);
   const isLeaving = isLeavingId === organizationId;
 
   return (

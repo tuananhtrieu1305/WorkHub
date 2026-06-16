@@ -25,12 +25,6 @@ const tabs = [
   { key: "roles", label: "Vai trò", icon: "admin_panel_settings" },
 ];
 
-const roleFallbackLabels = {
-  owner: "Chủ sở hữu",
-  admin: "Quản trị",
-  member: "Thành viên",
-};
-
 const loadingProfileStyle = {
   "--profile-accent": "#64748b",
   "--profile-bg": "#e2e8f0",
@@ -212,8 +206,7 @@ const getDisplayRoles = (profile = {}) => {
       key: activeOrganization.role,
       name:
         activeOrganization.roleLabel ||
-        roleFallbackLabels[activeOrganization.role] ||
-        activeOrganization.role,
+        "Thành viên",
       description: "Vai trò trong tổ chức đang hoạt động.",
       color: activeOrganization.roleColor || "#64748b",
       status: activeOrganization.memberStatus || "active",
@@ -503,7 +496,7 @@ const UserProfileModal = ({ open, userId, userPreview = null, onClose }) => {
       <div className="grid gap-3">
         {organizationRoles.map((role) => (
           <article
-            key={`${role.key}-${role.name}`}
+            key={`${role.id || role.key}-${role.name}`}
             className="profile-role-card flex flex-col gap-3 rounded-2xl p-4 sm:flex-row sm:items-center sm:justify-between"
           >
             <div className="flex min-w-0 items-start gap-3">
@@ -512,12 +505,12 @@ const UserProfileModal = ({ open, userId, userPreview = null, onClose }) => {
                 style={{ "--role-color": role.color || "var(--profile-accent)" }}
               >
                 <span className="material-symbols-outlined text-[21px]">
-                  admin_panel_settings
+                  server_person
                 </span>
               </span>
               <span className="min-w-0">
                 <span className="block text-base font-black text-slate-950">
-                  {role.name || roleFallbackLabels[role.key] || role.key}
+                  {role.name || "Thành viên"}
                 </span>
                 <span className="mt-1 block text-sm font-semibold leading-6 text-slate-600">
                   {role.description || "Vai trò được gán trong tổ chức hiện tại."}

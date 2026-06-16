@@ -15,6 +15,7 @@ import { fileURLToPath } from "url";
 import User from "../models/User.js";
 import Organization from "../models/Organization.js";
 import OrganizationMember from "../models/OrganizationMember.js";
+import OrganizationRole from "../models/OrganizationRole.js";
 import Project from "../models/Project.js";
 import Post from "../models/Post.js";
 import Comment from "../models/Comment.js";
@@ -22,6 +23,10 @@ import Like from "../models/Like.js";
 import Conversation from "../models/Conversation.js";
 import Message from "../models/Message.js";
 import Task from "../models/Task.js";
+import {
+  DEFAULT_MEMBER_ROLE_KEY,
+  DEFAULT_ORGANIZATION_ROLES,
+} from "../utils/organizationPolicy.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -39,6 +44,9 @@ async function seed() {
       slug: { $regex: /^seed-workhub-/ },
     }).select("_id");
     await OrganizationMember.deleteMany({
+      organizationId: { $in: seedOrganizations.map((org) => org._id) },
+    });
+    await OrganizationRole.deleteMany({
       organizationId: { $in: seedOrganizations.map((org) => org._id) },
     });
     await Promise.all([
@@ -83,11 +91,26 @@ async function seed() {
       accentColor: "#2563eb",
     });
 
+    const memberRole = await OrganizationRole.create({
+      ...DEFAULT_ORGANIZATION_ROLES.find((role) => role.key === DEFAULT_MEMBER_ROLE_KEY),
+      organizationId: organization._id,
+      createdBy: admin._id,
+      updatedBy: admin._id,
+    });
+
+    organization.settings = {
+      ...(organization.settings?.toObject?.() || organization.settings || {}),
+      defaultRoleKey: memberRole.key,
+      defaultRoleId: memberRole._id,
+    };
+    await organization.save();
+
     await OrganizationMember.create(
       users.map((user) => ({
         organizationId: organization._id,
         userId: user._id,
-        role: user._id.equals(admin._id) ? "owner" : "member",
+        role: memberRole.key,
+        roleId: memberRole._id,
         status: "active",
         invitedBy: admin._id,
       })),

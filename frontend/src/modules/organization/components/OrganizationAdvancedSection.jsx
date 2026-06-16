@@ -135,8 +135,8 @@ const OrganizationAdvancedSection = ({
   const questionTypePickerRef = useRef(null);
   const canManageSettings = hasPermission(organization, "manageSettings");
   const canManageAppearance = hasPermission(organization, "manageOrganization");
-  const canLeave = organization?.role !== "owner";
-  const canTransferOwner = organization?.role === "owner";
+  const canLeave = !organization?.isOwner;
+  const canTransferOwner = Boolean(organization?.isOwner);
   const questions = useMemo(
     () => form?.joinQuestions || [],
     [form?.joinQuestions],
@@ -144,7 +144,7 @@ const OrganizationAdvancedSection = ({
   const eligibleTransferMembers = useMemo(
     () =>
       members.filter(
-        (member) => member.status === "active" && member.role !== "owner",
+        (member) => member.status === "active" && !member.isOwner,
       ),
     [members],
   );
@@ -487,20 +487,18 @@ const OrganizationAdvancedSection = ({
                     Vai trò mặc định
                   </span>
                   <select
-                    value={form?.defaultRoleKey || "member"}
+                    value={form?.defaultRoleId || ""}
                     disabled={!canManageSettings}
                     onChange={(event) =>
-                      updateForm({ defaultRoleKey: event.target.value })
+                      updateForm({ defaultRoleId: event.target.value })
                     }
                     className="mt-2 h-12 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 text-sm font-bold outline-none transition focus:border-blue-300 focus:bg-white focus:ring-4 focus:ring-blue-100 disabled:bg-slate-100 disabled:text-slate-400"
                   >
-                    {(roles || [])
-                      .filter((role) => role.key !== "owner")
-                      .map((role) => (
-                        <option key={role.key} value={role.key}>
-                          {role.name}
-                        </option>
-                      ))}
+                    {(roles || []).map((role) => (
+                      <option key={role.id} value={role.id}>
+                        {role.name}
+                      </option>
+                    ))}
                   </select>
                 </label>
                 <label className="block sm:col-span-2">

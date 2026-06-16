@@ -15,6 +15,8 @@ import {
 import { logActivity } from "../services/activityLogService.js";
 import { contentDisposition } from "../utils/fileResponse.js";
 import {
+  DEFAULT_MEMBER_ROLE_KEY,
+  OWNER_ORGANIZATION_PERMISSIONS,
   ORGANIZATION_PERMISSION_KEYS,
   hasOrganizationPermission,
   normalizeInviteCode,
@@ -44,6 +46,7 @@ import {
   serializeOrganization,
   serializeOrganizationInvite,
   serializeOrganizationRole,
+  isOrganizationOwnerMembership,
 } from "../services/organizationService.js";
 import { getPresenceFields } from "../services/presenceService.js";
 
@@ -64,6 +67,88 @@ const MAX_LOGO_SIZE_BYTES = 5 * 1024 * 1024;
 const MAX_BANNER_SIZE_BYTES = 8 * 1024 * 1024;
 const HOUR_MS = 60 * 60 * 1000;
 const PAUSE_DURATION_HOURS = new Set([1, 2, 4, 6, 12, 24]);
+
+const toId = (value) => String(value?._id || value?.id || value || "");
+
+const isObjectIdLike = (value) => /^[a-f\d]{24}$/i.test(String(value || ""));
+
+const roleMapKey = (organizationId, roleKey) =>
+  `${toId(organizationId)}:${normalizeRoleKey(roleKey) || DEFAULT_MEMBER_ROLE_KEY}`;
+
+const roleIdMapKey = (roleId) => `id:${toId(roleId)}`;
+
+const buildRoleMap = (roles = []) => {
+  const roleMap = new Map();
+  roles.forEach((role) => {
+    const doc = role?.toObject?.() || role;
+    if (!doc) return;
+    roleMap.set(roleIdMapKey(doc._id || doc.id), role);
+    roleMap.set(roleMapKey(doc.organizationId, doc.key), role);
+  });
+  return roleMap;
+};
+
+const getRoleForMembership = (membership, roleMap = new Map()) => {
+  if (!membership) return null;
+  return (
+    roleMap.get(roleIdMapKey(membership.roleId)) ||
+    roleMap.get(roleMapKey(membership.organizationId, membership.role)) ||
+    null
+  );
+};
+
+const getRoleOrderIndex = (roles = [], role) => {
+  const roleId = toId(role?._id || role?.id || role);
+  if (!roleId) return -1;
+  return roles.findIndex((item) => toId(item?._id || item?.id) === roleId);
+};
+
+const isOwnerInContext = (context) =>
+  Boolean(context?.membership && isOrganizationOwnerMembership(
+    context.membership,
+    context.organization,
+  ));
+
+const canManageRoleInHierarchy = (context, targetRole) => {
+  if (!context?.membership || !targetRole) return false;
+  if (isOwnerInContext(context)) return true;
+  if (!hasOrganizationPermission(context.membership, "manageRoles")) return false;
+
+  const actorRole =
+    context.role || getRoleForMembership(context.membership, buildRoleMap(context.roles));
+  const actorIndex = getRoleOrderIndex(context.roles, actorRole);
+  const targetIndex = getRoleOrderIndex(context.roles, targetRole);
+
+  return actorIndex >= 0 && targetIndex > actorIndex;
+};
+
+const assertCanManageRoleInHierarchy = (context, targetRole, message) => {
+  if (!canManageRoleInHierarchy(context, targetRole)) {
+    throw new ApiError(
+      403,
+      message || "You can only manage roles below your highest role",
+    );
+  }
+};
+
+const canManageMemberInHierarchy = (context, targetMembership) => {
+  if (!context?.membership || !targetMembership) return false;
+  if (isOrganizationOwnerMembership(targetMembership, context.organization)) return false;
+  if (isOwnerInContext(context)) return true;
+
+  const roleMap = buildRoleMap(context.roles);
+  const actorRole = context.role || getRoleForMembership(context.membership, roleMap);
+  const targetRole = getRoleForMembership(targetMembership, roleMap);
+  const actorIndex = getRoleOrderIndex(context.roles, actorRole);
+  const targetIndex = getRoleOrderIndex(context.roles, targetRole);
+
+  return actorIndex >= 0 && targetIndex > actorIndex;
+};
+
+const normalizeRoleMemberIds = (value) =>
+  Array.isArray(value)
+    ? [...new Set(value.map((item) => String(item || "").trim()).filter(Boolean))]
+    : [];
 
 const getSingleString = (value, fallback = "") => {
   if (Array.isArray(value)) return value[0] ?? fallback;
@@ -161,15 +246,23 @@ const getActiveMembership = async (organizationId, userId) =>
   });
 
 const getMembershipWithPermissions = async (organizationId, userId) => {
-  const membership = await getActiveMembership(organizationId, userId);
+  const [membership, organization] = await Promise.all([
+    getActiveMembership(organizationId, userId),
+    Organization.findOne({ _id: organizationId, archivedAt: null }),
+  ]);
   if (!membership) return null;
 
   const roles = await getOrganizationRoles(organizationId);
-  const role = roles.find((item) => item.key === membership.role);
-  membership.permissions = role
-    ? serializeOrganizationRole(role).permissions
-    : normalizeRolePermissions(membership.role);
-  return { membership, role, roles };
+  const roleMap = buildRoleMap(roles);
+  const role = getRoleForMembership(membership, roleMap);
+  const isOwner = isOrganizationOwnerMembership(membership, organization);
+  membership.isOwner = isOwner;
+  membership.permissions = isOwner
+    ? { ...OWNER_ORGANIZATION_PERMISSIONS }
+    : role
+      ? serializeOrganizationRole(role).permissions
+      : normalizeRolePermissions(membership.role || DEFAULT_MEMBER_ROLE_KEY);
+  return { membership, role, roles, organization };
 };
 
 const requireOrganizationPermission = async (
@@ -186,6 +279,53 @@ const requireOrganizationPermission = async (
     throw new ApiError(403, message || "You do not have permission");
   }
   return result;
+};
+
+const getDefaultMembershipRole = async (organization) => {
+  const organizationId = organization?._id || organization?.id || organization;
+  const fallbackRole = await ensureDefaultOrganizationRoles(organizationId);
+  const configuredRoleId = toId(organization?.settings?.defaultRoleId);
+  const configuredRoleKey = normalizeRoleKey(organization?.settings?.defaultRoleKey);
+
+  const role =
+    (configuredRoleId && isObjectIdLike(configuredRoleId)
+      ? await OrganizationRole.findOne({
+          _id: configuredRoleId,
+          organizationId,
+          archivedAt: null,
+        })
+      : null) ||
+    (configuredRoleKey
+      ? await OrganizationRole.findOne({
+          organizationId,
+          key: configuredRoleKey,
+          archivedAt: null,
+        })
+      : null) ||
+    fallbackRole;
+
+  if (
+    role &&
+    (!configuredRoleId ||
+      configuredRoleId !== toId(role._id) ||
+      configuredRoleKey !== role.key)
+  ) {
+    await Organization.updateOne(
+      { _id: organizationId },
+      {
+        $set: {
+          "settings.defaultRoleId": role._id,
+          "settings.defaultRoleKey": role.key,
+        },
+      },
+    );
+    if (organization?.settings) {
+      organization.settings.defaultRoleId = role._id;
+      organization.settings.defaultRoleKey = role.key;
+    }
+  }
+
+  return role;
 };
 
 const canBypassInviteApproval = (membership) =>
@@ -240,7 +380,15 @@ const serializeOrganizationWithStats = async (organization, membership, req) => 
       $or: [{ expiresAt: null }, { expiresAt: { $gt: new Date() } }],
     }).sort({ createdAt: -1 }),
   ]);
-  const role = roles.find((item) => item.key === membership?.role);
+  const role = getRoleForMembership(membership, buildRoleMap(roles));
+  const defaultRole =
+    roles.find((item) => item.isDefault) ||
+    roles.find((item) => item.key === DEFAULT_MEMBER_ROLE_KEY) ||
+    roles[0];
+  if (defaultRole && organization?.settings && !organization.settings.defaultRoleId) {
+    organization.settings.defaultRoleId = defaultRole._id;
+    organization.settings.defaultRoleKey = defaultRole.key;
+  }
   return serializeOrganization(organization, membership, {
     baseUrl: getBaseUrl(req),
     stats: statsMap.get(organizationId),
@@ -256,17 +404,22 @@ const serializeJoinAnswer = (answer) => ({
   value: answer.value,
 });
 
-const serializeMember = (membership, roleMap = new Map()) => {
+const serializeMember = (membership, roleMap = new Map(), organization = null) => {
   const user = membership.userId;
-  const role = roleMap.get(membership.role);
+  const role = getRoleForMembership(membership, roleMap);
   const rolePayload = role ? serializeOrganizationRole(role) : null;
+  const isOwner = isOrganizationOwnerMembership(membership, organization);
   return {
     id: String(membership._id),
     organizationId: String(membership.organizationId),
-    role: membership.role,
-    roleLabel: rolePayload?.name || membership.role,
+    roleId: rolePayload?.id || toId(membership.roleId) || null,
+    role: rolePayload?.key || membership.role || DEFAULT_MEMBER_ROLE_KEY,
+    roleLabel: rolePayload?.name || membership.role || "Thành viên",
     roleColor: rolePayload?.color || "#64748b",
-    permissions: rolePayload?.permissions || {},
+    isOwner,
+    permissions: isOwner
+      ? { ...OWNER_ORGANIZATION_PERMISSIONS }
+      : rolePayload?.permissions || {},
     status: membership.status,
     createdAt: membership.createdAt,
     updatedAt: membership.updatedAt,
@@ -313,12 +466,23 @@ export const createOrganization = async (req, res) => {
     inviteCode: await createUniqueInviteCode(),
   });
 
-  await ensureDefaultOrganizationRoles(organization._id, req.user._id);
+  const defaultRole = await ensureDefaultOrganizationRoles(
+    organization._id,
+    req.user._id,
+  );
+  if (defaultRole) {
+    organization.settings.defaultRoleId = defaultRole._id;
+    organization.settings.defaultRoleKey = defaultRole.key;
+  }
 
   const membership = await ensureOrganizationMember(
     organization._id,
     req.user._id,
-    { role: "owner", invitedBy: req.user._id },
+    {
+      role: defaultRole?.key || DEFAULT_MEMBER_ROLE_KEY,
+      roleId: defaultRole?._id || null,
+      invitedBy: req.user._id,
+    },
   );
 
   await User.findByIdAndUpdate(req.user._id, {
@@ -416,6 +580,7 @@ export const joinOrganization = async (req, res) => {
       String(invite.createdBy) !== String(req.user._id) &&
       !["active", "pending"].includes(existingMembership?.status),
   );
+  const defaultRole = await getDefaultMembershipRole(organization);
 
   const membership = await ensureOrganizationJoinRequest(
     organization._id,
@@ -425,7 +590,8 @@ export const joinOrganization = async (req, res) => {
       inviteId: shouldTrackInviteUse ? invite?._id : null,
       joinAnswers,
       requireApproval,
-      role: organization.settings?.defaultRoleKey || "member",
+      role: defaultRole?.key || DEFAULT_MEMBER_ROLE_KEY,
+      roleId: defaultRole?._id || null,
     },
   );
 
@@ -495,20 +661,27 @@ export const getOrganizationMembers = async (req, res) => {
       : requestedStatus === "pending" && canManage
         ? ["pending"]
         : ["active"];
-  const roleFilter = normalizeRoleKey(req.query.role || "");
+  const roleFilterValue = String(req.query.roleId || req.query.role || "").trim();
+  const roleFilter = normalizeRoleKey(roleFilterValue);
   const search = String(req.query.search || "").trim();
   const query = {
     organizationId: req.params.id,
     status: { $in: statuses },
   };
-  if (roleFilter) query.role = roleFilter;
+  if (roleFilterValue) {
+    if (isObjectIdLike(roleFilterValue)) {
+      query.roleId = roleFilterValue;
+    } else if (roleFilter) {
+      query.role = roleFilter;
+    }
+  }
 
   let members = await OrganizationMember.find(query)
     .populate(
       "userId",
       "_id fullName email avatar position status activityStatus activityStatusExpiresAt",
     )
-    .sort({ status: 1, role: 1, joinedAt: 1, updatedAt: 1 });
+    .sort({ status: 1, roleId: 1, role: 1, joinedAt: 1, updatedAt: 1 });
   if (search) {
     const needle = search.toLowerCase();
     members = members.filter((member) => {
@@ -519,10 +692,13 @@ export const getOrganizationMembers = async (req, res) => {
     });
   }
   const roles = permissionContext.roles || (await getOrganizationRoles(req.params.id));
-  const roleMap = new Map(roles.map((role) => [role.key, role]));
+  const roleMap = buildRoleMap(roles);
 
   res.json({
-    content: members.map((member) => serializeMember(member, roleMap)),
+    content: members.map((member) => ({
+      ...serializeMember(member, roleMap, permissionContext.organization),
+      canManage: canManageMemberInHierarchy(permissionContext, member),
+    })),
     totalElements: members.length,
     pendingElements: members.filter((item) => item.status === "pending").length,
   });
@@ -572,28 +748,74 @@ export const getOrganizationOverview = async (req, res) => {
 };
 
 export const getOrganizationRoleList = async (req, res) => {
-  const { membership, roles } = await requireOrganizationPermission(
-    req.params.id,
-    req.user._id,
-    "viewMembers",
-    "You cannot view organization roles",
-  );
+  const context = await getMembershipWithPermissions(req.params.id, req.user._id);
+  const membership = context?.membership;
+  if (!membership) {
+    throw new ApiError(403, "You are not a member of this organization");
+  }
+  if (
+    !hasOrganizationPermission(membership, "viewMembers") &&
+    !hasOrganizationPermission(membership, "manageRoles")
+  ) {
+    throw new ApiError(403, "You cannot view organization roles");
+  }
+
+  const { roles, organization } = context;
   const canManageRoles = hasOrganizationPermission(membership, "manageRoles");
+  const roleIds = roles.map((role) => role._id);
+  const countRows = roleIds.length
+    ? await OrganizationMember.aggregate([
+        {
+          $match: {
+            organizationId: roles[0]?.organizationId,
+            status: "active",
+            roleId: { $in: roleIds },
+            userId: { $ne: organization?.ownerId || null },
+          },
+        },
+        { $group: { _id: "$roleId", count: { $sum: 1 } } },
+      ])
+    : [];
+  const memberCountMap = new Map(
+    countRows.map((row) => [toId(row._id), Number(row.count || 0)]),
+  );
+  const search = String(req.query.search || req.query.q || "").trim().toLowerCase();
+  const visibleRoles = search
+    ? roles.filter((role) => {
+        const doc = role.toObject?.() || role;
+        return [doc.name, doc.key, doc.description].some((value) =>
+          String(value || "").toLowerCase().includes(search),
+        );
+      })
+    : roles;
 
   res.json({
-    content: roles.map(serializeOrganizationRole),
+    content: visibleRoles.map((role) => {
+      const canManage = canManageRoleInHierarchy(context, role);
+      return {
+        ...serializeOrganizationRole({
+          ...(role.toObject?.() || role),
+          memberCount: memberCountMap.get(toId(role._id)) || 0,
+        }),
+        canManage,
+        canReorder: canManage,
+      };
+    }),
     canManageRoles,
     permissionKeys: ORGANIZATION_PERMISSION_KEYS,
   });
 };
 
 export const createOrganizationRole = async (req, res) => {
-  await requireOrganizationPermission(
+  const context = await requireOrganizationPermission(
     req.params.id,
     req.user._id,
     "manageRoles",
     "Only authorized members can create roles",
   );
+  if (!isOwnerInContext(context) && getRoleOrderIndex(context.roles, context.role) < 0) {
+    throw new ApiError(403, "Your role cannot create organization roles");
+  }
 
   const payload = normalizeOrganizationRolePayload(req.body);
   if (!payload.name || !payload.key) {
@@ -608,6 +830,10 @@ export const createOrganizationRole = async (req, res) => {
   if (existing) {
     throw new ApiError(409, "Role key already exists");
   }
+  const lastRole = await OrganizationRole.findOne({
+    organizationId: req.params.id,
+    archivedAt: null,
+  }).sort({ sortOrder: -1, createdAt: -1 });
 
   const role = await OrganizationRole.create({
     organizationId: req.params.id,
@@ -617,7 +843,7 @@ export const createOrganizationRole = async (req, res) => {
     color: payload.color,
     permissions: payload.permissions,
     isSystem: false,
-    sortOrder: 50,
+    sortOrder: Number(lastRole?.sortOrder || 0) + 1,
     createdBy: req.user._id,
     updatedBy: req.user._id,
   });
@@ -626,7 +852,7 @@ export const createOrganizationRole = async (req, res) => {
 };
 
 export const updateOrganizationRole = async (req, res) => {
-  await requireOrganizationPermission(
+  const context = await requireOrganizationPermission(
     req.params.id,
     req.user._id,
     "manageRoles",
@@ -641,9 +867,11 @@ export const updateOrganizationRole = async (req, res) => {
   if (!role) {
     throw new ApiError(404, "Role not found");
   }
-  if (role.key === "owner" && req.body.permissions) {
-    throw new ApiError(400, "Owner permissions cannot be reduced");
-  }
+  assertCanManageRoleInHierarchy(
+    context,
+    role,
+    "You can only update roles below your highest role",
+  );
 
   const payload = normalizeOrganizationRolePayload({
     ...role.toObject(),
@@ -653,13 +881,10 @@ export const updateOrganizationRole = async (req, res) => {
   role.name = payload.name || role.name;
   role.description = payload.description;
   role.color = payload.color;
-  role.permissions =
-    role.key === "owner"
-      ? role.permissions
-      : {
-          ...(role.permissions?.toObject?.() || role.permissions || {}),
-          ...payload.permissions,
-        };
+  role.permissions = {
+    ...(role.permissions?.toObject?.() || role.permissions || {}),
+    ...payload.permissions,
+  };
   role.updatedBy = req.user._id;
   await role.save();
 
@@ -667,7 +892,7 @@ export const updateOrganizationRole = async (req, res) => {
 };
 
 export const deleteOrganizationRole = async (req, res) => {
-  await requireOrganizationPermission(
+  const context = await requireOrganizationPermission(
     req.params.id,
     req.user._id,
     "manageRoles",
@@ -682,13 +907,22 @@ export const deleteOrganizationRole = async (req, res) => {
   if (!role) {
     throw new ApiError(404, "Role not found");
   }
-  if (role.isSystem || ["owner", "admin", "member"].includes(role.key)) {
-    throw new ApiError(400, "System roles cannot be deleted");
+  assertCanManageRoleInHierarchy(
+    context,
+    role,
+    "You can only delete roles below your highest role",
+  );
+  const organization = await Organization.findById(req.params.id);
+  if (
+    role.isDefault ||
+    toId(organization?.settings?.defaultRoleId) === toId(role._id)
+  ) {
+    throw new ApiError(400, "Default role cannot be deleted");
   }
 
   const membersUsingRole = await OrganizationMember.countDocuments({
     organizationId: req.params.id,
-    role: role.key,
+    $or: [{ roleId: role._id }, { role: role.key }],
     status: { $in: ["active", "pending"] },
   });
   if (membersUsingRole > 0) {
@@ -702,13 +936,244 @@ export const deleteOrganizationRole = async (req, res) => {
   res.status(204).send();
 };
 
+export const reorderOrganizationRoles = async (req, res) => {
+  const context = await requireOrganizationPermission(
+    req.params.id,
+    req.user._id,
+    "manageRoles",
+    "Only authorized members can reorder roles",
+  );
+
+  const roleIds = Array.isArray(req.body?.roleIds)
+    ? req.body.roleIds.map((roleId) => String(roleId || "").trim()).filter(Boolean)
+    : [];
+  if (!roleIds.length || roleIds.some((roleId) => !isObjectIdLike(roleId))) {
+    throw new ApiError(400, "roleIds is required");
+  }
+
+  const roles = await OrganizationRole.find({
+    _id: { $in: roleIds },
+    organizationId: req.params.id,
+    archivedAt: null,
+  });
+  if (roles.length !== roleIds.length) {
+    throw new ApiError(400, "Role order contains invalid roles");
+  }
+
+  const currentRoleIds = context.roles.map((role) => toId(role._id));
+  if (roleIds.length !== currentRoleIds.length) {
+    throw new ApiError(400, "Role order must include every active role");
+  }
+  if (!isOwnerInContext(context)) {
+    const actorIndex = getRoleOrderIndex(context.roles, context.role);
+    if (actorIndex < 0) {
+      throw new ApiError(403, "Your role cannot reorder organization roles");
+    }
+    const lockedRoleIds = currentRoleIds.slice(0, actorIndex + 1);
+    const lockedOrderChanged = lockedRoleIds.some(
+      (roleId, index) => roleIds[index] !== roleId,
+    );
+    if (lockedOrderChanged) {
+      throw new ApiError(
+        403,
+        "You can only reorder roles below your highest role",
+      );
+    }
+  }
+
+  await OrganizationRole.bulkWrite(
+    roleIds.map((roleId, index) => ({
+      updateOne: {
+        filter: {
+          _id: roleId,
+          organizationId: req.params.id,
+          archivedAt: null,
+        },
+        update: {
+          $set: {
+            sortOrder: index + 1,
+            updatedBy: req.user._id,
+          },
+        },
+      },
+    })),
+  );
+
+  const updatedRoles = await getOrganizationRoles(req.params.id);
+  res.json({ content: updatedRoles.map(serializeOrganizationRole) });
+};
+
+const getOrganizationRoleById = async (organizationId, roleId) => {
+  if (!isObjectIdLike(roleId)) {
+    throw new ApiError(400, "Role is invalid");
+  }
+
+  const role = await OrganizationRole.findOne({
+    _id: roleId,
+    organizationId,
+    archivedAt: null,
+  });
+  if (!role) {
+    throw new ApiError(404, "Role not found");
+  }
+  return role;
+};
+
+const memberCarriesRole = (membership, role, roleMap) => {
+  const memberRole = getRoleForMembership(membership, roleMap);
+  return (
+    toId(memberRole?._id || memberRole?.id) === toId(role._id || role.id) ||
+    normalizeRoleKey(membership.role) === normalizeRoleKey(role.key)
+  );
+};
+
+const buildOrganizationRoleMembersPayload = async (context, role) => {
+  const roleMap = buildRoleMap(context.roles);
+  const memberships = await OrganizationMember.find({
+    organizationId: role.organizationId,
+    status: "active",
+  })
+    .populate(
+      "userId",
+      "_id fullName email avatar position status activityStatus activityStatusExpiresAt",
+    )
+    .sort({ joinedAt: 1, updatedAt: 1 });
+
+  const members = [];
+  const candidates = [];
+
+  memberships.forEach((membership) => {
+    if (isOrganizationOwnerMembership(membership, context.organization)) return;
+
+    const serialized = serializeMember(membership, roleMap, context.organization);
+    const canManage = canManageMemberInHierarchy(context, membership);
+    const row = { ...serialized, canManage };
+
+    if (memberCarriesRole(membership, role, roleMap)) {
+      members.push(row);
+      return;
+    }
+
+    if (canManage) candidates.push(row);
+  });
+
+  const canManage = canManageRoleInHierarchy(context, role);
+  return {
+    role: {
+      ...serializeOrganizationRole(role),
+      canManage,
+      canReorder: canManage,
+    },
+    members,
+    candidates,
+  };
+};
+
+export const getOrganizationRoleMembers = async (req, res) => {
+  const context = await requireOrganizationPermission(
+    req.params.id,
+    req.user._id,
+    "manageRoles",
+    "Only authorized members can manage role members",
+  );
+  const role = await getOrganizationRoleById(req.params.id, req.params.roleId);
+  assertCanManageRoleInHierarchy(
+    context,
+    role,
+    "You can only manage members for roles below your highest role",
+  );
+
+  res.json(await buildOrganizationRoleMembersPayload(context, role));
+};
+
+export const updateOrganizationRoleMembers = async (req, res) => {
+  const context = await requireOrganizationPermission(
+    req.params.id,
+    req.user._id,
+    "manageRoles",
+    "Only authorized members can manage role members",
+  );
+  const role = await getOrganizationRoleById(req.params.id, req.params.roleId);
+  assertCanManageRoleInHierarchy(
+    context,
+    role,
+    "You can only manage members for roles below your highest role",
+  );
+
+  const addMemberIds = normalizeRoleMemberIds(req.body?.addMemberIds);
+  const removeMemberIds = normalizeRoleMemberIds(req.body?.removeMemberIds);
+  const memberIds = [...new Set([...addMemberIds, ...removeMemberIds])];
+
+  if (!memberIds.length) {
+    res.json(await buildOrganizationRoleMembersPayload(context, role));
+    return;
+  }
+  if (memberIds.some((memberId) => !isObjectIdLike(memberId))) {
+    throw new ApiError(400, "Member ids are invalid");
+  }
+  if (removeMemberIds.length && role.isDefault) {
+    throw new ApiError(400, "Default role cannot be removed from members");
+  }
+
+  const memberships = await OrganizationMember.find({
+    _id: { $in: memberIds },
+    organizationId: req.params.id,
+    status: "active",
+  }).populate(
+    "userId",
+    "_id fullName email avatar position status activityStatus activityStatusExpiresAt",
+  );
+
+  if (memberships.length !== memberIds.length) {
+    throw new ApiError(400, "Some members are invalid");
+  }
+
+  const roleMap = buildRoleMap(context.roles);
+  const defaultRole = removeMemberIds.length
+    ? await getDefaultMembershipRole(context.organization)
+    : null;
+  if (removeMemberIds.length && toId(defaultRole?._id) === toId(role._id)) {
+    throw new ApiError(400, "Default role cannot be removed from members");
+  }
+
+  await Promise.all(
+    memberships.map(async (membership) => {
+      if (!canManageMemberInHierarchy(context, membership)) {
+        throw new ApiError(
+          403,
+          "You can only update members below your highest role",
+        );
+      }
+
+      const membershipId = toId(membership._id);
+      if (addMemberIds.includes(membershipId)) {
+        membership.role = role.key;
+        membership.roleId = role._id;
+      }
+
+      if (
+        removeMemberIds.includes(membershipId) &&
+        memberCarriesRole(membership, role, roleMap)
+      ) {
+        membership.role = defaultRole?.key || DEFAULT_MEMBER_ROLE_KEY;
+        membership.roleId = defaultRole?._id || null;
+      }
+
+      await membership.save();
+    }),
+  );
+
+  res.json(await buildOrganizationRoleMembersPayload(context, role));
+};
+
 export const updateOrganizationMember = async (req, res) => {
-  await requireOrganizationPermission(
+  const context = await requireOrganizationPermission(
     req.params.id,
     req.user._id,
     "manageMembers",
     "Only authorized members can update members",
   );
+  const { organization } = context;
 
   const membership = await OrganizationMember.findOne({
     _id: req.params.memberId,
@@ -721,19 +1186,26 @@ export const updateOrganizationMember = async (req, res) => {
   if (!membership) {
     throw new ApiError(404, "Member not found");
   }
-  if (membership.role === "owner") {
-    throw new ApiError(400, "Owner role cannot be changed here");
+  if (isOrganizationOwnerMembership(membership, organization)) {
+    throw new ApiError(400, "Organization owner cannot be changed here");
+  }
+  if (!canManageMemberInHierarchy(context, membership)) {
+    throw new ApiError(403, "You can only update members below your highest role");
   }
 
+  const roleId = String(req.body?.roleId || "").trim();
   const roleKey = normalizeRoleKey(req.body?.role || "");
-  if (roleKey) {
+  if (roleId || roleKey) {
     const role = await OrganizationRole.findOne({
       organizationId: req.params.id,
-      key: roleKey,
+      ...(roleId && isObjectIdLike(roleId) ? { _id: roleId } : { key: roleKey }),
       archivedAt: null,
     });
-    if (!role || role.key === "owner") {
+    if (!role) {
       throw new ApiError(400, "Role is invalid");
+    }
+    if (!canManageRoleInHierarchy(context, role)) {
+      throw new ApiError(403, "You can only assign roles below your highest role");
     }
     membership.role = role.key;
     membership.roleId = role._id;
@@ -741,8 +1213,8 @@ export const updateOrganizationMember = async (req, res) => {
 
   await membership.save();
   const roles = await getOrganizationRoles(req.params.id);
-  const roleMap = new Map(roles.map((role) => [role.key, role]));
-  res.json(serializeMember(membership, roleMap));
+  const roleMap = buildRoleMap(roles);
+  res.json(serializeMember(membership, roleMap, organization));
 };
 
 export const getOrganizationInvites = async (req, res) => {
@@ -811,9 +1283,11 @@ export const getOrganizationJoinRequests = async (req, res) => {
     throw new ApiError(404, "Organization not found");
   }
 
-  const roleMap = new Map(roles.map((role) => [role.key, role]));
+  const roleMap = buildRoleMap(roles);
   res.json({
-    content: pendingMembers.map((member) => serializeMember(member, roleMap)),
+    content: pendingMembers.map((member) =>
+      serializeMember(member, roleMap, organization),
+    ),
     totalElements: pendingMembers.length,
     joinQuestions: normalizeOrganizationJoinQuestions(
       organization.settings?.joinQuestions || [],
@@ -1013,15 +1487,19 @@ export const updateOrganizationSettings = async (req, res) => {
     throw new ApiError(400, "No settings to update");
   }
 
-  if (settings.defaultRoleKey) {
+  if (settings.defaultRoleId || settings.defaultRoleKey) {
     const role = await OrganizationRole.findOne({
       organizationId: req.params.id,
-      key: settings.defaultRoleKey,
+      ...(settings.defaultRoleId && isObjectIdLike(settings.defaultRoleId)
+        ? { _id: settings.defaultRoleId }
+        : { key: settings.defaultRoleKey }),
       archivedAt: null,
     });
-    if (!role || role.key === "owner") {
+    if (!role) {
       throw new ApiError(400, "Default role is invalid");
     }
+    update["settings.defaultRoleId"] = role._id;
+    update["settings.defaultRoleKey"] = role.key;
   }
 
   const organization = await Organization.findByIdAndUpdate(req.params.id, update, {
@@ -1263,7 +1741,7 @@ export const updateOrganizationFavorite = async (req, res) => {
 };
 
 export const reviewOrganizationJoinRequest = async (req, res) => {
-  await requireOrganizationPermission(
+  const { organization, roles } = await requireOrganizationPermission(
     req.params.id,
     req.user._id,
     "manageMembers",
@@ -1308,7 +1786,7 @@ export const reviewOrganizationJoinRequest = async (req, res) => {
   }
 
   res.json({
-    member: serializeMember(membership),
+    member: serializeMember(membership, buildRoleMap(roles), organization),
     ...(await buildUserOrganizationContext(req.user, {
       baseUrl: getBaseUrl(req),
       persistFallback: true,
@@ -1317,14 +1795,15 @@ export const reviewOrganizationJoinRequest = async (req, res) => {
 };
 
 export const transferOrganizationOwnership = async (req, res) => {
-  const { membership, roles } = await requireOrganizationPermission(
+  const { membership, roles, organization: currentOrganization } =
+    await requireOrganizationPermission(
     req.params.id,
     req.user._id,
     "manageOrganization",
     "Only authorized members can transfer ownership",
   );
 
-  if (membership.role !== "owner") {
+  if (!isOrganizationOwnerMembership(membership, currentOrganization)) {
     throw new ApiError(403, "Only the current owner can transfer ownership");
   }
 
@@ -1355,14 +1834,12 @@ export const transferOrganizationOwnership = async (req, res) => {
     throw new ApiError(400, "Choose another member to transfer ownership");
   }
 
-  const ownerRole = roles.find((role) => role.key === "owner");
-  const fallbackRole = roles.find((role) => role.key === "admin") ||
-    roles.find((role) => role.key === "member");
+  const defaultRole = await getDefaultMembershipRole(currentOrganization);
 
-  membership.role = fallbackRole?.key || "member";
-  membership.roleId = fallbackRole?._id || null;
-  targetMembership.role = "owner";
-  targetMembership.roleId = ownerRole?._id || null;
+  membership.role = defaultRole?.key || DEFAULT_MEMBER_ROLE_KEY;
+  membership.roleId = defaultRole?._id || null;
+  targetMembership.role = targetMembership.role || defaultRole?.key || DEFAULT_MEMBER_ROLE_KEY;
+  targetMembership.roleId = targetMembership.roleId || defaultRole?._id || null;
 
   const organization = await Organization.findByIdAndUpdate(
     req.params.id,
@@ -1375,10 +1852,11 @@ export const transferOrganizationOwnership = async (req, res) => {
 
   await Promise.all([membership.save(), targetMembership.save()]);
 
-  const roleMap = new Map(roles.map((role) => [role.key, role]));
+  const updatedRoles = await getOrganizationRoles(req.params.id);
+  const roleMap = buildRoleMap(updatedRoles);
   res.json({
     organization: await serializeOrganizationWithStats(organization, membership, req),
-    owner: serializeMember(targetMembership, roleMap),
+    owner: serializeMember(targetMembership, roleMap, organization),
   });
 };
 
@@ -1392,7 +1870,11 @@ export const leaveOrganization = async (req, res) => {
     throw new ApiError(404, "Organization membership not found");
   }
 
-  if (membership.status === "active" && membership.role === "owner") {
+  const organization = await Organization.findById(req.params.id);
+  if (
+    membership.status === "active" &&
+    isOrganizationOwnerMembership(membership, organization)
+  ) {
     throw new ApiError(400, "Organization owner cannot leave the organization");
   }
 

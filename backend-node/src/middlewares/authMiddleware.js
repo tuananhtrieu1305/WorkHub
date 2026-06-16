@@ -3,7 +3,11 @@ import User from "../models/User.js";
 import Organization from "../models/Organization.js";
 import OrganizationMember from "../models/OrganizationMember.js";
 import OrganizationRole from "../models/OrganizationRole.js";
-import { normalizeRolePermissions } from "../utils/organizationPolicy.js";
+import {
+  DEFAULT_MEMBER_ROLE_KEY,
+  OWNER_ORGANIZATION_PERMISSIONS,
+  normalizeRolePermissions,
+} from "../utils/organizationPolicy.js";
 
 const inactiveAccountMessage =
   "Your account is not active. Please contact an administrator.";
@@ -51,22 +55,38 @@ const protect = async (req, res, next) => {
           });
 
           if (organization) {
-            const roleDefinition = await OrganizationRole.findOne({
-              organizationId: requestedOrganizationId,
-              key: membership.role,
-              archivedAt: null,
-            });
-            const permissions = normalizeRolePermissions(
-              membership.role,
-              roleDefinition?.permissions,
-            );
+            const roleDefinition =
+              (membership.roleId
+                ? await OrganizationRole.findOne({
+                    _id: membership.roleId,
+                    organizationId: requestedOrganizationId,
+                    archivedAt: null,
+                  })
+                : null) ||
+              (membership.role
+                ? await OrganizationRole.findOne({
+                    organizationId: requestedOrganizationId,
+                    key: membership.role,
+                    archivedAt: null,
+                  })
+                : null);
+            const isOwner =
+              String(organization.ownerId || "") === String(req.user._id || "");
+            const roleKey =
+              roleDefinition?.key || membership.role || DEFAULT_MEMBER_ROLE_KEY;
+            const permissions = isOwner
+              ? OWNER_ORGANIZATION_PERMISSIONS
+              : normalizeRolePermissions(roleKey, roleDefinition?.permissions);
             req.organizationId = organization._id;
             req.organization = organization;
             req.organizationMembership = membership;
+            req.organizationMembership.isOwner = isOwner;
             req.organizationMembership.permissions = permissions;
             req.user.activeOrganizationId = organization._id;
-            req.user.activeOrganizationRole = membership.role;
+            req.user.activeOrganizationRole = roleKey;
+            req.user.activeOrganizationRoleId = roleDefinition?._id || membership.roleId || null;
             req.user.activeOrganizationPermissions = permissions;
+            req.user.activeOrganizationIsOwner = isOwner;
           }
         }
       }

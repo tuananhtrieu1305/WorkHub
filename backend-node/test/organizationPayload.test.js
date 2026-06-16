@@ -8,9 +8,15 @@ import {
   normalizeOrganizationJoinQuestions,
   normalizeOrganizationInvitePayload,
   normalizeOrganizationPayload,
+  normalizeOrganizationRolePayload,
+  normalizeOrganizationSettingsPayload,
   serializeOrganization,
 } from "../src/services/organizationService.js";
-import { normalizeOrganizationAccentColor } from "../src/utils/organizationPolicy.js";
+import {
+  hasOrganizationPermission,
+  normalizeOrganizationAccentColor,
+  normalizeRolePermissions,
+} from "../src/utils/organizationPolicy.js";
 
 test("normalizeOrganizationPayload only includes optional fields when provided", () => {
   const payload = normalizeOrganizationPayload({ name: "  WorkHub Team  " });
@@ -31,6 +37,31 @@ test("normalizeOrganizationPayload normalizes accent colors safely", () => {
 
 test("normalizeOrganizationAccentColor falls back for unsupported values", () => {
   assert.equal(normalizeOrganizationAccentColor("url(javascript:bad)"), "#2563eb");
+});
+
+test("normalizeOrganizationRolePayload normalizes role badge colors safely", () => {
+  const payload = normalizeOrganizationRolePayload({
+    name: "  Moderator  ",
+    color: "url(javascript:bad)",
+    permissions: { viewMembers: true },
+  });
+
+  assert.equal(payload.name, "Moderator");
+  assert.equal(payload.color, "#2563eb");
+  assert.equal(payload.permissions.viewMembers, true);
+});
+
+test("manager permission grants regular organization permissions", () => {
+  const permissions = normalizeRolePermissions("moderator", {
+    manageOrganization: true,
+  });
+
+  assert.equal(permissions.manageOrganization, true);
+  assert.equal(permissions.manageRoles, true);
+  assert.equal(
+    hasOrganizationPermission({ permissions }, "manageMembers"),
+    true,
+  );
 });
 
 test("serializeOrganization includes the member favorite flag", () => {
@@ -58,6 +89,45 @@ test("serializeOrganization includes the member favorite flag", () => {
   assert.equal(payload.isFavorite, true);
   assert.equal(payload.memberCount, 4);
   assert.equal(payload.pendingCount, 1);
+});
+
+test("serializeOrganization treats ownership as separate from the visible role", () => {
+  const payload = serializeOrganization(
+    {
+      _id: "organization-1",
+      name: "WorkHub Team",
+      slug: "workhub-team",
+      ownerId: "user-1",
+      settings: {},
+    },
+    {
+      userId: "user-1",
+      role: "thanh-vien",
+      status: "active",
+    },
+    {
+      role: {
+        _id: "role-1",
+        key: "thanh-vien",
+        name: "Thành viên",
+        color: "#64748b",
+        permissions: { viewMembers: true },
+      },
+    },
+  );
+
+  assert.equal(payload.isOwner, true);
+  assert.equal(payload.role, "thanh-vien");
+  assert.equal(payload.roleLabel, "Thành viên");
+  assert.equal(payload.permissions.manageRoles, true);
+});
+
+test("normalizeOrganizationSettingsPayload accepts default role ids", () => {
+  const payload = normalizeOrganizationSettingsPayload({
+    defaultRoleId: "507f1f77bcf86cd799439011",
+  });
+
+  assert.equal(payload.defaultRoleId, "507f1f77bcf86cd799439011");
 });
 
 test("createInviteCode returns a short readable code", () => {

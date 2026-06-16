@@ -16,7 +16,10 @@ import User from "../models/User.js";
 import { isUserOnline } from "./presenceService.js";
 import {
   DEFAULT_ORGANIZATION_ROLES,
+  DEFAULT_MEMBER_ROLE_KEY,
+  LEGACY_ORGANIZATION_ROLE_KEYS,
   ORGANIZATION_PERMISSION_KEYS,
+  OWNER_ORGANIZATION_PERMISSIONS,
   createOrganizationSlug,
   normalizeOrganizationAccentColor,
   normalizeInviteCode,
@@ -87,7 +90,15 @@ export const resumeExpiredOrganizationInvitePauses = async (criteria = {}) =>
   );
 
 const roleMapKey = (organizationId, roleKey) =>
-  `${toId(organizationId)}:${normalizeRoleKey(roleKey) || "member"}`;
+  `${toId(organizationId)}:${normalizeRoleKey(roleKey) || DEFAULT_MEMBER_ROLE_KEY}`;
+
+const roleIdMapKey = (roleId) => `id:${toId(roleId)}`;
+
+const isOrganizationOwner = (organization, userId) =>
+  Boolean(toId(organization?.ownerId) && toId(organization?.ownerId) === toId(userId));
+
+export const isOrganizationOwnerMembership = (membership, organization) =>
+  isOrganizationOwner(organization, membership?.userId?._id || membership?.userId);
 
 const JOIN_QUESTION_TYPES = new Set([
   "short_text",
@@ -207,31 +218,53 @@ export const getMissingRequiredJoinAnswers = (questions = [], answers = []) => {
   });
 };
 
-const buildRoleMap = (roles = []) =>
-  new Map(roles.map((role) => [roleMapKey(role.organizationId, role.key), role]));
+const buildRoleMap = (roles = []) => {
+  const roleMap = new Map();
+  roles.forEach((role) => {
+    const doc = role?.toObject?.() || role;
+    if (!doc) return;
+    roleMap.set(roleIdMapKey(doc._id || doc.id), role);
+    roleMap.set(roleMapKey(doc.organizationId, doc.key), role);
+  });
+  return roleMap;
+};
 
-export const getRoleDefinition = (roleKey = "member", role = null) => {
-  const normalizedKey = normalizeRoleKey(roleKey) || "member";
+const getRoleFromMap = (membership, roleMap = new Map()) => {
+  if (!membership) return null;
+  const byId = roleMap.get(roleIdMapKey(membership.roleId));
+  if (byId) return byId;
+  return roleMap.get(roleMapKey(membership.organizationId, membership.role));
+};
+
+export const getRoleDefinition = (roleOrKey = DEFAULT_MEMBER_ROLE_KEY, role = null) => {
+  const sourceRole =
+    role ||
+    (typeof roleOrKey === "object" && roleOrKey ? roleOrKey : null);
+  const normalizedKey =
+    normalizeRoleKey(sourceRole?.key || roleOrKey) || DEFAULT_MEMBER_ROLE_KEY;
   const defaultRole = DEFAULT_ORGANIZATION_ROLES.find(
     (item) => item.key === normalizedKey,
   );
 
   return {
     key: normalizedKey,
-    name: role?.name || defaultRole?.name || normalizedKey,
-    description: role?.description || defaultRole?.description || "",
-    color: role?.color || defaultRole?.color || "#64748b",
-    isSystem: Boolean(role?.isSystem ?? defaultRole?.isSystem),
-    isDefault: Boolean(role?.isDefault ?? defaultRole?.isDefault),
-    permissions: normalizeRolePermissions(normalizedKey, role?.permissions),
+    id: toId(sourceRole?._id || sourceRole?.id),
+    name: sourceRole?.name || defaultRole?.name || normalizedKey,
+    description: sourceRole?.description || defaultRole?.description || "",
+    color: sourceRole?.color || defaultRole?.color || "#64748b",
+    isSystem: Boolean(sourceRole?.isSystem ?? defaultRole?.isSystem),
+    isDefault: Boolean(sourceRole?.isDefault ?? defaultRole?.isDefault),
+    permissions: normalizeRolePermissions(normalizedKey, sourceRole?.permissions),
   };
 };
 
 export const getMembershipPermissions = (membership, roleMap = new Map()) => {
-  if (!membership) return normalizeRolePermissions("member");
-  const roleKeyValue = normalizeRoleKey(membership.role) || "member";
-  const role = roleMap.get(roleMapKey(membership.organizationId, roleKeyValue));
-  return getRoleDefinition(roleKeyValue, role).permissions;
+  if (!membership) return normalizeRolePermissions(DEFAULT_MEMBER_ROLE_KEY);
+  if (membership.isOwner || membership.isOrganizationOwner) {
+    return { ...OWNER_ORGANIZATION_PERMISSIONS };
+  }
+  const role = getRoleFromMap(membership, roleMap);
+  return getRoleDefinition(role || membership.role).permissions;
 };
 
 export const attachMembershipPermissions = (membership, roleMap = new Map()) => {
@@ -251,10 +284,13 @@ export const serializeOrganization = (
   const memberCount = Number(stats.memberCount || 0);
   const onlineCount = Number(stats.onlineCount || 0);
   const pendingCount = Number(stats.pendingCount || 0);
-  const roleDefinition = getRoleDefinition(membership?.role, role);
-  const permissions = membership
-    ? roleDefinition.permissions
-    : normalizeRolePermissions("member");
+  const isOwner = Boolean(membership && isOrganizationOwnerMembership(membership, org));
+  const roleDefinition = getRoleDefinition(role || membership?.role);
+  const permissions = isOwner
+    ? { ...OWNER_ORGANIZATION_PERMISSIONS }
+    : membership
+      ? roleDefinition.permissions
+      : normalizeRolePermissions(DEFAULT_MEMBER_ROLE_KEY);
 
   return {
     id: toId(org._id || org.id),
@@ -264,9 +300,11 @@ export const serializeOrganization = (
     logoUrl: org.logoUrl || "",
     bannerUrl: org.bannerUrl || "",
     ownerId: toId(org.ownerId),
-    role: membership?.role || null,
+    roleId: membership ? roleDefinition.id || toId(membership.roleId) || null : null,
+    role: membership ? roleDefinition.key || membership.role || null : null,
     roleLabel: membership ? roleDefinition.name : null,
     roleColor: membership ? roleDefinition.color : null,
+    isOwner,
     permissions,
     canManage: Boolean(permissions.manageOrganization),
     memberStatus: membership?.status || null,
@@ -280,7 +318,8 @@ export const serializeOrganization = (
       requireApproval: org.settings?.requireApproval !== false,
       allowMemberInvites: org.settings?.allowMemberInvites !== false,
       memberDirectoryVisible: org.settings?.memberDirectoryVisible !== false,
-      defaultRoleKey: org.settings?.defaultRoleKey || "member",
+      defaultRoleId: toId(org.settings?.defaultRoleId),
+      defaultRoleKey: org.settings?.defaultRoleKey || DEFAULT_MEMBER_ROLE_KEY,
       joinMessage: org.settings?.joinMessage || "",
       joinQuestions: normalizeOrganizationJoinQuestions(
         org.settings?.joinQuestions || [],
@@ -340,6 +379,73 @@ export const ensureDefaultOrganizationRoles = async (
   if (operations.length) {
     await OrganizationRole.bulkWrite(operations, { ordered: false });
   }
+
+  const defaultRole = await OrganizationRole.findOne({
+    organizationId,
+    key: DEFAULT_MEMBER_ROLE_KEY,
+    archivedAt: null,
+  });
+
+  if (defaultRole) {
+    const legacyRoles = await OrganizationRole.find({
+      organizationId,
+      key: { $in: LEGACY_ORGANIZATION_ROLE_KEYS },
+      archivedAt: null,
+    }).select("_id key");
+    const legacyRoleIds = legacyRoles.map((role) => role._id);
+
+    if (legacyRoles.length) {
+      await OrganizationRole.updateMany(
+        {
+          organizationId,
+          key: { $in: LEGACY_ORGANIZATION_ROLE_KEYS },
+          archivedAt: null,
+        },
+        {
+          $set: {
+            archivedAt: new Date(),
+            updatedBy: createdBy,
+          },
+        },
+      );
+    }
+
+    await Promise.all([
+      Organization.updateOne(
+        {
+          _id: organizationId,
+          $or: [
+            { "settings.defaultRoleId": null },
+            { "settings.defaultRoleKey": { $in: LEGACY_ORGANIZATION_ROLE_KEYS } },
+          ],
+        },
+        {
+          $set: {
+            "settings.defaultRoleId": defaultRole._id,
+            "settings.defaultRoleKey": defaultRole.key,
+          },
+        },
+      ),
+      OrganizationMember.updateMany(
+        {
+          organizationId,
+          $or: [
+            { role: { $in: LEGACY_ORGANIZATION_ROLE_KEYS } },
+            { roleId: null },
+            ...(legacyRoleIds.length ? [{ roleId: { $in: legacyRoleIds } }] : []),
+          ],
+        },
+        {
+          $set: {
+            role: defaultRole.key,
+            roleId: defaultRole._id,
+          },
+        },
+      ),
+    ]);
+  }
+
+  return defaultRole;
 };
 
 export const getOrganizationRoles = async (organizationId) => {
@@ -364,6 +470,7 @@ export const serializeOrganizationRole = (role) => {
     permissions: definition.permissions,
     isSystem: definition.isSystem,
     isDefault: definition.isDefault,
+    memberCount: Number(doc.memberCount || 0),
     sortOrder: doc.sortOrder ?? 100,
     createdAt: doc.createdAt,
     updatedAt: doc.updatedAt,
@@ -489,6 +596,9 @@ export const buildUserOrganizationContext = async (
   const ids = [
     ...new Set(organizationIds.map((organizationId) => toId(organizationId)).filter(Boolean)),
   ];
+  if (ids.length) {
+    await Promise.all(ids.map((organizationId) => ensureDefaultOrganizationRoles(organizationId)));
+  }
   const [roles, personalInvites] = await Promise.all([
     ids.length
       ? OrganizationRole.find({
@@ -527,7 +637,7 @@ export const buildUserOrganizationContext = async (
     activeOrganization: serializeOrganization(activeOrganization, activeMembership, {
       baseUrl,
       stats: statsMap.get(toId(activeOrganization)),
-      role: roleMap.get(roleMapKey(toId(activeOrganization), activeMembership?.role)),
+      role: getRoleFromMap(activeMembership, roleMap),
       invite: inviteMap.get(toId(activeOrganization)),
     }),
     organizations: memberships
@@ -536,7 +646,7 @@ export const buildUserOrganizationContext = async (
         serializeOrganization(membership.organizationId, membership, {
           baseUrl,
           stats: statsMap.get(toId(membership.organizationId)),
-          role: roleMap.get(roleMapKey(membership.organizationId, membership.role)),
+          role: getRoleFromMap(membership, roleMap),
           invite: inviteMap.get(toId(membership.organizationId)),
         }),
       ),
@@ -546,7 +656,7 @@ export const buildUserOrganizationContext = async (
         serializeOrganization(membership.organizationId, membership, {
           baseUrl,
           stats: statsMap.get(toId(membership.organizationId)),
-          role: roleMap.get(roleMapKey(membership.organizationId, membership.role)),
+          role: getRoleFromMap(membership, roleMap),
           invite: inviteMap.get(toId(membership.organizationId)),
         }),
       ),
@@ -641,7 +751,7 @@ export const findOrganizationByInvite = async (inviteInput) => {
 export const ensureOrganizationMember = async (
   organizationId,
   userId,
-  { role = "member", invitedBy = null } = {},
+  { role = DEFAULT_MEMBER_ROLE_KEY, roleId = null, invitedBy = null } = {},
 ) => {
   const existing = await OrganizationMember.findOne({ organizationId, userId });
   if (existing) {
@@ -651,6 +761,7 @@ export const ensureOrganizationMember = async (
     existing.joinedAt = wasActive && existing.joinedAt ? existing.joinedAt : new Date();
     existing.invitedBy = existing.invitedBy || invitedBy;
     if (!existing.role) existing.role = role;
+    if (!existing.roleId && roleId) existing.roleId = roleId;
     await existing.save();
     return existing;
   }
@@ -660,6 +771,7 @@ export const ensureOrganizationMember = async (
     {
       $set: {
         role,
+        roleId,
         status: "active",
         removedAt: null,
         joinedAt: new Date(),
@@ -679,7 +791,8 @@ export const ensureOrganizationJoinRequest = async (
     inviteUsageCountedAt = null,
     joinAnswers = [],
     requireApproval = true,
-    role = "member",
+    role = DEFAULT_MEMBER_ROLE_KEY,
+    roleId = null,
   } = {},
 ) => {
   const existing = await OrganizationMember.findOne({ organizationId, userId });
@@ -695,6 +808,7 @@ export const ensureOrganizationJoinRequest = async (
 
     existing.status = nextStatus;
     existing.role = existing.role || role;
+    existing.roleId = existing.roleId || roleId;
     existing.invitedBy = existing.invitedBy || invitedBy;
     const previousInviteId = toId(existing.inviteId);
     if (inviteId) existing.inviteId = inviteId;
@@ -714,6 +828,7 @@ export const ensureOrganizationJoinRequest = async (
     {
       $set: {
         role,
+        roleId,
         status: nextStatus,
         removedAt: null,
         joinedAt: nextStatus === "active" ? new Date() : null,
@@ -755,8 +870,15 @@ export const normalizeOrganizationSettingsPayload = (payload = {}) => {
   if (payload.memberDirectoryVisible !== undefined) {
     settings.memberDirectoryVisible = Boolean(payload.memberDirectoryVisible);
   }
+  if (payload.defaultRoleId !== undefined) {
+    const defaultRoleId = String(payload.defaultRoleId || "").trim();
+    settings.defaultRoleId = mongoose.Types.ObjectId.isValid(defaultRoleId)
+      ? defaultRoleId
+      : null;
+  }
   if (payload.defaultRoleKey !== undefined) {
-    settings.defaultRoleKey = normalizeRoleKey(payload.defaultRoleKey) || "member";
+    settings.defaultRoleKey =
+      normalizeRoleKey(payload.defaultRoleKey) || DEFAULT_MEMBER_ROLE_KEY;
   }
   if (payload.joinMessage !== undefined) {
     settings.joinMessage = String(payload.joinMessage || "").trim().slice(0, 500);
@@ -785,7 +907,7 @@ export const normalizeOrganizationRolePayload = (payload = {}) => {
     key,
     name,
     description: String(payload.description || "").trim().slice(0, 500),
-    color: String(payload.color || "#2563eb").trim().slice(0, 24) || "#2563eb",
+    color: normalizeOrganizationAccentColor(payload.color, "#2563eb"),
     permissions,
   };
 };
@@ -1053,8 +1175,14 @@ export const buildOrganizationDashboard = async (organizationId) => {
       { $group: { _id: "$status", count: { $sum: 1 } } },
     ]),
     OrganizationMember.aggregate([
-      { $match: { organizationId: organizationObjectId, status: "active" } },
-      { $group: { _id: "$role", count: { $sum: 1 } } },
+      {
+        $match: {
+          organizationId: organizationObjectId,
+          status: "active",
+          roleId: { $ne: null },
+        },
+      },
+      { $group: { _id: "$roleId", count: { $sum: 1 } } },
     ]),
     OrganizationMember.aggregate([
       {
@@ -1186,12 +1314,15 @@ export const buildOrganizationDashboard = async (organizationId) => {
     const key = buildMonthKey(date);
     return { month: key, count: Number(growthByMonth.get(key) || 0) };
   });
-  const roleMap = new Map(roles.map((role) => [role.key, serializeOrganizationRole(role)]));
+  const roleMap = new Map(
+    roles.map((role) => [toId(role._id || role.id), serializeOrganizationRole(role)]),
+  );
   const roleDistribution = buildStatusCounts(roleRows);
   const roleBreakdown = roleRows.map((row) => {
-    const role = roleMap.get(row._id);
+    const roleId = toId(row._id);
+    const role = roleMap.get(roleId);
     return {
-      key: row._id || "unknown",
+      key: roleId || "unknown",
       label: role?.name || row._id || "Không rõ",
       color: role?.color || "#64748b",
       count: Number(row.count || 0),

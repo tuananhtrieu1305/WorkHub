@@ -14,11 +14,13 @@ import {
   getOrganizationInvite,
   getOrganizationMembers,
   getOrganizationOverview,
+  getOrganizationRoleMembers,
   getOrganizationRoleList,
   joinOrganization,
   leaveOrganization,
   pauseOrganizationInvites,
   previewOrganizationJoin,
+  reorderOrganizationRoles,
   reviewOrganizationJoinRequest,
   streamOrganizationBanner,
   streamOrganizationLogo,
@@ -29,6 +31,7 @@ import {
   updateOrganization,
   updateOrganizationBanner,
   updateOrganizationFavorite,
+  updateOrganizationRoleMembers,
   updateOrganizationLogo,
   updateOrganizationRole,
   updateOrganizationSettings,
@@ -51,6 +54,17 @@ router.get("/:id/members", protect, asyncHandler(getOrganizationMembers));
 router.get("/:id/invite", protect, asyncHandler(getOrganizationInvite));
 router.get("/:id/roles", protect, asyncHandler(getOrganizationRoleList));
 router.post("/:id/roles", protect, asyncHandler(createOrganizationRole));
+router.patch("/:id/roles/reorder", protect, asyncHandler(reorderOrganizationRoles));
+router.get(
+  "/:id/roles/:roleId/members",
+  protect,
+  asyncHandler(getOrganizationRoleMembers),
+);
+router.patch(
+  "/:id/roles/:roleId/members",
+  protect,
+  asyncHandler(updateOrganizationRoleMembers),
+);
 router.patch("/:id/roles/:roleId", protect, asyncHandler(updateOrganizationRole));
 router.delete("/:id/roles/:roleId", protect, asyncHandler(deleteOrganizationRole));
 router.get("/:id/invites", protect, asyncHandler(getOrganizationInvites));

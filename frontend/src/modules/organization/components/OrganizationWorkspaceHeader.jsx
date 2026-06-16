@@ -1,6 +1,5 @@
 import { useNavigate } from "react-router-dom";
 import { getAvatarUrl } from "../../../utils/avatar";
-import { roleLabels } from "../organizationUtils";
 import { getOrganizationThemeStyle } from "../organizationTheme";
 import Icon from "./Icon";
 import OrganizationHeroStats from "./OrganizationHeroStats";
@@ -17,8 +16,6 @@ const OrganizationWorkspaceHeader = ({
   const headerStyle = getOrganizationThemeStyle(organization, bannerUrl);
   const roleLabel =
     organization?.roleLabel ||
-    roleLabels[organization?.role] ||
-    organization?.role ||
     "Thành viên";
 
   return (

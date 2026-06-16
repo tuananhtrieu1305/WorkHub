@@ -1,5 +1,4 @@
 import { getAvatarUrl } from "../../../utils/avatar";
-import { roleLabels } from "../organizationUtils";
 import { getOrganizationThemeStyle } from "../organizationTheme";
 import Icon from "./Icon";
 import OrganizationHeroActions from "./OrganizationHeroActions";
@@ -15,8 +14,6 @@ const OrganizationHero = ({
   const heroStyle = getOrganizationThemeStyle(activeOrganization, heroBannerUrl);
   const roleLabel =
     activeOrganization?.roleLabel ||
-    roleLabels[activeOrganization?.role] ||
-    activeOrganization?.role ||
     "Thành viên";
 
   return (

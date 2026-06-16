@@ -1,5 +1,3 @@
-export const ORGANIZATION_ROLES = ["owner", "admin", "member"];
-
 export const ORGANIZATION_PERMISSION_KEYS = [
   "viewOverview",
   "viewMembers",
@@ -17,6 +15,8 @@ export const ORGANIZATION_PERMISSION_KEYS = [
 ];
 
 export const DEFAULT_ORGANIZATION_ACCENT_COLOR = "#2563eb";
+export const DEFAULT_MEMBER_ROLE_KEY = "thanh-vien";
+export const LEGACY_ORGANIZATION_ROLE_KEYS = ["owner", "admin", "member"];
 
 export const normalizeOrganizationAccentColor = (
   value,
@@ -37,76 +37,48 @@ export const normalizeOrganizationAccentColor = (
   return `#${hex}`;
 };
 
+export const OWNER_ORGANIZATION_PERMISSIONS = ORGANIZATION_PERMISSION_KEYS.reduce(
+  (permissions, key) => ({
+    ...permissions,
+    [key]: true,
+  }),
+  {},
+);
+
+const MANAGER_ORGANIZATION_PERMISSIONS = ORGANIZATION_PERMISSION_KEYS.reduce(
+  (permissions, key) => ({
+    ...permissions,
+    [key]: true,
+  }),
+  {},
+);
+
+const MEMBER_ORGANIZATION_PERMISSIONS = {
+  viewOverview: false,
+  viewMembers: true,
+  manageOrganization: false,
+  manageMembers: false,
+  manageRoles: false,
+  manageInvites: false,
+  manageSettings: false,
+  createInvites: true,
+  pauseInvites: false,
+  viewDocumentInsights: false,
+  manageDocuments: false,
+  manageDocumentFolders: false,
+  shareDocuments: false,
+};
+
 export const DEFAULT_ORGANIZATION_ROLES = [
   {
-    key: "owner",
-    name: "Chủ sở hữu",
-    description: "Toàn quyền quản trị tổ chức, thành viên, vai trò và lời mời.",
-    color: "#0f172a",
-    sortOrder: 1,
-    isSystem: true,
-    permissions: {
-      viewOverview: true,
-      viewMembers: true,
-      manageOrganization: true,
-      manageMembers: true,
-      manageRoles: true,
-      manageInvites: true,
-      manageSettings: true,
-      createInvites: true,
-      pauseInvites: true,
-      viewDocumentInsights: true,
-      manageDocuments: true,
-      manageDocumentFolders: true,
-      shareDocuments: true,
-    },
-  },
-  {
-    key: "admin",
-    name: "Quản trị",
-    description: "Có thể điều phối thành viên, lời mời và cài đặt vận hành.",
-    color: "#2563eb",
-    sortOrder: 2,
-    isSystem: true,
-    permissions: {
-      viewOverview: true,
-      viewMembers: true,
-      manageOrganization: true,
-      manageMembers: true,
-      manageRoles: false,
-      manageInvites: true,
-      manageSettings: true,
-      createInvites: true,
-      pauseInvites: true,
-      viewDocumentInsights: true,
-      manageDocuments: true,
-      manageDocumentFolders: true,
-      shareDocuments: true,
-    },
-  },
-  {
-    key: "member",
+    key: DEFAULT_MEMBER_ROLE_KEY,
     name: "Thành viên",
     description: "Có thể xem danh sách thành viên và tạo lời mời cá nhân.",
     color: "#64748b",
-    sortOrder: 3,
-    isSystem: true,
+    sortOrder: 1,
+    isSystem: false,
     isDefault: true,
-    permissions: {
-      viewOverview: false,
-      viewMembers: true,
-      manageOrganization: false,
-      manageMembers: false,
-      manageRoles: false,
-      manageInvites: false,
-      manageSettings: false,
-      createInvites: true,
-      pauseInvites: false,
-      viewDocumentInsights: false,
-      manageDocuments: false,
-      manageDocumentFolders: false,
-      shareDocuments: false,
-    },
+    permissions: MEMBER_ORGANIZATION_PERMISSIONS,
   },
 ];
 
@@ -156,10 +128,14 @@ export const normalizeRoleKey = (value = "") =>
     .replace(/^-+|-+$/g, "")
     .slice(0, 64);
 
-export const normalizeRolePermissions = (roleKey = "member", permissions = {}) => {
+export const normalizeRolePermissions = (
+  roleKey = DEFAULT_MEMBER_ROLE_KEY,
+  permissions = {},
+) => {
+  const normalizedRoleKey = normalizeRoleKey(roleKey) || DEFAULT_MEMBER_ROLE_KEY;
   const defaultRole =
-    DEFAULT_ORGANIZATION_ROLES.find((role) => role.key === roleKey) ||
-    DEFAULT_ORGANIZATION_ROLES.find((role) => role.key === "member");
+    DEFAULT_ORGANIZATION_ROLES.find((role) => role.key === normalizedRoleKey) ||
+    DEFAULT_ORGANIZATION_ROLES.find((role) => role.key === DEFAULT_MEMBER_ROLE_KEY);
   const merged = { ...(defaultRole?.permissions || {}) };
 
   ORGANIZATION_PERMISSION_KEYS.forEach((key) => {
@@ -168,16 +144,19 @@ export const normalizeRolePermissions = (roleKey = "member", permissions = {}) =
     }
   });
 
-  return merged;
+  return merged.manageOrganization
+    ? { ...MANAGER_ORGANIZATION_PERMISSIONS, manageOrganization: true }
+    : merged;
 };
 
 export const canManageOrganization = (membership) =>
-  ["owner", "admin"].includes(membership?.role) ||
+  Boolean(membership?.isOwner || membership?.isOrganizationOwner) ||
   Boolean(membership?.permissions?.manageOrganization);
 
 export const hasOrganizationPermission = (membership, permissionKey) => {
-  if (membership?.role === "owner") return true;
+  if (membership?.isOwner || membership?.isOrganizationOwner) return true;
   if (!ORGANIZATION_PERMISSION_KEYS.includes(permissionKey)) return false;
+  if (membership?.permissions?.manageOrganization) return true;
   return Boolean(membership?.permissions?.[permissionKey]);
 };
 

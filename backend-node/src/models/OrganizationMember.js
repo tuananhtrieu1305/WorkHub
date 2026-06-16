@@ -44,7 +44,7 @@ const organizationMemberSchema = new mongoose.Schema(
       trim: true,
       lowercase: true,
       maxlength: 64,
-      default: "member",
+      default: "thanh-vien",
       required: true,
     },
     roleId: {

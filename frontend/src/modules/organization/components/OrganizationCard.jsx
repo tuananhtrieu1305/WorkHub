@@ -3,7 +3,6 @@ import {
   getOrganizationId,
   getStat,
   isManager,
-  roleLabels,
 } from "../organizationUtils";
 import { getOrganizationThemeStyle } from "../organizationTheme";
 import Icon from "./Icon";
@@ -102,8 +101,6 @@ const OrganizationCard = ({
             icon="verified_user"
             value={
               organization.roleLabel ||
-              roleLabels[organization.role] ||
-              organization.role ||
               "Thành viên"
             }
             label="Vai trò"
@@ -214,7 +211,7 @@ const OrganizationCard = ({
                   setOpenMenuId("");
                   handlers.onOpenLeave(event, organization);
                 }}
-                disabled={organization.role === "owner" || isLeavingId === organizationId}
+                disabled={organization.isOwner || isLeavingId === organizationId}
                 className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-black text-red-700 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 <Icon name="logout" />

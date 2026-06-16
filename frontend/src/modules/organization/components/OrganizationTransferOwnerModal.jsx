@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { roleLabels } from "../organizationUtils";
 import Icon from "./Icon";
 import MemberAvatar from "./MemberAvatar";
 
@@ -16,7 +15,7 @@ const OrganizationTransferOwnerModal = ({
   const eligibleMembers = useMemo(
     () =>
       members.filter(
-        (member) => member.status === "active" && member.role !== "owner",
+        (member) => member.status === "active" && !member.isOwner,
       ),
     [members],
   );
@@ -116,7 +115,7 @@ const OrganizationTransferOwnerModal = ({
                       </p>
                     </div>
                     <span className="rounded-2xl bg-white px-3 py-1.5 text-xs font-black text-slate-600 ring-1 ring-slate-200">
-                      {roleLabels[member.role] || member.role}
+                      {member.roleLabel || "Thành viên"}
                     </span>
                     <span
                       className={`grid size-9 place-items-center rounded-2xl ${

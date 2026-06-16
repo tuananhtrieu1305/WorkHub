@@ -12,6 +12,7 @@ import {
   getOrganizationOverview,
   getOrganizationRoles,
   pauseOrganizationInvites,
+  reorderOrganizationRoles,
   reviewOrganizationJoinRequest,
   transferOrganizationOwnership,
   updateOrganizationInvite,
@@ -69,12 +70,27 @@ export const workspaceTabs = [
 
 const defaultRoleForm = {
   id: "",
-  key: "",
   name: "",
   description: "",
   color: "#2563eb",
   permissions: {},
+  isDefault: false,
+  canManage: true,
+  canReorder: true,
+  sortOrder: 100,
 };
+
+const toRoleForm = (role = {}) => ({
+  id: role.id || "",
+  name: role.name || "",
+  description: role.description || "",
+  color: role.color || "#2563eb",
+  permissions: { ...(role.permissions || {}) },
+  isDefault: Boolean(role.isDefault),
+  canManage: role.canManage !== false,
+  canReorder: role.canReorder !== false,
+  sortOrder: role.sortOrder ?? 100,
+});
 
 const defaultInviteForm = {
   expiresIn: "7d",
@@ -241,7 +257,7 @@ export const useOrganizationWorkspace = () => {
         requireApproval: detail.settings?.requireApproval !== false,
         allowMemberInvites: detail.settings?.allowMemberInvites !== false,
         memberDirectoryVisible: detail.settings?.memberDirectoryVisible !== false,
-        defaultRoleKey: detail.settings?.defaultRoleKey || "member",
+        defaultRoleId: detail.settings?.defaultRoleId || detail.roleId || "",
         joinMessage: detail.settings?.joinMessage || "",
         joinQuestions:
           detail.settings?.joinQuestions?.length > 0
@@ -366,18 +382,7 @@ export const useOrganizationWorkspace = () => {
 
   const openRoleModal = useCallback((role = null) => {
     setRoleModal(role ? "edit" : "create");
-    setRoleForm(
-      role
-        ? {
-            id: role.id,
-            key: role.key,
-            name: role.name,
-            description: role.description || "",
-            color: role.color || "#2563eb",
-            permissions: { ...(role.permissions || {}) },
-          }
-        : defaultRoleForm,
-    );
+    setRoleForm(role ? toRoleForm(role) : defaultRoleForm);
   }, []);
 
   const closeRoleModal = useCallback(() => {
@@ -409,17 +414,23 @@ export const useOrganizationWorkspace = () => {
 
       try {
         if (roleModal === "edit" && roleForm.id) {
-          await updateOrganizationRole(organizationId, roleForm.id, roleForm);
+          const savedRole = await updateOrganizationRole(
+            organizationId,
+            roleForm.id,
+            roleForm,
+          );
+          setRoleForm(toRoleForm(savedRole));
           message.success("Đã cập nhật vai trò", {
             description: `${roleForm.name.trim()} đã lưu tên, màu hoặc bộ quyền mới.`,
           });
         } else {
-          await createOrganizationRole(organizationId, roleForm);
+          const createdRole = await createOrganizationRole(organizationId, roleForm);
+          setRoleModal("edit");
+          setRoleForm(toRoleForm(createdRole));
           message.success("Đã tạo vai trò", {
             description: `${roleForm.name.trim()} đã sẵn sàng để gán cho thành viên.`,
           });
         }
-        closeRoleModal();
         loadRoles();
         refreshOrganization();
       } catch (error) {
@@ -431,7 +442,6 @@ export const useOrganizationWorkspace = () => {
       }
     },
     [
-      closeRoleModal,
       loadRoles,
       message,
       organizationId,
@@ -443,7 +453,7 @@ export const useOrganizationWorkspace = () => {
 
   const removeRole = useCallback(
     async (role) => {
-      if (!organizationId || !role?.id || role.isSystem) return;
+      if (!organizationId || !role?.id) return;
 
       try {
         await deleteOrganizationRole(organizationId, role.id);
@@ -462,14 +472,41 @@ export const useOrganizationWorkspace = () => {
     [loadRoles, message, organizationId],
   );
 
+  const reorderRoles = useCallback(
+    async (nextRoles) => {
+      if (!organizationId || !Array.isArray(nextRoles) || !nextRoles.length) {
+        return;
+      }
+
+      setRoles(nextRoles);
+      try {
+        await reorderOrganizationRoles(
+          organizationId,
+          nextRoles.map((role) => role.id).filter(Boolean),
+        );
+      } catch (error) {
+        console.error("Failed to reorder organization roles:", error);
+        message.error(getErrorMessage(error, "Không thể sắp xếp vai trò"), {
+          description:
+            "Thứ tự vai trò chưa được lưu. Danh sách sẽ được tải lại từ máy chủ.",
+        });
+        loadRoles();
+      }
+    },
+    [loadRoles, message, organizationId],
+  );
+
   const changeMemberRole = useCallback(
-    async (member, roleKey) => {
-      if (!organizationId || !member?.id || !roleKey) return;
+    async (member, roleId) => {
+      if (!organizationId || !member?.id || !roleId) return;
 
       try {
-        await updateOrganizationMember(organizationId, member.id, { role: roleKey });
+        const role = roles.find((item) => item.id === roleId);
+        await updateOrganizationMember(organizationId, member.id, { roleId });
         message.success("Đã cập nhật vai trò thành viên", {
-          description: `${getMemberName(member)} đã được gán vai trò ${roleKey}.`,
+          description: `${getMemberName(member)} đã được gán vai trò ${
+            role?.name || "mới"
+          }.`,
         });
         loadMembers();
       } catch (error) {
@@ -480,8 +517,15 @@ export const useOrganizationWorkspace = () => {
         });
       }
     },
-    [loadMembers, message, organizationId],
+    [loadMembers, message, organizationId, roles],
   );
+
+  const roleMembersChanged = useCallback(() => {
+    loadRoles();
+    loadMembers();
+    refreshOrganization();
+    refreshOrganizations?.();
+  }, [loadMembers, loadRoles, refreshOrganization, refreshOrganizations]);
 
   const createInviteForCurrentForm = useCallback(async () => {
     if (createdInvite?.code) return createdInvite;
@@ -704,7 +748,7 @@ export const useOrganizationWorkspace = () => {
             requireApproval: advancedForm.requireApproval,
             allowMemberInvites: advancedForm.allowMemberInvites,
             memberDirectoryVisible: advancedForm.memberDirectoryVisible,
-            defaultRoleKey: advancedForm.defaultRoleKey,
+            defaultRoleId: advancedForm.defaultRoleId,
             joinMessage: advancedForm.joinMessage,
             joinQuestions: advancedForm.joinQuestions || [],
           });
@@ -850,7 +894,7 @@ export const useOrganizationWorkspace = () => {
   );
 
   const leaveCurrentOrganization = useCallback(async () => {
-    if (!organizationId || activeOrganization?.role === "owner" || leaving) return;
+    if (!organizationId || activeOrganization?.isOwner || leaving) return;
 
     setLeaving(true);
     try {
@@ -965,6 +1009,8 @@ export const useOrganizationWorkspace = () => {
       pauseInvites,
       refreshOrganization,
       removeRole,
+      reorderRoles,
+      roleMembersChanged,
       saveRole,
       saveSettings,
       setAdvancedForm,

@@ -5,7 +5,7 @@ const toId = (value) => {
 };
 
 const hasOrganizationPermission = (user, permissionKey) => {
-  if (user?.activeOrganizationRole === "owner") return true;
+  if (user?.activeOrganizationIsOwner) return true;
   return Boolean(user?.activeOrganizationPermissions?.[permissionKey]);
 };
 

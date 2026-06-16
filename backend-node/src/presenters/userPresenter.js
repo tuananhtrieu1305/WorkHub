@@ -36,6 +36,11 @@ const ALLOWED_PROFILE_IMAGE_MIMES = new Set([
   "image/gif",
   "image/webp",
 ]);
+
+const toId = (value) => {
+  if (!value) return "";
+  return String(value?._id || value?.id || value);
+};
 const ALLOWED_PROFILE_IMAGE_EXTENSIONS = new Set([
   ".jpg",
   ".jpeg",
@@ -299,14 +304,17 @@ const formatProjectSummary = (project) => ({
 export const formatScopedProfileRole = (membership, role = null) => {
   if (!membership) return null;
 
-  const definition = getRoleDefinition(membership.role, role);
+  const definition = getRoleDefinition(role || membership.role);
+
+  const roleId = definition.id || toId(membership.roleId);
 
   return {
+    ...(roleId ? { id: roleId } : {}),
     key: definition.key,
     name: definition.name,
     description: definition.description,
     color: definition.color,
-    isSystem: definition.isSystem,
+    isSystem: false,
     status: membership.status,
     joinedAt: membership.joinedAt || null,
   };
@@ -323,11 +331,21 @@ const buildScopedProfileRoles = async (userId, organizationId) => {
 
   if (!membership) return [];
 
-  const role = await OrganizationRole.findOne({
-    organizationId,
-    key: membership.role,
-    archivedAt: null,
-  });
+  const role =
+    (membership.roleId
+      ? await OrganizationRole.findOne({
+          _id: membership.roleId,
+          organizationId,
+          archivedAt: null,
+        })
+      : null) ||
+    (membership.role
+      ? await OrganizationRole.findOne({
+          organizationId,
+          key: membership.role,
+          archivedAt: null,
+        })
+      : null);
 
   return [formatScopedProfileRole(membership, role)].filter(Boolean);
 };
@@ -336,11 +354,13 @@ const buildActiveOrganizationRole = (activeOrganization) => {
   if (!activeOrganization?.role) return null;
 
   return {
+    id: activeOrganization.roleId || null,
     key: activeOrganization.role,
     name: activeOrganization.roleLabel || activeOrganization.role,
     description: "Vai trò trong tổ chức đang hoạt động.",
     color: activeOrganization.roleColor || "#64748b",
-    isSystem: ["owner", "admin", "member"].includes(activeOrganization.role),
+    isSystem: false,
+    isOwner: Boolean(activeOrganization.isOwner),
     status: activeOrganization.memberStatus || "active",
     joinedAt: activeOrganization.joinedAt || null,
   };

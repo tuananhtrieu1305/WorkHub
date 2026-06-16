@@ -1,15 +1,9 @@
 export const EMPTY_ARRAY = [];
 
-export const roleLabels = {
-  owner: "Chủ sở hữu",
-  admin: "Quản trị",
-  member: "Thành viên",
-};
-
 export const permissionLabels = {
   viewOverview: "Xem tổng quan",
   viewMembers: "Xem thành viên",
-  manageOrganization: "Quản lý tổ chức",
+  manageOrganization: "Người quản lý",
   manageMembers: "Quản lý thành viên",
   manageRoles: "Quản lý vai trò",
   manageInvites: "Quản lý lời mời",
@@ -21,6 +15,68 @@ export const permissionLabels = {
   manageDocumentFolders: "Quản lý thư mục tài liệu",
   shareDocuments: "Tạo liên kết chia sẻ tài liệu",
 };
+
+export const permissionDescriptions = {
+  viewOverview: "Cho phép mở tab Tổng quan và xem các chỉ số hoạt động của tổ chức.",
+  viewMembers: "Cho phép xem danh sách thành viên, trạng thái và vai trò hiện tại.",
+  manageOrganization:
+    "Gần như có toàn quyền trong tổ chức như chủ sở hữu, ngoại trừ các thao tác bắt buộc chỉ chủ sở hữu mới được làm.",
+  manageMembers:
+    "Cho phép duyệt, cập nhật và điều phối thành viên trong phạm vi role thấp hơn role cao nhất của họ.",
+  manageRoles:
+    "Cho phép tạo role mới, chỉnh sửa, xóa hoặc sắp xếp các role nằm bên dưới role cao nhất của họ.",
+  manageInvites: "Cho phép xem, chỉnh sửa và thu hồi các lời mời trong tổ chức.",
+  manageSettings: "Cho phép thay đổi cài đặt tham gia, role mặc định và quy tắc tổ chức.",
+  createInvites: "Cho phép tự tạo mã mời hoặc liên kết mời thành viên mới.",
+  pauseInvites: "Cho phép tạm dừng lời mời đang hoạt động trong một khoảng thời gian.",
+  viewDocumentInsights: "Cho phép xem thống kê và tín hiệu hoạt động của tài liệu.",
+  manageDocuments: "Cho phép quản trị mọi tài liệu trong không gian tổ chức.",
+  manageDocumentFolders: "Cho phép tạo, sửa, di chuyển và quản lý thư mục tài liệu.",
+  shareDocuments: "Cho phép tạo liên kết chia sẻ tài liệu cho người khác.",
+};
+
+export const permissionSections = [
+  {
+    id: "general",
+    title: "Quyền tổng quát tổ chức",
+    description: "Các quyền mở tab và vận hành cấp tổ chức.",
+    icon: "domain",
+    keys: ["viewOverview", "manageRoles", "manageSettings"],
+  },
+  {
+    id: "members",
+    title: "Quyền thành viên",
+    description: "Kiểm soát khả năng xem và điều phối thành viên.",
+    icon: "groups",
+    keys: ["viewMembers", "manageMembers"],
+  },
+  {
+    id: "invites",
+    title: "Quyền lời mời",
+    description: "Quản lý cách thành viên mới được mời vào tổ chức.",
+    icon: "mark_email_unread",
+    keys: ["createInvites", "manageInvites", "pauseInvites"],
+  },
+  {
+    id: "documents",
+    title: "Quyền tài liệu",
+    description: "Các quyền liên quan đến tài liệu và thư mục dùng chung.",
+    icon: "folder_managed",
+    keys: [
+      "viewDocumentInsights",
+      "manageDocuments",
+      "manageDocumentFolders",
+      "shareDocuments",
+    ],
+  },
+  {
+    id: "advanced",
+    title: "Quyền nâng cao",
+    description: "Quyền quản lý rộng, chỉ nên cấp cho người thật sự tin cậy.",
+    icon: "admin_panel_settings",
+    keys: ["manageOrganization"],
+  },
+];
 
 export const notificationOptions = [
   ["inAppEnabled", "Thông báo trong app", "notifications"],
@@ -68,12 +124,10 @@ export const getStat = (organization, key) => {
 };
 
 export const isManager = (organization) =>
-  Boolean(organization?.permissions?.manageOrganization) ||
-  ["owner", "admin"].includes(organization?.role);
+  Boolean(organization?.permissions?.manageOrganization);
 
 export const hasPermission = (organization, permissionKey) =>
-  Boolean(organization?.permissions?.[permissionKey]) ||
-  (organization?.role === "owner" && Boolean(permissionKey));
+  Boolean(organization?.permissions?.[permissionKey]);
 
 export const canBypassInviteApproval = (organization) =>
   hasPermission(organization, "manageInvites") ||

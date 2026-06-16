@@ -2,7 +2,6 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../../../context/AuthContext";
 import UserProfileModal from "../../profile/UserProfileModal";
-import { roleLabels } from "../organizationUtils";
 import Icon from "./Icon";
 import MemberAvatar from "./MemberAvatar";
 import { PanelListSkeleton } from "../../../components/common/Skeleton";
@@ -52,7 +51,7 @@ const MemberRow = ({ member, onOpenProfile }) => (
         </span>
       )}
       <span className="rounded-lg bg-blue-50 px-2.5 py-1 text-xs font-black text-blue-700 ring-1 ring-blue-100">
-        {roleLabels[member.role] || member.role}
+        {member.roleLabel || "Thành viên"}
       </span>
     </div>
   </div>

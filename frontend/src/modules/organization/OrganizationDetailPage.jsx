@@ -69,6 +69,7 @@ const OrganizationDetailPage = () => {
               isLoading={state.loading.roles}
               onDeleteRole={actions.removeRole}
               onOpenRoleModal={actions.openRoleModal}
+              onReorderRoles={actions.reorderRoles}
               organization={state.activeOrganization}
               permissionKeys={state.permissionKeys}
               roles={state.roles}
@@ -113,9 +114,11 @@ const OrganizationDetailPage = () => {
       <OrganizationRoleModal
         form={state.roleForm}
         mode={state.roleModal}
+        onMembersChanged={actions.roleMembersChanged}
         onChange={actions.setRoleForm}
         onClose={actions.closeRoleModal}
         onSubmit={actions.saveRole}
+        organizationId={state.activeOrganization?.id}
         permissionKeys={state.permissionKeys}
       />
 

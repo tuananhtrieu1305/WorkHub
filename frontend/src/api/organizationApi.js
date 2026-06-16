@@ -67,8 +67,10 @@ export const getOrganizationInvite = async (organizationId) => {
   return data;
 };
 
-export const getOrganizationRoles = async (organizationId) => {
-  const { data } = await axiosClient.get(`/organizations/${organizationId}/roles`);
+export const getOrganizationRoles = async (organizationId, params = {}) => {
+  const { data } = await axiosClient.get(`/organizations/${organizationId}/roles`, {
+    params,
+  });
   return data;
 };
 
@@ -90,6 +92,38 @@ export const updateOrganizationRole = async (organizationId, roleId, payload) =>
 
 export const deleteOrganizationRole = async (organizationId, roleId) => {
   await axiosClient.delete(`/organizations/${organizationId}/roles/${roleId}`);
+};
+
+export const reorderOrganizationRoles = async (organizationId, roleIds) => {
+  const { data } = await axiosClient.patch(
+    `/organizations/${organizationId}/roles/reorder`,
+    { roleIds },
+  );
+  return data;
+};
+
+export const getOrganizationRoleMembers = async (
+  organizationId,
+  roleId,
+  params = {},
+) => {
+  const { data } = await axiosClient.get(
+    `/organizations/${organizationId}/roles/${roleId}/members`,
+    { params },
+  );
+  return data;
+};
+
+export const updateOrganizationRoleMembers = async (
+  organizationId,
+  roleId,
+  payload,
+) => {
+  const { data } = await axiosClient.patch(
+    `/organizations/${organizationId}/roles/${roleId}/members`,
+    payload,
+  );
+  return data;
 };
 
 export const updateOrganizationMember = async (
