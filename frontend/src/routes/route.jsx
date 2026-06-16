@@ -18,6 +18,7 @@ const CallRoomPage = lazy(() => import("../modules/call/CallRoomPage"));
 const FeedPage = lazy(() => import("../modules/feed/FeedPage"));
 const DocsPage = lazy(() => import("../modules/docs/DocsPage"));
 const ChatPage = lazy(() => import("../modules/chat/ChatPage"));
+const TasksPage = lazy(() => import("../modules/tasks/TasksPage"));
 const ProfilePage = lazy(() => import("../modules/profile/ProfilePage"));
 const OrganizationPage = lazy(() => import("../modules/organization/OrganizationPage"));
 const OrganizationDetailPage = lazy(
@@ -109,6 +110,14 @@ export const router = createBrowserRouter([
             element: (
               <Suspense fallback={<LazyFallback />}>
                 <DocsPage />
+              </Suspense>
+            ),
+          },
+          {
+            path: "tasks",
+            element: (
+              <Suspense fallback={<LazyFallback />}>
+                <TasksPage />
               </Suspense>
             ),
           },

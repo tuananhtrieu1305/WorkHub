@@ -4,6 +4,7 @@
 @import "./styles/chat/chat.css";
 @import "./styles/organization/index.css";
 @import "./styles/profile/index.css";
+@import "./styles/tasks/tasks.css";
 
 @layer base {
   *,

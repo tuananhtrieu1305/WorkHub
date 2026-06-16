@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import {
+  banOrganizationMember,
   createOrganizationInvite,
   createOrganizationRole,
   deleteOrganizationInvite,
@@ -14,7 +15,9 @@ import {
   pauseOrganizationInvites,
   reorderOrganizationRoles,
   reviewOrganizationJoinRequest,
+  kickOrganizationMember,
   transferOrganizationOwnership,
+  unbanOrganizationMember,
   updateOrganizationInvite,
   updateOrganizationMember,
   updateOrganization,
@@ -139,6 +142,7 @@ export const useOrganizationWorkspace = () => {
   const [isLoadingOrganization, setIsLoadingOrganization] = useState(true);
   const [overview, setOverview] = useState(null);
   const [members, setMembers] = useState([]);
+  const [bannedMembers, setBannedMembers] = useState([]);
   const [roles, setRoles] = useState([]);
   const [permissionKeys, setPermissionKeys] = useState([]);
   const [invites, setInvites] = useState([]);
@@ -148,10 +152,21 @@ export const useOrganizationWorkspace = () => {
     search: "",
     status: "all",
     role: "",
+    page: 1,
+    size: 8,
+  });
+  const [memberPagination, setMemberPagination] = useState({
+    page: 1,
+    size: 8,
+    totalElements: 0,
+    totalPages: 0,
+    first: true,
+    last: true,
   });
   const [loading, setLoading] = useState({
     overview: false,
     members: false,
+    bans: false,
     roles: false,
     invites: false,
     joinRequests: false,
@@ -263,6 +278,14 @@ export const useOrganizationWorkspace = () => {
     try {
       const payload = await getOrganizationMembers(organizationId, memberFilters);
       setMembers(payload.content || []);
+      setMemberPagination({
+        page: payload.page || payload.number || memberFilters.page || 1,
+        size: payload.size || memberFilters.size || 8,
+        totalElements: payload.totalElements || 0,
+        totalPages: payload.totalPages || 0,
+        first: payload.first !== false,
+        last: payload.last !== false,
+      });
     } catch (error) {
       console.error("Failed to load organization members:", error);
       message.error(getErrorMessage(error, "Không thể tải thành viên"), {
@@ -270,10 +293,43 @@ export const useOrganizationWorkspace = () => {
           "Danh sách thành viên chưa được tải theo bộ lọc hiện tại.",
       });
       setMembers([]);
+      setMemberPagination((current) => ({
+        ...current,
+        totalElements: 0,
+        totalPages: 0,
+        first: true,
+        last: true,
+      }));
     } finally {
       setLoading((current) => ({ ...current, members: false }));
     }
   }, [memberFilters, message, organizationId]);
+
+  const loadBannedMembers = useCallback(async () => {
+    if (!organizationId || !hasPermission(activeOrganization, "manageMembers")) {
+      setBannedMembers([]);
+      return;
+    }
+
+    setLoading((current) => ({ ...current, bans: true }));
+    try {
+      const payload = await getOrganizationMembers(organizationId, {
+        status: "banned",
+        page: 1,
+        size: 50,
+      });
+      setBannedMembers(payload.content || []);
+    } catch (error) {
+      console.error("Failed to load banned organization members:", error);
+      message.error(getErrorMessage(error, "Không thể tải danh sách chặn"), {
+        description:
+          "Danh sách tài khoản bị chặn chưa được tải trong tab Nâng cao.",
+      });
+      setBannedMembers([]);
+    } finally {
+      setLoading((current) => ({ ...current, bans: false }));
+    }
+  }, [activeOrganization, message, organizationId]);
 
   const loadRoles = useCallback(async () => {
     if (!organizationId) return;
@@ -466,25 +522,30 @@ export const useOrganizationWorkspace = () => {
   );
 
   const changeMemberRole = useCallback(
-    async (member, roleId) => {
-      if (!organizationId || !member?.id || !roleId) return;
+    async (member, roleIds) => {
+      const selectedRoleIds = (Array.isArray(roleIds) ? roleIds : [roleIds])
+        .filter(Boolean)
+        .map((roleId) => String(roleId));
+      if (!organizationId || !member?.id || !selectedRoleIds.length) return;
 
       try {
-        const role = roles.find((item) => item.id === roleId);
         const currentRoleIds = [
           ...(member.roleIds || []),
           ...(member.roles || []).map((item) => item.id),
         ]
           .filter(Boolean)
           .map((item) => String(item));
-        const nextRoleIds = [...new Set([...currentRoleIds, String(roleId)])];
+        const nextRoleIds = [...new Set([...currentRoleIds, ...selectedRoleIds])];
         await updateOrganizationMember(organizationId, member.id, {
           roleIds: nextRoleIds,
         });
+        const selectedRoles = roles.filter((item) =>
+          selectedRoleIds.includes(String(item.id)),
+        );
         message.success("Đã cập nhật vai trò thành viên", {
-          description: `${getMemberName(member)} đã được thêm vai trò ${
-            role?.name || "mới"
-          }.`,
+          description: `${getMemberName(member)} đã được thêm ${
+            selectedRoles.length || selectedRoleIds.length
+          } vai trò.`,
         });
         loadRoles();
         loadMembers();
@@ -497,6 +558,95 @@ export const useOrganizationWorkspace = () => {
       }
     },
     [loadMembers, loadRoles, message, organizationId, roles],
+  );
+
+  const kickMember = useCallback(
+    async (member) => {
+      if (!organizationId || !member?.id) return;
+      const confirmed = window.confirm(
+        `Đuổi ${getMemberName(member)} khỏi tổ chức?`,
+      );
+      if (!confirmed) return;
+
+      try {
+        await kickOrganizationMember(organizationId, member.id);
+        message.success("Đã đuổi thành viên", {
+          description: `${getMemberName(member)} đã được gỡ khỏi tổ chức.`,
+        });
+        loadMembers();
+        refreshOrganization();
+        refreshOrganizations?.();
+      } catch (error) {
+        console.error("Failed to kick organization member:", error);
+        message.error(getErrorMessage(error, "Không thể đuổi thành viên"), {
+          description:
+            "Thành viên chưa được gỡ khỏi tổ chức. Hãy kiểm tra quyền quản trị và thử lại.",
+        });
+      }
+    },
+    [
+      loadMembers,
+      message,
+      organizationId,
+      refreshOrganization,
+      refreshOrganizations,
+    ],
+  );
+
+  const banMember = useCallback(
+    async (member) => {
+      if (!organizationId || !member?.id) return;
+      const confirmed = window.confirm(
+        `Chặn ${getMemberName(member)} khỏi tổ chức? Người này sẽ không thể tham gia lại bằng mã mời.`,
+      );
+      if (!confirmed) return;
+
+      try {
+        await banOrganizationMember(organizationId, member.id);
+        message.success("Đã chặn thành viên", {
+          description: `${getMemberName(member)} đã được đưa vào danh sách bị chặn.`,
+        });
+        loadMembers();
+        loadBannedMembers();
+        refreshOrganization();
+        refreshOrganizations?.();
+      } catch (error) {
+        console.error("Failed to ban organization member:", error);
+        message.error(getErrorMessage(error, "Không thể chặn thành viên"), {
+          description:
+            "Lệnh chặn chưa được lưu. Hãy kiểm tra quyền quản trị và thử lại.",
+        });
+      }
+    },
+    [
+      loadBannedMembers,
+      loadMembers,
+      message,
+      organizationId,
+      refreshOrganization,
+      refreshOrganizations,
+    ],
+  );
+
+  const unbanMember = useCallback(
+    async (member) => {
+      if (!organizationId || !member?.id) return;
+
+      try {
+        await unbanOrganizationMember(organizationId, member.id);
+        message.success("Đã thu hồi lệnh chặn", {
+          description: `${getMemberName(member)} có thể tham gia lại bằng lời mời hợp lệ.`,
+        });
+        loadBannedMembers();
+      } catch (error) {
+        console.error("Failed to unban organization member:", error);
+        message.error(getErrorMessage(error, "Không thể thu hồi lệnh chặn"), {
+          description:
+            "Tài khoản vẫn nằm trong danh sách bị chặn. Hãy thử lại sau.",
+        });
+      }
+    },
+    [loadBannedMembers, message, organizationId],
   );
 
   const roleMembersChanged = useCallback(() => {
@@ -924,6 +1074,10 @@ export const useOrganizationWorkspace = () => {
   }, [loadMembers, selectedTab]);
 
   useEffect(() => {
+    if (selectedTab === "advanced") loadBannedMembers();
+  }, [loadBannedMembers, selectedTab]);
+
+  useEffect(() => {
     if (selectedTab === "roles" || selectedTab === "members" || selectedTab === "advanced") {
       loadRoles();
     }
@@ -942,6 +1096,7 @@ export const useOrganizationWorkspace = () => {
       activeOrganization,
       advancedForm,
       availableTabs,
+      bannedMembers,
       canManage,
       createdInvite,
       inviteForm,
@@ -956,6 +1111,7 @@ export const useOrganizationWorkspace = () => {
       leaving,
       loading,
       memberFilters,
+      memberPagination,
       members,
       overview,
       pauseDurationHours,
@@ -971,13 +1127,16 @@ export const useOrganizationWorkspace = () => {
     },
     actions: {
       changeMemberRole,
+      banMember,
       closeRoleModal,
       closeInviteModal,
       copyInvite,
       copyInviteCodeFromModal,
       createInvite,
       deleteInvite,
+      kickMember,
       leaveCurrentOrganization,
+      loadBannedMembers,
       loadInvites,
       loadJoinRequests,
       loadMembers,
@@ -1007,6 +1166,7 @@ export const useOrganizationWorkspace = () => {
       setTransferModalOpen,
       reviewJoinRequest,
       transferOwner,
+      unbanMember,
       updateBannerImage,
     },
   };

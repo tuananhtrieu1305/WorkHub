@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { buildRulesDescription, getRuleLines } from "../joinQuestionRules";
-import { hasPermission } from "../organizationUtils";
+import { formatDate, hasPermission } from "../organizationUtils";
 import Icon from "./Icon";
+import MemberAvatar from "./MemberAvatar";
 import OrganizationAccentPicker from "./OrganizationAccentPicker";
 import ToggleSwitch from "./ToggleSwitch";
 
@@ -111,7 +112,9 @@ const buildQuestion = (type = "short_text", label = "") => {
 };
 
 const OrganizationAdvancedSection = ({
+  bannedMembers = [],
   form,
+  isLoadingBans = false,
   isLeaving,
   isSaving,
   members = [],
@@ -119,6 +122,7 @@ const OrganizationAdvancedSection = ({
   onLeave,
   onOpenJoinPreview,
   onOpenTransferOwner,
+  onRevokeBan,
   onSubmit,
   organization,
   roles,
@@ -135,6 +139,7 @@ const OrganizationAdvancedSection = ({
   const questionTypePickerRef = useRef(null);
   const canManageSettings = hasPermission(organization, "manageSettings");
   const canManageAppearance = hasPermission(organization, "manageOrganization");
+  const canManageMembers = hasPermission(organization, "manageMembers");
   const canLeave = !organization?.isOwner;
   const canTransferOwner = Boolean(organization?.isOwner);
   const questions = useMemo(
@@ -867,6 +872,74 @@ const OrganizationAdvancedSection = ({
         </form>
 
         <div className="grid gap-5 lg:grid-cols-2">
+          <div className="rounded-[1.75rem] bg-white p-5 ring-1 ring-slate-200 lg:col-span-2">
+            <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+              <div>
+                <h3 className="flex items-center gap-2 text-lg font-black text-slate-950">
+                  <Icon name="block" />
+                  Tài khoản bị chặn
+                </h3>
+                <p className="mt-2 text-sm font-semibold leading-6 text-slate-500">
+                  Quản lý những tài khoản không thể tham gia lại bằng mã hoặc
+                  liên kết mời.
+                </p>
+              </div>
+              <span className="inline-flex w-fit items-center gap-2 rounded-2xl bg-rose-50 px-4 py-2 text-xs font-black text-rose-700 ring-1 ring-rose-100">
+                <Icon name="person_off" />
+                {bannedMembers.length} bị chặn
+              </span>
+            </div>
+
+            <div className="mt-4 grid gap-3">
+              {isLoadingBans ? (
+                Array.from({ length: 2 }).map((_, index) => (
+                  <div
+                    key={index}
+                    className="h-16 animate-pulse rounded-2xl bg-slate-100"
+                  />
+                ))
+              ) : bannedMembers.length ? (
+                bannedMembers.map((member) => (
+                  <div
+                    key={member.id}
+                    className="flex flex-col gap-3 rounded-2xl bg-slate-50 p-3 ring-1 ring-slate-200 sm:flex-row sm:items-center sm:justify-between"
+                  >
+                    <div className="flex min-w-0 items-center gap-3">
+                      <MemberAvatar member={member} />
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-black text-slate-950">
+                          {member.user?.fullName || "Thành viên"}
+                        </p>
+                        <p className="truncate text-xs font-semibold text-slate-500">
+                          {member.user?.email || "Chưa có email"}
+                        </p>
+                        <p className="mt-1 text-xs font-bold text-rose-600">
+                          Bị chặn: {formatDate(member.bannedAt) || "Không rõ"}
+                        </p>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => onRevokeBan?.(member)}
+                      disabled={!canManageMembers}
+                      className="inline-flex shrink-0 items-center justify-center gap-2 rounded-2xl bg-white px-4 py-3 text-sm font-black text-slate-700 ring-1 ring-slate-200 transition hover:bg-emerald-50 hover:text-emerald-700 hover:ring-emerald-100 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      <Icon name="undo" />
+                      Thu hồi chặn
+                    </button>
+                  </div>
+                ))
+              ) : (
+                <div className="grid place-items-center gap-2 rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-4 py-10 text-center">
+                  <Icon name="verified_user" className="text-4xl leading-none text-slate-300" />
+                  <p className="text-sm font-black text-slate-600">
+                    Chưa có tài khoản nào bị chặn.
+                  </p>
+                </div>
+              )}
+            </div>
+          </div>
+
           <div className="rounded-[1.75rem] bg-amber-50 p-5 ring-1 ring-amber-100">
             <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
               <div>

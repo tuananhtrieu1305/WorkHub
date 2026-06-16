@@ -57,9 +57,12 @@ const OrganizationDetailPage = () => {
               filters={state.memberFilters}
               isLoading={state.loading.members}
               members={state.members}
+              onBanMember={actions.banMember}
               onChangeFilters={actions.setMemberFilters}
               onChangeRole={actions.changeMemberRole}
+              onKickMember={actions.kickMember}
               organization={state.activeOrganization}
+              pagination={state.memberPagination}
               roles={state.roles}
             />
           )}
@@ -95,7 +98,9 @@ const OrganizationDetailPage = () => {
 
           {state.selectedTab === "advanced" && (
             <OrganizationAdvancedSection
+              bannedMembers={state.bannedMembers}
               form={state.advancedForm}
+              isLoadingBans={state.loading.bans}
               isLeaving={state.leaving}
               isSaving={state.loading.settings}
               members={state.members}
@@ -103,6 +108,7 @@ const OrganizationDetailPage = () => {
               onLeave={actions.leaveCurrentOrganization}
               onOpenJoinPreview={() => actions.setJoinPreviewOpen(true)}
               onOpenTransferOwner={() => actions.setTransferModalOpen(true)}
+              onRevokeBan={actions.unbanMember}
               onSubmit={actions.saveSettings}
               organization={state.activeOrganization}
               roles={state.roles}

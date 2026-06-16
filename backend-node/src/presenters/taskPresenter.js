@@ -25,15 +25,19 @@ const TASK_UPDATE_FIELDS = [
   "archivedAt",
 ];
 
+const TASK_STATUSES = ["todo", "in_progress", "blocked", "review", "done", "cancelled"];
+const ACTIVE_TASK_STATUSES = ["todo", "in_progress", "blocked", "review"];
+const STATUS_ONLY_UPDATE_FIELDS = ["status"];
+
 const parsePage = (value, fallback = 1) => {
   const parsed = Number.parseInt(value, 10);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
 };
 
-const parseSize = (value, fallback = 20) => {
+const parseSize = (value, fallback = 20, max = 200) => {
   const parsed = Number.parseInt(value, 10);
   if (!Number.isFinite(parsed) || parsed <= 0) return fallback;
-  return Math.min(parsed, 100);
+  return Math.min(parsed, max);
 };
 
 const toObject = (doc) => doc?.toObject?.() || doc;
@@ -61,6 +65,193 @@ const buildSearchRegex = (value) => {
 };
 
 const activeStatus = (user) => !user?.status || user.status === "active";
+
+const startOfDay = (date = new Date()) => {
+  const value = new Date(date);
+  value.setHours(0, 0, 0, 0);
+  return value;
+};
+
+const shiftDays = (date, days) =>
+  new Date(date.getTime() + days * 24 * 60 * 60 * 1000);
+
+const serializeUser = (user) => {
+  const doc = toObject(user);
+  if (!doc) return null;
+
+  return {
+    id: toId(doc._id || doc.id),
+    fullName: doc.fullName || "",
+    email: doc.email || "",
+    avatar: doc.avatar || "",
+    position: doc.position || "",
+    activityStatus: doc.activityStatus || "offline",
+    isOnline: Boolean(doc.isOnline),
+  };
+};
+
+const serializeChecklistItem = (item) => {
+  const doc = toObject(item);
+  if (!doc) return null;
+
+  return {
+    id: toId(doc._id || doc.id),
+    taskId: toId(doc.taskId),
+    title: doc.title || doc.content || "",
+    isDone: Boolean(doc.isDone ?? doc.isCompleted),
+    order: Number(doc.order || 0),
+    createdBy: toId(doc.createdBy),
+    completedBy: toId(doc.completedBy),
+    completedAt: doc.completedAt || null,
+    createdAt: doc.createdAt || null,
+    updatedAt: doc.updatedAt || null,
+  };
+};
+
+const buildTaskAbility = (user, task, assigneeIds = []) => {
+  const userId = toId(user?._id);
+  const taskOrganizationId = toId(task?.organizationId);
+  const activeOrganizationId = toId(user?.activeOrganizationId);
+  const inActiveOrganization =
+    Boolean(activeOrganizationId && taskOrganizationId) &&
+    activeOrganizationId === taskOrganizationId;
+  const orgPermissions = user?.activeOrganizationPermissions || {};
+  const organizationOwner = Boolean(user?.activeOrganizationIsOwner);
+  const organizationManager = Boolean(orgPermissions.manageOrganization);
+  const systemAdmin = isAdmin(user);
+  const taskCreatorOrOwner =
+    Boolean(userId) &&
+    (toId(task?.createdBy) === userId || toId(task?.ownerId) === userId);
+  const assigned = assigneeIds.map(String).includes(String(userId));
+  const canManage =
+    inActiveOrganization &&
+    (systemAdmin || organizationOwner || organizationManager || orgPermissions.manageTasks);
+
+  return {
+    canRead:
+      inActiveOrganization &&
+      (canManage ||
+        orgPermissions.viewOrganizationTasks ||
+        taskCreatorOrOwner ||
+        (orgPermissions.viewAssignedTasks && assigned)),
+    canEdit: Boolean(inActiveOrganization && (canManage || taskCreatorOrOwner)),
+    canChangeStatus: Boolean(inActiveOrganization && (canManage || taskCreatorOrOwner || assigned)),
+    canAssign: Boolean(
+      inActiveOrganization &&
+        (canManage || orgPermissions.assignTasks || taskCreatorOrOwner),
+    ),
+    canDelete: Boolean(
+      inActiveOrganization &&
+        (canManage || orgPermissions.deleteTasks || taskCreatorOrOwner),
+    ),
+    isAssigned: assigned,
+    isOwner: taskCreatorOrOwner,
+  };
+};
+
+const createTaskSerializer = async (tasks, user) => {
+  const taskList = (Array.isArray(tasks) ? tasks : [tasks]).filter(Boolean);
+  const taskIds = taskList.map((task) => toId(task._id)).filter(Boolean);
+
+  if (!taskIds.length) {
+    return Array.isArray(tasks) ? [] : null;
+  }
+
+  const [assignments, checklistItems] = await Promise.all([
+    TaskAssignee.find({ taskId: { $in: taskIds }, removedAt: null }).sort({
+      assignedAt: -1,
+    }),
+    ChecklistItem.find({ taskId: { $in: taskIds } }).sort({ order: 1 }),
+  ]);
+
+  const userIds = new Set();
+  taskList.forEach((task) => {
+    [task.createdBy, task.ownerId].forEach((id) => {
+      const value = toId(id);
+      if (value) userIds.add(value);
+    });
+  });
+  assignments.forEach((assignment) => {
+    const value = toId(assignment.userId);
+    if (value) userIds.add(value);
+  });
+
+  const users = userIds.size
+    ? await User.find({ _id: { $in: [...userIds] } }).select(
+        "_id fullName email avatar position activityStatus isOnline",
+      )
+    : [];
+  const usersById = new Map(users.map((item) => [toId(item._id), serializeUser(item)]));
+
+  const assignmentsByTaskId = new Map();
+  assignments.forEach((assignment) => {
+    const taskId = toId(assignment.taskId);
+    const userId = toId(assignment.userId);
+    const item = {
+      id: toId(assignment._id),
+      taskId,
+      userId,
+      assignedBy: toId(assignment.assignedBy),
+      assignedAt: assignment.assignedAt || null,
+      status: assignment.status,
+      user: usersById.get(userId) || { id: userId },
+    };
+    assignmentsByTaskId.set(taskId, [...(assignmentsByTaskId.get(taskId) || []), item]);
+  });
+
+  const checklistByTaskId = new Map();
+  checklistItems.forEach((item) => {
+    const taskId = toId(item.taskId);
+    const serialized = serializeChecklistItem(item);
+    checklistByTaskId.set(taskId, [...(checklistByTaskId.get(taskId) || []), serialized]);
+  });
+
+  const serialize = (task) => {
+    const doc = toObject(task);
+    const taskId = toId(doc._id || doc.id);
+    const assignees = assignmentsByTaskId.get(taskId) || [];
+    const assigneeIds = assignees.map((assignment) => assignment.userId);
+    const checklist = checklistByTaskId.get(taskId) || [];
+    const doneChecklistCount = checklist.filter((item) => item.isDone).length;
+    const ability = buildTaskAbility(user, doc, assigneeIds);
+
+    return {
+      id: taskId,
+      _id: doc._id,
+      title: doc.title,
+      description: doc.description || "",
+      projectId: toId(doc.projectId),
+      organizationId: toId(doc.organizationId),
+      createdBy: toId(doc.createdBy),
+      ownerId: toId(doc.ownerId),
+      status: doc.status,
+      priority: doc.priority,
+      startAt: doc.startAt || null,
+      endAt: doc.endAt || null,
+      completedAt: doc.completedAt || null,
+      archivedAt: doc.archivedAt || null,
+      deletedAt: doc.deletedAt || null,
+      assigneeIds,
+      assignees,
+      checklist,
+      checklistProgress: {
+        done: doneChecklistCount,
+        total: checklist.length,
+        percent: checklist.length
+          ? Math.round((doneChecklistCount / checklist.length) * 100)
+          : 0,
+      },
+      owner: usersById.get(toId(doc.ownerId)) || null,
+      creator: usersById.get(toId(doc.createdBy)) || null,
+      permissions: ability,
+      createdAt: doc.createdAt || null,
+      updatedAt: doc.updatedAt || null,
+    };
+  };
+
+  const payload = taskList.map(serialize);
+  return Array.isArray(tasks) ? payload : payload[0];
+};
 
 const validateAssignableUsers = async (userIds, organizationId = null) => {
   if (userIds.length === 0) return [];
@@ -202,7 +393,7 @@ const buildTaskQuery = async (filters = {}) => {
     andClauses.push({ _id: { $in: assignments.map((assignment) => assignment.taskId) } });
   }
 
-  if (!isAdmin(filters.currentUser)) {
+  if (!permission.canViewOrganizationTasks(filters.currentUser)) {
     const userId = toId(filters.currentUser?._id);
     const assignments = userId
       ? await TaskAssignee.find({ userId, removedAt: null }).sort({ assignedAt: -1 })
@@ -247,6 +438,19 @@ export const createTask = async (req, res) => {
   }
 
   const assignedUserIds = uniqueIds(assigneeIds);
+  const creatorId = toId(req.user._id);
+  const assignsOtherMembers = assignedUserIds.some((userId) => userId !== creatorId);
+  const taskPermissions = req.user.activeOrganizationPermissions || {};
+  const canAssignDuringCreate = Boolean(
+    isAdmin(req.user) ||
+      req.user.activeOrganizationIsOwner ||
+      taskPermissions.manageOrganization ||
+      taskPermissions.manageTasks ||
+      taskPermissions.assignTasks,
+  );
+  if (assignsOtherMembers && !canAssignDuringCreate) {
+    throw new ApiError(403, "You cannot assign this task to other members");
+  }
   await validateAssignableUsers(assignedUserIds, organizationId);
 
   const task = await Task.create({
@@ -260,18 +464,16 @@ export const createTask = async (req, res) => {
     priority,
     startAt,
     endAt,
+    assignees: assignedUserIds,
     completedAt: status === "done" ? new Date() : null,
   });
 
-  const assignees = [];
   for (const userId of assignedUserIds) {
-    assignees.push(
-      await TaskAssignee.create({
-        taskId: task._id,
-        userId,
-        assignedBy: req.user._id,
-      }),
-    );
+    await TaskAssignee.create({
+      taskId: task._id,
+      userId,
+      assignedBy: req.user._id,
+    });
   }
 
   const checklistItems = [];
@@ -301,11 +503,8 @@ export const createTask = async (req, res) => {
     actorId: req.user._id,
   });
 
-  res.status(201).json({
-    ...toObject(task),
-    assignees,
-    checklist: checklistItems,
-  });
+  const payload = await createTaskSerializer(task, req.user);
+  res.status(201).json(payload);
 };
 
 export const listTasks = async (req, res) => {
@@ -324,14 +523,22 @@ export const listTasks = async (req, res) => {
     Task.countDocuments(query),
   ]);
 
-  const content = [];
-  for (const task of tasks) {
-    if (await permission.canReadTask(req.user, task)) {
-      content.push(toObject(task));
-    }
-  }
+  const serializedTasks = await createTaskSerializer(
+    tasks.filter((task) => task && !task.deletedAt),
+    req.user,
+  );
+  const content = serializedTasks.filter((task) => task.permissions?.canRead);
+  const totalPages = totalElements ? Math.ceil(totalElements / size) : 0;
 
-  res.json({ content, totalElements });
+  res.json({
+    content,
+    totalElements,
+    totalPages,
+    page,
+    size,
+    first: page <= 1,
+    last: totalPages === 0 || page >= totalPages,
+  });
 };
 
 export const listMyTasks = async (req, res) => {
@@ -350,15 +557,138 @@ export const listProjectTasks = async (req, res) => {
   return listTasks(req, res);
 };
 
+export const getTaskSummary = async (req, res) => {
+  const organizationId = requireActiveOrganization(req);
+  if (!permission.canViewTaskInsights(req.user)) {
+    throw new ApiError(403, "You cannot view task insights");
+  }
+
+  const today = startOfDay();
+  const dueSoonEnd = shiftDays(today, 7);
+  const baseQuery = {
+    organizationId,
+    deletedAt: null,
+  };
+  const tasks = await Task.find(baseQuery).select(
+    "_id title status priority endAt completedAt ownerId createdAt",
+  );
+  const taskIds = tasks.map((task) => task._id);
+  const assignments = taskIds.length
+    ? await TaskAssignee.find({ taskId: { $in: taskIds }, removedAt: null })
+    : [];
+  const assigneeUserIds = [
+    ...new Set(assignments.map((assignment) => toId(assignment.userId)).filter(Boolean)),
+  ];
+  const users = assigneeUserIds.length
+    ? await User.find({ _id: { $in: assigneeUserIds } }).select(
+        "_id fullName email avatar position",
+      )
+    : [];
+  const usersById = new Map(users.map((user) => [toId(user._id), serializeUser(user)]));
+
+  const byStatus = TASK_STATUSES.reduce(
+    (acc, status) => ({
+      ...acc,
+      [status]: 0,
+    }),
+    {},
+  );
+  const byPriority = ["low", "medium", "high", "urgent"].reduce(
+    (acc, priority) => ({
+      ...acc,
+      [priority]: 0,
+    }),
+    {},
+  );
+  const workloadByUserId = new Map();
+
+  tasks.forEach((task) => {
+    byStatus[task.status] = Number(byStatus[task.status] || 0) + 1;
+    byPriority[task.priority] = Number(byPriority[task.priority] || 0) + 1;
+  });
+
+  assignments.forEach((assignment) => {
+    const task = tasks.find((item) => toId(item._id) === toId(assignment.taskId));
+    const userId = toId(assignment.userId);
+    if (!task || !userId) return;
+
+    const current = workloadByUserId.get(userId) || {
+      userId,
+      user: usersById.get(userId) || { id: userId },
+      total: 0,
+      open: 0,
+      done: 0,
+      overdue: 0,
+    };
+    current.total += 1;
+    if (task.status === "done") {
+      current.done += 1;
+    } else if (task.status !== "cancelled") {
+      current.open += 1;
+    }
+    if (
+      task.endAt &&
+      ACTIVE_TASK_STATUSES.includes(task.status) &&
+      new Date(task.endAt) < today
+    ) {
+      current.overdue += 1;
+    }
+    workloadByUserId.set(userId, current);
+  });
+
+  const total = tasks.length;
+  const done = Number(byStatus.done || 0);
+  const cancelled = Number(byStatus.cancelled || 0);
+  const open = tasks.filter((task) => ACTIVE_TASK_STATUSES.includes(task.status)).length;
+  const overdue = tasks.filter(
+    (task) =>
+      task.endAt &&
+      ACTIVE_TASK_STATUSES.includes(task.status) &&
+      new Date(task.endAt) < today,
+  ).length;
+  const dueSoon = tasks.filter(
+    (task) =>
+      task.endAt &&
+      ACTIVE_TASK_STATUSES.includes(task.status) &&
+      new Date(task.endAt) >= today &&
+      new Date(task.endAt) <= dueSoonEnd,
+  ).length;
+
+  res.json({
+    totals: {
+      total,
+      open,
+      done,
+      cancelled,
+      overdue,
+      dueSoon,
+      completionRate: total ? Math.round((done / Math.max(total - cancelled, 1)) * 100) : 0,
+    },
+    byStatus,
+    byPriority,
+    workload: [...workloadByUserId.values()]
+      .sort((left, right) => right.open - left.open || right.total - left.total)
+      .slice(0, 8),
+    generatedAt: new Date().toISOString(),
+  });
+};
+
 export const getTask = async (req, res) => {
   const task = await Task.findById(req.params.id);
   await assertTaskReadable(req.user, task);
-  res.json(await serializeTask(task, { includeRelations: true }));
+  const [payload, relations] = await Promise.all([
+    createTaskSerializer(task, req.user),
+    getTaskRelations(task._id),
+  ]);
+  res.json({
+    ...payload,
+    timeline: relations.timeline,
+  });
 };
 
 export const updateTask = async (req, res) => {
   const task = await Task.findById(req.params.id);
-  await assertTaskEditable(req.user, task);
+  await assertTaskReadable(req.user, task);
 
   const update = {};
   const changedFields = [];
@@ -370,6 +700,18 @@ export const updateTask = async (req, res) => {
       }
     }
   });
+
+  const requestedFields = Object.keys(update);
+  const statusOnlyUpdate =
+    requestedFields.length > 0 &&
+    requestedFields.every((field) => STATUS_ONLY_UPDATE_FIELDS.includes(field));
+  const canEditTask = await permission.canEditTask(req.user, task);
+  const canChangeStatus =
+    statusOnlyUpdate && (await permission.canChangeTaskStatus(req.user, task));
+
+  if (!canEditTask && !canChangeStatus) {
+    throw new ApiError(403, "You cannot update this task");
+  }
 
   if (req.body.status === "done" && task.status !== "done") {
     update.completedAt = new Date();
@@ -393,7 +735,7 @@ export const updateTask = async (req, res) => {
     actorId: req.user._id,
   });
 
-  res.json(toObject(updated));
+  res.json(await createTaskSerializer(updated, req.user));
 };
 
 export const deleteTask = async (req, res) => {
@@ -426,27 +768,29 @@ export const addAssignees = async (req, res) => {
   }
   await validateAssignableUsers(userIds, task.organizationId);
 
-  const assignees = [];
   for (const userId of userIds) {
-    assignees.push(
-      await TaskAssignee.findOneAndUpdate(
-        { taskId: task._id, userId },
-        {
-          $set: {
-            removedAt: null,
-            status: "assigned",
-          },
-          $setOnInsert: {
-            taskId: task._id,
-            userId,
-            assignedBy: req.user._id,
-            assignedAt: new Date(),
-          },
+    await TaskAssignee.findOneAndUpdate(
+      { taskId: task._id, userId },
+      {
+        $set: {
+          removedAt: null,
+          status: "assigned",
         },
-        { new: true, upsert: true, runValidators: true },
-      ),
+        $setOnInsert: {
+          taskId: task._id,
+          userId,
+          assignedBy: req.user._id,
+          assignedAt: new Date(),
+        },
+      },
+      { new: true, upsert: true, runValidators: true },
     );
   }
+  const updatedTask = await Task.findByIdAndUpdate(
+    task._id,
+    { $addToSet: { assignees: { $each: userIds } } },
+    { new: true },
+  );
 
   await createActivity(req, task, "task.assignees_added", { userIds });
   await emitTaskEvent("task.assignees_added", {
@@ -455,7 +799,7 @@ export const addAssignees = async (req, res) => {
     actorId: req.user._id,
   });
 
-  res.json({ assignees });
+  res.json(await createTaskSerializer(updatedTask || task, req.user));
 };
 
 export const removeAssignee = async (req, res) => {
@@ -465,6 +809,11 @@ export const removeAssignee = async (req, res) => {
   await TaskAssignee.updateOne(
     { taskId: task._id, userId: req.params.userId, removedAt: null },
     { removedAt: new Date() },
+  );
+  const updatedTask = await Task.findByIdAndUpdate(
+    task._id,
+    { $pull: { assignees: req.params.userId } },
+    { new: true },
   );
 
   await createActivity(req, task, "task.assignees_removed", {
@@ -476,7 +825,7 @@ export const removeAssignee = async (req, res) => {
     actorId: req.user._id,
   });
 
-  res.status(204).send();
+  res.json(await createTaskSerializer(updatedTask || task, req.user));
 };
 
 export const addChecklistItem = async (req, res) => {

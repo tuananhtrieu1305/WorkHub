@@ -138,6 +138,15 @@ export const updateOrganizationMember = async (
   return data;
 };
 
+export const kickOrganizationMember = async (organizationId, memberId) =>
+  updateOrganizationMember(organizationId, memberId, { action: "kick" });
+
+export const banOrganizationMember = async (organizationId, memberId) =>
+  updateOrganizationMember(organizationId, memberId, { action: "ban" });
+
+export const unbanOrganizationMember = async (organizationId, memberId) =>
+  updateOrganizationMember(organizationId, memberId, { action: "unban" });
+
 export const getOrganizationInvites = async (organizationId, params = {}) => {
   const { data } = await axiosClient.get(
     `/organizations/${organizationId}/invites`,

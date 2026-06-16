@@ -14,6 +14,13 @@ export const permissionLabels = {
   manageDocuments: "Quản lý mọi tài liệu",
   manageDocumentFolders: "Quản lý thư mục tài liệu",
   shareDocuments: "Tạo liên kết chia sẻ tài liệu",
+  viewAssignedTasks: "Xem việc được giao",
+  viewOrganizationTasks: "Xem mọi việc tổ chức",
+  createTasks: "Tạo công việc",
+  manageTasks: "Quản lý công việc",
+  assignTasks: "Giao việc",
+  deleteTasks: "Xóa công việc",
+  viewTaskInsights: "Xem thống kê công việc",
 };
 
 export const permissionDescriptions = {
@@ -33,6 +40,14 @@ export const permissionDescriptions = {
   manageDocuments: "Cho phép quản trị mọi tài liệu trong không gian tổ chức.",
   manageDocumentFolders: "Cho phép tạo, sửa, di chuyển và quản lý thư mục tài liệu.",
   shareDocuments: "Cho phép tạo liên kết chia sẻ tài liệu cho người khác.",
+  viewAssignedTasks:
+    "Cho phép mở trang công việc và xem các task do chính họ tạo, sở hữu hoặc được giao.",
+  viewOrganizationTasks: "Cho phép xem toàn bộ task trong tổ chức đang hoạt động.",
+  createTasks: "Cho phép tạo task mới trong bảng công việc của tổ chức.",
+  manageTasks: "Cho phép chỉnh sửa nội dung, ưu tiên, hạn và trạng thái của mọi task.",
+  assignTasks: "Cho phép giao hoặc gỡ người phụ trách task cho các thành viên trong tổ chức.",
+  deleteTasks: "Cho phép xóa task trong tổ chức.",
+  viewTaskInsights: "Cho phép xem số liệu, phân bổ trạng thái, ưu tiên và tải việc nhóm.",
 };
 
 export const permissionSections = [
@@ -67,6 +82,21 @@ export const permissionSections = [
       "manageDocuments",
       "manageDocumentFolders",
       "shareDocuments",
+    ],
+  },
+  {
+    id: "tasks",
+    title: "Quản lý quyền công việc",
+    description: "Điều khiển quyền xem board, tạo, giao việc và xem thống kê task.",
+    icon: "task_alt",
+    keys: [
+      "viewAssignedTasks",
+      "viewOrganizationTasks",
+      "createTasks",
+      "manageTasks",
+      "assignTasks",
+      "deleteTasks",
+      "viewTaskInsights",
     ],
   },
   {

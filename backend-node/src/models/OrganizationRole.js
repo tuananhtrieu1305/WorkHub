@@ -17,6 +17,13 @@ const organizationRolePermissionsSchema = new Schema(
     manageDocuments: { type: Boolean, default: false },
     manageDocumentFolders: { type: Boolean, default: false },
     shareDocuments: { type: Boolean, default: false },
+    viewAssignedTasks: { type: Boolean, default: true },
+    viewOrganizationTasks: { type: Boolean, default: false },
+    createTasks: { type: Boolean, default: true },
+    manageTasks: { type: Boolean, default: false },
+    assignTasks: { type: Boolean, default: false },
+    deleteTasks: { type: Boolean, default: false },
+    viewTaskInsights: { type: Boolean, default: false },
   },
   { _id: false },
 );

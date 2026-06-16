@@ -884,9 +884,13 @@ export const ensureOrganizationMember = async (
 ) => {
   const existing = await OrganizationMember.findOne({ organizationId, userId });
   if (existing) {
+    if (existing.status === "banned") return existing;
+
     const wasActive = existing.status === "active";
     existing.status = "active";
     existing.removedAt = null;
+    existing.bannedAt = null;
+    existing.bannedBy = null;
     existing.joinedAt = wasActive && existing.joinedAt ? existing.joinedAt : new Date();
     existing.invitedBy = existing.invitedBy || invitedBy;
     if (!existing.role) existing.role = role;
@@ -933,6 +937,8 @@ export const ensureOrganizationJoinRequest = async (
   const existing = await OrganizationMember.findOne({ organizationId, userId });
   const nextStatus = requireApproval ? "pending" : "active";
   if (existing) {
+    if (existing.status === "banned") return existing;
+
     if (existing.status === "active" || existing.status === "pending") {
       const roleIds = getMembershipRoleIds(existing);
       if (roleId && !roleIds.includes(toId(roleId))) {
@@ -962,6 +968,8 @@ export const ensureOrganizationJoinRequest = async (
         ? inviteUsageCountedAt
         : inviteUsageCountedAt || existing.inviteUsageCountedAt;
     existing.removedAt = null;
+    existing.bannedAt = null;
+    existing.bannedBy = null;
     existing.joinedAt = nextStatus === "active" ? new Date() : null;
     existing.joinAnswers = joinAnswers;
     await existing.save();

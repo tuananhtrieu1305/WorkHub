@@ -12,6 +12,13 @@ export const ORGANIZATION_PERMISSION_KEYS = [
   "manageDocuments",
   "manageDocumentFolders",
   "shareDocuments",
+  "viewAssignedTasks",
+  "viewOrganizationTasks",
+  "createTasks",
+  "manageTasks",
+  "assignTasks",
+  "deleteTasks",
+  "viewTaskInsights",
 ];
 
 export const DEFAULT_ORGANIZATION_ACCENT_COLOR = "#2563eb";
@@ -67,6 +74,13 @@ const MEMBER_ORGANIZATION_PERMISSIONS = {
   manageDocuments: false,
   manageDocumentFolders: false,
   shareDocuments: false,
+  viewAssignedTasks: true,
+  viewOrganizationTasks: false,
+  createTasks: true,
+  manageTasks: false,
+  assignTasks: false,
+  deleteTasks: false,
+  viewTaskInsights: false,
 };
 
 export const DEFAULT_ORGANIZATION_ROLES = [

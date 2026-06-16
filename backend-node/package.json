@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "type": "module",
   "scripts": {
-    "test": "node test/reminderPolicy.test.js && node test/pollPolicy.test.js && node test/messageActionPolicy.test.js && node test/mediaProxyUrl.test.js && node test/feedPostPolicy.test.js && node test/conversationRealtime.test.js && node test/notificationPolicy.test.js && node test/userProfilePrivacy.test.js && node test/documentPermissionService.test.js",
+    "test": "node test/reminderPolicy.test.js && node test/pollPolicy.test.js && node test/messageActionPolicy.test.js && node test/mediaProxyUrl.test.js && node test/feedPostPolicy.test.js && node test/conversationRealtime.test.js && node test/notificationPolicy.test.js && node test/userProfilePrivacy.test.js && node test/documentPermissionService.test.js && node test/taskPermissionService.test.js",
     "migrate:organizations": "node src/scripts/migrateOrganizations.js",
     "dev": "nodemon src/app.js"
   },

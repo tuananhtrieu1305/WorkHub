@@ -63,7 +63,7 @@ const organizationMemberSchema = new mongoose.Schema(
     },
     status: {
       type: String,
-      enum: ["active", "invited", "pending", "removed"],
+      enum: ["active", "invited", "pending", "removed", "banned"],
       default: "active",
       required: true,
     },
@@ -95,6 +95,15 @@ const organizationMemberSchema = new mongoose.Schema(
     },
     removedAt: {
       type: Date,
+      default: null,
+    },
+    bannedAt: {
+      type: Date,
+      default: null,
+    },
+    bannedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
       default: null,
     },
   },

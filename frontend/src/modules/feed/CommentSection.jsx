@@ -1117,7 +1117,7 @@ const CommentSection = ({ postId, initialCommentsCount = 0, onCommentCountChange
         : "size-8 rounded-full bg-slate-300 text-slate-700 flex items-center justify-center text-xs font-bold shrink-0 mt-0.5";
 
     return (
-      <div className={`flex ${depth > 0 ? "gap-2" : "gap-3"} group`}>
+      <div className={`flex items-start ${depth > 0 ? "gap-2" : "gap-3"} group`}>
         <div className={avatarColumnClassName}>
           <button
             type="button"

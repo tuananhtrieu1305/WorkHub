@@ -144,6 +144,23 @@ const canManageMemberInHierarchy = (context, targetMembership) => {
   return actorIndex >= 0 && targetIndex > actorIndex;
 };
 
+const clearActiveOrganizationForMember = async (userId, organizationId) => {
+  if (!userId || !organizationId) return;
+
+  const user = await User.findById(userId).select("activeOrganizationId");
+  if (toId(user?.activeOrganizationId) !== toId(organizationId)) return;
+
+  const fallbackMembership = await OrganizationMember.findOne({
+    userId,
+    status: "active",
+    organizationId: { $ne: organizationId },
+  }).sort({ updatedAt: -1 });
+
+  await User.findByIdAndUpdate(userId, {
+    activeOrganizationId: fallbackMembership?.organizationId || null,
+  });
+};
+
 const normalizeRoleMemberIds = (value) =>
   Array.isArray(value)
     ? [...new Set(value.map((item) => String(item || "").trim()).filter(Boolean))]
@@ -426,6 +443,9 @@ const serializeMember = (membership, roleMap = new Map(), organization = null) =
     createdAt: membership.createdAt,
     updatedAt: membership.updatedAt,
     joinedAt: membership.joinedAt,
+    removedAt: membership.removedAt,
+    bannedAt: membership.bannedAt,
+    bannedBy: membership.bannedBy ? String(membership.bannedBy) : null,
     invitedBy: membership.invitedBy ? String(membership.invitedBy) : null,
     joinAnswers: (membership.joinAnswers || []).map(serializeJoinAnswer),
     user: user
@@ -523,6 +543,9 @@ export const previewOrganizationJoin = async (req, res) => {
       userId: req.user._id,
     }).select("status"),
   ]);
+  if (existingMembership?.status === "banned") {
+    throw new ApiError(403, "Invite link is invalid or disabled");
+  }
 
   res.json({
     organization: {
@@ -559,6 +582,9 @@ export const joinOrganization = async (req, res) => {
     organizationId: organization._id,
     userId: req.user._id,
   }).select("status");
+  if (existingMembership?.status === "banned") {
+    throw new ApiError(403, "Invite link is invalid or disabled");
+  }
   const joinQuestions = requireApproval
     ? normalizeOrganizationJoinQuestions(organization.settings?.joinQuestions || [])
     : [];
@@ -657,9 +683,18 @@ export const getOrganizationMembers = async (req, res) => {
   if (!canViewMembers) {
     throw new ApiError(403, "You cannot view organization members");
   }
+  const requestedPage = Number.parseInt(req.query.page, 10);
+  const requestedSize = Number.parseInt(req.query.size, 10);
+  const page = Number.isFinite(requestedPage) && requestedPage > 0 ? requestedPage : 1;
+  const size =
+    Number.isFinite(requestedSize) && requestedSize > 0
+      ? Math.min(requestedSize, 50)
+      : 20;
   const statuses =
     requestedStatus === "all" && canManage
       ? ["active", "pending"]
+      : requestedStatus === "banned" && canManage
+        ? ["banned"]
       : requestedStatus === "pending" && canManage
         ? ["pending"]
         : ["active"];
@@ -714,13 +749,26 @@ export const getOrganizationMembers = async (req, res) => {
     });
   }
 
+  const totalElements = members.length;
+  const totalPages = totalElements ? Math.ceil(totalElements / size) : 0;
+  const currentPage = totalPages ? Math.min(page, totalPages) : 1;
+  const pageStart = (currentPage - 1) * size;
+  const pageMembers = members.slice(pageStart, pageStart + size);
+
   res.json({
-    content: members.map((member) => ({
+    content: pageMembers.map((member) => ({
       ...serializeMember(member, roleMap, permissionContext.organization),
       canManage: canManageMemberInHierarchy(permissionContext, member),
     })),
-    totalElements: members.length,
+    totalElements,
+    totalPages,
+    number: currentPage,
+    page: currentPage,
+    size,
+    first: currentPage <= 1,
+    last: totalPages === 0 || currentPage >= totalPages,
     pendingElements: members.filter((item) => item.status === "pending").length,
+    bannedElements: members.filter((item) => item.status === "banned").length,
   });
 };
 
@@ -1266,11 +1314,20 @@ export const updateOrganizationMember = async (req, res) => {
     "Only authorized members can update members",
   );
   const { organization } = context;
+  const requestedAction = String(req.body?.action || "").trim().toLowerCase();
+  if (
+    requestedAction &&
+    !["kick", "ban", "unban"].includes(requestedAction)
+  ) {
+    throw new ApiError(400, "Member action is invalid");
+  }
+  const targetStatuses =
+    requestedAction === "unban" ? ["banned"] : ["active", "pending"];
 
   const membership = await OrganizationMember.findOne({
     _id: req.params.memberId,
     organizationId: req.params.id,
-    status: { $in: ["active", "pending"] },
+    status: { $in: targetStatuses },
   }).populate(
     "userId",
     "_id fullName email avatar position status activityStatus activityStatusExpiresAt",
@@ -1283,6 +1340,41 @@ export const updateOrganizationMember = async (req, res) => {
   }
   if (!canManageMemberInHierarchy(context, membership)) {
     throw new ApiError(403, "You can only update members below your highest role");
+  }
+
+  if (["kick", "ban", "unban"].includes(requestedAction)) {
+    if (requestedAction === "kick") {
+      membership.status = "removed";
+      membership.removedAt = new Date();
+      membership.bannedAt = null;
+      membership.bannedBy = null;
+    } else if (requestedAction === "ban") {
+      membership.status = "banned";
+      membership.removedAt = new Date();
+      membership.bannedAt = new Date();
+      membership.bannedBy = req.user._id;
+    } else {
+      membership.status = "removed";
+      membership.removedAt = new Date();
+      membership.bannedAt = null;
+      membership.bannedBy = null;
+    }
+
+    await membership.save();
+    if (requestedAction !== "unban") {
+      await clearActiveOrganizationForMember(
+        membership.userId?._id || membership.userId,
+        req.params.id,
+      );
+    }
+
+    const roles = await getOrganizationRoles(req.params.id);
+    const roleMap = buildRoleMap(roles);
+    res.json({
+      ...serializeMember(membership, roleMap, organization),
+      canManage: canManageMemberInHierarchy(context, membership),
+    });
+    return;
   }
 
   const requestedRoleIds = Array.isArray(req.body?.roleIds)
