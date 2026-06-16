@@ -31,42 +31,11 @@ import {
   hasPermission,
   isManager,
 } from "../organizationUtils";
+import { getAvailableWorkspaceTabs } from "../organizationWorkspaceTabs";
 import { DEFAULT_ORGANIZATION_ACCENT } from "../organizationTheme";
 import { useWorkHubToast } from "../../../components/feedback/workHubToast";
 
-export const workspaceTabs = [
-  {
-    id: "overview",
-    label: "Tổng quan",
-    icon: "dashboard",
-    managerOnly: true,
-    permission: "viewOverview",
-  },
-  {
-    id: "members",
-    label: "Thành viên",
-    icon: "groups",
-    permission: "viewMembers",
-  },
-  {
-    id: "roles",
-    label: "Vai trò",
-    icon: "admin_panel_settings",
-    managerOnly: true,
-    permission: "manageRoles",
-  },
-  {
-    id: "invites",
-    label: "Lời mời",
-    icon: "mark_email_unread",
-    permission: "createInvites",
-  },
-  {
-    id: "advanced",
-    label: "Nâng cao",
-    icon: "tune",
-  },
-];
+export { workspaceTabs } from "../organizationWorkspaceTabs";
 
 const defaultRoleForm = {
   id: "",
@@ -217,18 +186,10 @@ export const useOrganizationWorkspace = () => {
   const activeTab = searchParams.get("tab") || "";
   const canManage = isManager(activeOrganization);
 
-  const availableTabs = useMemo(() => {
-    const tabs = workspaceTabs.filter((tab) => {
-      if (tab.managerOnly && !canManage) return false;
-      if (!tab.permission) return true;
-      if (tab.id === "invites" && !canManage) return true;
-      return hasPermission(activeOrganization, tab.permission);
-    });
-
-    return tabs.length
-      ? tabs
-      : workspaceTabs.filter((tab) => ["members", "invites", "advanced"].includes(tab.id));
-  }, [activeOrganization, canManage]);
+  const availableTabs = useMemo(
+    () => getAvailableWorkspaceTabs(activeOrganization, { canManage }),
+    [activeOrganization, canManage],
+  );
 
   const selectedTab = availableTabs.some((tab) => tab.id === activeTab)
     ? activeTab

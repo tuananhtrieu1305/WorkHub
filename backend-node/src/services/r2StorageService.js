@@ -59,6 +59,15 @@ export const buildR2AvatarKey = (userId, filename) => {
   return `avatars/${userId}/${timestamp}-${filename}`;
 };
 
+export const buildR2ConversationAvatarKey = (conversationId, filename) => {
+  if (!conversationId) {
+    throw new Error("conversationId is required to build conversation avatar R2 key");
+  }
+
+  const timestamp = Date.now();
+  return `avatars/conversations/${conversationId}/${timestamp}-${filename}`;
+};
+
 export const buildR2ProfileBannerKey = (userId, filename) => {
   if (!userId) {
     throw new Error("userId is required to build profile banner R2 key");

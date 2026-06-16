@@ -15,6 +15,7 @@ import {
 } from "../utils/conversationRules.js";
 import {
   buildR2AttachmentKey,
+  buildR2ConversationAvatarKey,
   buildR2PublicUrl,
   getR2StorageService,
 } from "../services/r2StorageService.js";
@@ -69,10 +70,12 @@ const USER_MESSAGE_TYPES = new Set([
   "audio",
   "poll",
   "reminder",
+  "contact",
 ]);
 const MAX_MESSAGE_ATTACHMENTS = 10;
 const MAX_VOICE_DURATION_SECONDS = 5 * 60;
 const VOICE_ATTACHMENT_FILE_SIZE_LIMIT = 20 * 1024 * 1024;
+const CONVERSATION_AVATAR_FILE_SIZE_LIMIT = 5 * 1024 * 1024;
 const POLL_VOTED_EVENT_TYPE = "poll_voted";
 const POLL_OPTION_ADDED_EVENT_TYPE = "poll_option_added";
 const POLL_CREATED_EVENT_TYPE = "poll_created";
@@ -105,8 +108,14 @@ const ALLOWED_AUDIO_MIMES = new Set([
   "audio/x-m4a",
   "audio/x-wav",
 ]);
+const ALLOWED_CONVERSATION_AVATAR_MIMES = new Set([
+  "image/jpeg",
+  "image/png",
+  "image/gif",
+  "image/webp",
+]);
 const MESSAGE_USER_SELECT =
-  "_id fullName avatar activityStatus activityStatusExpiresAt";
+  "_id fullName email avatar position activityStatus activityStatusExpiresAt";
 const DETAIL_SECTION_LIMIT = 50;
 const URL_PATTERN = /\bhttps?:\/\/[^\s<>"')]+/gi;
 const URL_QUERY_PATTERN = /https?:\/\//i;
@@ -143,6 +152,9 @@ const isAllowedAudioMime = (mimeType = "") => {
   const normalizedMime = getBaseMimeType(mimeType);
   return isAudioMime(normalizedMime) && ALLOWED_AUDIO_MIMES.has(normalizedMime);
 };
+
+const isAllowedConversationAvatarMime = (mimeType = "") =>
+  ALLOWED_CONVERSATION_AVATAR_MIMES.has(getBaseMimeType(mimeType));
 
 const isAudioAttachment = (attachment = {}) => {
   return (
@@ -210,6 +222,10 @@ const getMessagePreviewContent = ({ type, content, attachments = [] } = {}) => {
     return trimmedContent ? `Nhắc hẹn: ${trimmedContent}` : "Nhắc hẹn";
   }
 
+  if (type === "contact") {
+    return trimmedContent ? `Danh thiếp: ${trimmedContent}` : "Danh thiếp";
+  }
+
   if (trimmedContent) return trimmedContent;
 
   if (type === "audio" || attachments.some(isAudioAttachment)) {
@@ -242,6 +258,12 @@ export const buildConversationAttachmentDownloadUrl = (
   }
 
   return `/api/conversations/${conversationId}/attachments/download?${params.toString()}`;
+};
+
+export const buildConversationAvatarProxyUrl = (storageKey) => {
+  if (!storageKey || !storageKey.startsWith("avatars/conversations/")) return "";
+  const params = new URLSearchParams({ key: storageKey });
+  return `/api/users/avatars?${params.toString()}`;
 };
 
 const extractR2StorageKey = (fileUrl = "") => {
@@ -335,6 +357,77 @@ const getActiveOrganizationMemberIds = async (organizationId) => {
 const toComparableId = (value) => {
   if (!value) return "";
   return String(value._id || value.id || value);
+};
+
+const getContactPayloadUserId = ({ contact, contactUserId, metadata } = {}) =>
+  toComparableId(
+    contactUserId ||
+      contact?.userId ||
+      contact?._id ||
+      contact?.id ||
+      metadata?.contactUserId ||
+      metadata?.contact?.userId ||
+      metadata?.contact?._id ||
+      metadata?.contact?.id,
+  );
+
+const normalizeContactCardPayload = async ({
+  contact,
+  contactUserId,
+  metadata,
+  conversation,
+  senderId,
+}) => {
+  const targetUserId = getContactPayloadUserId({
+    contact,
+    contactUserId,
+    metadata,
+  });
+
+  if (!targetUserId) {
+    throw new Error("Contact user is required");
+  }
+
+  if (toComparableId(targetUserId) === toComparableId(senderId)) {
+    throw new Error("Cannot send your own contact card");
+  }
+
+  const organizationId = conversation?.organizationId;
+  if (!organizationId) {
+    throw new Error("Contact cards require an organization conversation");
+  }
+
+  const [targetUser, membership] = await Promise.all([
+    User.findById(targetUserId).select(
+      "_id fullName email avatar position status",
+    ),
+    OrganizationMember.findOne({
+      organizationId,
+      userId: targetUserId,
+      status: "active",
+    }).populate("roleId", "_id key name color"),
+  ]);
+
+  if (!targetUser) {
+    throw new Error("Contact user not found");
+  }
+
+  if (!membership) {
+    throw new Error("Contact user must be an active organization member");
+  }
+
+  const role = membership.roleId?.key || membership.role || "";
+  const roleLabel = membership.roleId?.name || membership.role || "Thành viên";
+
+  return {
+    userId: targetUser._id,
+    fullName: targetUser.fullName || "",
+    email: targetUser.email || "",
+    avatar: targetUser.avatar || "",
+    position: targetUser.position || "",
+    role,
+    roleLabel,
+  };
 };
 
 const getCurrentParticipant = (conversation, userId) => {
@@ -487,6 +580,7 @@ const collectMessageFormatReferences = (message, references) => {
   addUserId(message.senderId);
   addUserId(message.deletedBy);
   addUserId(message.pinnedBy);
+  addUserId(message.contact?.userId);
   addMessageId(message.replyTo);
 
   collectPollVoterIds(message.poll).forEach(addUserId);
@@ -687,6 +781,42 @@ const formatReminder = async (
   };
 };
 
+const formatContactCard = async (contact, { context = null } = {}) => {
+  if (!contact) return null;
+
+  const plain = contact.toObject?.() || contact;
+  const user = await getUserFromFormatContext(plain.userId, {
+    context,
+    select: MESSAGE_USER_SELECT,
+  });
+  const userId = plain.userId || user?._id || user?.id;
+  const fullName = user?.fullName || plain.fullName || "Người dùng";
+  const avatar = user?.avatar || plain.avatar || "";
+  const email = plain.email || user?.email || "";
+  const position = plain.position || user?.position || "";
+
+  return {
+    userId,
+    user: user
+      ? {
+          _id: user._id,
+          id: user._id,
+          fullName,
+          email,
+          avatar,
+          position,
+          ...getPresenceFields(user),
+        }
+      : null,
+    fullName,
+    email,
+    avatar,
+    position,
+    role: plain.role || "",
+    roleLabel: plain.roleLabel || plain.role || "",
+  };
+};
+
 const getSystemMessageMetadata = (message) => {
   const metadata = message.metadata?.toObject?.() || message.metadata || {};
   return metadata && typeof metadata === "object" ? metadata : {};
@@ -876,6 +1006,9 @@ const formatReplyMessage = async (
     reminder: isDeleted
       ? null
       : await formatReminder(replyMessage.reminder, { currentUserId, context }),
+    contact: isDeleted
+      ? null
+      : await formatContactCard(replyMessage.contact, { context }),
     attachments: isDeleted
       ? []
       : serializeConversationAttachments(
@@ -913,6 +1046,9 @@ const formatMessageFromContext = async (
   const reminder = isDeleted
     ? null
     : await formatReminder(message.reminder, { currentUserId, context });
+  const contact = isDeleted
+    ? null
+    : await formatContactCard(message.contact, { context });
   const replyTo = await formatReplyMessage(message.replyTo, {
     currentUserId,
     context,
@@ -928,6 +1064,7 @@ const formatMessageFromContext = async (
     metadata,
     poll,
     reminder,
+    contact,
     attachments: isDeleted
       ? []
       : serializeConversationAttachments(
@@ -2095,7 +2232,28 @@ export const uploadConversationAttachment = async (req, res) => {
 
     const uploadPurpose = normalizeString(req.body?.purpose, 40);
     const isVoiceUpload = uploadPurpose === "voice";
+    const isAvatarUpload = uploadPurpose === "avatar";
     const uploadMimeType = getBaseMimeType(req.file.mimetype);
+
+    if (isAvatarUpload) {
+      if (conversation.type !== "group") {
+        return res
+          .status(400)
+          .json({ message: "Private chat avatars use member profile photos" });
+      }
+
+      if (!isAllowedConversationAvatarMime(uploadMimeType)) {
+        return res.status(400).json({
+          message: "Conversation avatar must be an image file",
+        });
+      }
+
+      if (req.file.size > CONVERSATION_AVATAR_FILE_SIZE_LIMIT) {
+        return res.status(400).json({
+          message: "Conversation avatar is too large",
+        });
+      }
+    }
 
     if (isVoiceUpload) {
       if (!isAllowedAudioMime(uploadMimeType)) {
@@ -2113,23 +2271,34 @@ export const uploadConversationAttachment = async (req, res) => {
 
     // Upload to R2
     const storage = getR2StorageService();
-    const storageKey = buildR2AttachmentKey(
-      `conversations/${conversation._id}`,
-      req.file.originalname,
-    );
+    const storageKey = isAvatarUpload
+      ? buildR2ConversationAvatarKey(conversation._id, req.file.originalname)
+      : buildR2AttachmentKey(
+          `conversations/${conversation._id}`,
+          req.file.originalname,
+        );
 
     await storage.putObject({
       key: storageKey,
       body: req.file.buffer,
       contentType: uploadMimeType || req.file.mimetype,
       contentLength: req.file.size,
+      metadata: isAvatarUpload
+        ? {
+            conversationId: conversation._id.toString(),
+            organizationId: conversation.organizationId?.toString?.() || "",
+            mediaType: "conversation-avatar",
+          }
+        : undefined,
     });
 
-    const fileUrl = buildConversationAttachmentDownloadUrl(
-      conversation._id,
-      storageKey,
-      req.file.originalname,
-    );
+    const fileUrl = isAvatarUpload
+      ? buildConversationAvatarProxyUrl(storageKey)
+      : buildConversationAttachmentDownloadUrl(
+          conversation._id,
+          storageKey,
+          req.file.originalname,
+        );
 
     res.status(201).json({
       fileName: req.file.originalname,
@@ -2173,6 +2342,8 @@ export const sendMessage = async (req, res) => {
       metadata,
       poll,
       reminder,
+      contact,
+      contactUserId,
     } = req.body;
     const messageType = type || "text";
     const normalizedContent =
@@ -2181,9 +2352,16 @@ export const sendMessage = async (req, res) => {
     let normalizedPoll = null;
     let pinPollOnCreate = false;
     let normalizedReminder = null;
+    let normalizedContact = null;
 
     if (!USER_MESSAGE_TYPES.has(messageType)) {
       return res.status(400).json({ message: "Invalid message type" });
+    }
+
+    if (messageType === "poll" && conversation.type !== "group") {
+      return res
+        .status(400)
+        .json({ message: "Polls are only available in group conversations" });
     }
 
     if (messageType === "poll") {
@@ -2213,9 +2391,24 @@ export const sendMessage = async (req, res) => {
       }
     }
 
+    if (messageType === "contact") {
+      try {
+        normalizedContact = await normalizeContactCardPayload({
+          contact,
+          contactUserId,
+          metadata,
+          conversation,
+          senderId: req.user._id,
+        });
+      } catch (error) {
+        return res.status(400).json({ message: error.message });
+      }
+    }
+
     if (
       messageType !== "poll" &&
       messageType !== "reminder" &&
+      messageType !== "contact" &&
       !normalizedContent &&
       normalizedAttachments.length === 0
     ) {
@@ -2233,6 +2426,10 @@ export const sendMessage = async (req, res) => {
 
     if (messageType === "reminder" && !normalizedReminder?.title) {
       return res.status(400).json({ message: "Reminder content is required" });
+    }
+
+    if (messageType === "contact" && !normalizedContact?.userId) {
+      return res.status(400).json({ message: "Contact content is required" });
     }
 
     if (messageType === "audio") {
@@ -2277,20 +2474,25 @@ export const sendMessage = async (req, res) => {
       ...(mentionState.mentionEveryone ? { mentionEveryone: true } : {}),
     };
 
+    const messageContent =
+      messageType === "poll"
+        ? normalizedPoll.question
+        : messageType === "reminder"
+          ? normalizedReminder.title
+          : messageType === "contact"
+            ? normalizedContact.fullName
+            : normalizedContent;
+
     const message = await Message.create({
       conversationId: conversation._id,
       organizationId: conversation.organizationId,
       senderId: req.user._id,
       type: messageType,
-      content:
-        messageType === "poll"
-          ? normalizedPoll.question
-          : messageType === "reminder"
-            ? normalizedReminder.title
-            : normalizedContent,
+      content: messageContent,
       metadata: messageMetadata,
       poll: normalizedPoll,
       reminder: normalizedReminder,
+      contact: normalizedContact,
       attachments: normalizedAttachments,
       mentions: mentionState.mentionIds,
       replyTo: replyTo || null,
@@ -2304,12 +2506,7 @@ export const sendMessage = async (req, res) => {
     let conversationPreviewMessage = message;
     const previewContent = getMessagePreviewContent({
       type: messageType,
-      content:
-        messageType === "poll"
-          ? normalizedPoll.question
-          : messageType === "reminder"
-            ? normalizedReminder.title
-            : normalizedContent,
+      content: messageContent,
       attachments: normalizedAttachments,
     });
     let conversationPreviewContent = previewContent;

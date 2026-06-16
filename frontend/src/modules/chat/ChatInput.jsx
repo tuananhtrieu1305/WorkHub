@@ -5,6 +5,7 @@ import {
   serializeComposerContent,
 } from "./chatComposerUtils";
 import { formatAudioDuration } from "./chatMessagePreview";
+import ContactCardPickerModal from "./ContactCardPickerModal";
 import PollCreateModal from "./PollCreateModal";
 import ReminderCreateModal from "./ReminderCreateModal";
 import {
@@ -572,8 +573,11 @@ const ChatInput = ({
   onUploadAttachment,
   onCreatePoll,
   onCreateReminder,
+  onSendContact,
   onTypingChange,
   onCancelDraft,
+  organizationId = "",
+  currentUserId = "",
   initialContent = "",
   mode = "send",
   draftPreview = null,
@@ -581,12 +585,14 @@ const ChatInput = ({
   disabled = false,
   mentionableUsers = [],
   allowMentionEveryone = false,
+  allowPoll = true,
 }) => {
   const [content, setContent] = useState(initialContent);
   const [showFormattingToolbar, setShowFormattingToolbar] = useState(false);
   const [attachments, setAttachments] = useState([]);
   const [isPollModalOpen, setIsPollModalOpen] = useState(false);
   const [isReminderModalOpen, setIsReminderModalOpen] = useState(false);
+  const [isContactModalOpen, setIsContactModalOpen] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const [isVoiceSending, setIsVoiceSending] = useState(false);
   const [isPreparingRecording, setIsPreparingRecording] = useState(false);
@@ -1450,6 +1456,7 @@ const ChatInput = ({
     !hasComposerContent;
   const canCreatePoll =
     Boolean(onCreatePoll) &&
+    allowPoll &&
     mode === "send" &&
     !disabled &&
     !isUploading &&
@@ -1458,6 +1465,15 @@ const ChatInput = ({
     !isVoiceSending;
   const canCreateReminder =
     Boolean(onCreateReminder) &&
+    mode === "send" &&
+    !disabled &&
+    !isUploading &&
+    !isPreparingRecording &&
+    !isRecording &&
+    !isVoiceSending;
+  const canSendContact =
+    Boolean(onSendContact) &&
+    Boolean(organizationId) &&
     mode === "send" &&
     !disabled &&
     !isUploading &&
@@ -1541,8 +1557,13 @@ const ChatInput = ({
     if (mode !== "send") {
       setIsPollModalOpen(false);
       setIsReminderModalOpen(false);
+      setIsContactModalOpen(false);
     }
   }, [mode]);
+
+  useEffect(() => {
+    if (!allowPoll) setIsPollModalOpen(false);
+  }, [allowPoll]);
 
   useEffect(() => {
     return () => {
@@ -1659,9 +1680,10 @@ const ChatInput = ({
               <button
                 key={item.title}
                 type="button"
-                disabled
-                className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-slate-300"
-                title={`${item.title} (sắp có)`}
+                onClick={() => setIsContactModalOpen(true)}
+                disabled={!canSendContact}
+                className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-slate-600 transition-colors hover:bg-blue-50 hover:text-blue-700 disabled:cursor-not-allowed disabled:text-slate-300"
+                title={item.title}
                 aria-label={item.title}
               >
                 <span className="material-symbols-outlined text-[20px]">
@@ -1695,18 +1717,20 @@ const ChatInput = ({
               </span>
             </button>
 
-            <button
-              type="button"
-              onClick={() => setIsPollModalOpen(true)}
-              disabled={!canCreatePoll}
-              className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-slate-600 transition-colors hover:bg-blue-50 hover:text-blue-700 disabled:cursor-not-allowed disabled:text-slate-300"
-              title="Tạo bình chọn"
-              aria-label="Tạo bình chọn"
-            >
-              <span className="material-symbols-outlined text-[20px]">
-                bar_chart
-              </span>
-            </button>
+            {allowPoll && (
+              <button
+                type="button"
+                onClick={() => setIsPollModalOpen(true)}
+                disabled={!canCreatePoll}
+                className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-slate-600 transition-colors hover:bg-blue-50 hover:text-blue-700 disabled:cursor-not-allowed disabled:text-slate-300"
+                title="Tạo bình chọn"
+                aria-label="Tạo bình chọn"
+              >
+                <span className="material-symbols-outlined text-[20px]">
+                  bar_chart
+                </span>
+              </button>
+            )}
 
             <button
               type="button"
@@ -2033,12 +2057,22 @@ const ChatInput = ({
         )}
       </div>
     </div>
-    <PollCreateModal
-      isOpen={isPollModalOpen}
-      onClose={() => setIsPollModalOpen(false)}
-      onCreatePoll={onCreatePoll}
-      disabled={!canCreatePoll}
+    <ContactCardPickerModal
+      open={isContactModalOpen}
+      organizationId={organizationId}
+      currentUserId={currentUserId}
+      onClose={() => setIsContactModalOpen(false)}
+      onSendContact={onSendContact}
+      disabled={!canSendContact}
     />
+    {allowPoll && (
+      <PollCreateModal
+        isOpen={isPollModalOpen}
+        onClose={() => setIsPollModalOpen(false)}
+        onCreatePoll={onCreatePoll}
+        disabled={!canCreatePoll}
+      />
+    )}
     <ReminderCreateModal
       isOpen={isReminderModalOpen}
       onClose={() => setIsReminderModalOpen(false)}

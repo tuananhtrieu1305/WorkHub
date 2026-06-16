@@ -154,6 +154,51 @@ const reminderSchema = new mongoose.Schema(
   { _id: false },
 );
 
+const contactCardSchema = new mongoose.Schema(
+  {
+    userId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      required: true,
+    },
+    fullName: {
+      type: String,
+      trim: true,
+      maxlength: 80,
+      default: "",
+    },
+    email: {
+      type: String,
+      trim: true,
+      lowercase: true,
+      default: "",
+    },
+    avatar: {
+      type: String,
+      default: "",
+    },
+    position: {
+      type: String,
+      trim: true,
+      maxlength: 120,
+      default: "",
+    },
+    role: {
+      type: String,
+      trim: true,
+      maxlength: 80,
+      default: "",
+    },
+    roleLabel: {
+      type: String,
+      trim: true,
+      maxlength: 120,
+      default: "",
+    },
+  },
+  { _id: false },
+);
+
 const messageSchema = new mongoose.Schema(
   {
     conversationId: {
@@ -174,7 +219,16 @@ const messageSchema = new mongoose.Schema(
     },
     type: {
       type: String,
-      enum: ["text", "image", "file", "audio", "poll", "reminder", "system"],
+      enum: [
+        "text",
+        "image",
+        "file",
+        "audio",
+        "poll",
+        "reminder",
+        "contact",
+        "system",
+      ],
       default: "text",
     },
     content: {
@@ -191,6 +245,10 @@ const messageSchema = new mongoose.Schema(
     },
     reminder: {
       type: reminderSchema,
+      default: null,
+    },
+    contact: {
+      type: contactCardSchema,
       default: null,
     },
     attachments: [

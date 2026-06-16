@@ -352,6 +352,7 @@ const ChatWindow = ({
   onUploadAttachment,
   onCreatePoll,
   onCreateReminder,
+  onSendContact,
   onTypingChange,
   onReplyMessage,
   onEditMessage,
@@ -372,6 +373,7 @@ const ChatWindow = ({
   onStartCall,
   onBack,
   onToggleDetail,
+  jumpToMessageRequest = null,
   replyToMessage = null,
   editingMessage = null,
   typingUsers = [],
@@ -398,6 +400,11 @@ const ChatWindow = ({
   const [isPinnedListOpen, setIsPinnedListOpen] = useState(false);
   const [profileModalUser, setProfileModalUser] = useState(null);
   const conversationId = conversation?.id || conversation?._id;
+  const conversationOrganizationId =
+    conversation?.organizationId?._id ||
+    conversation?.organizationId?.id ||
+    conversation?.organizationId ||
+    "";
   const latestMessage = messages[messages.length - 1];
   const latestMessageKey =
     latestMessage?.id || latestMessage?._id || latestMessage?.createdAt || "";
@@ -754,6 +761,21 @@ const ChatWindow = ({
     },
     [message, onEnsureMessageLoaded],
   );
+
+  useEffect(() => {
+    const targetMessage = jumpToMessageRequest?.message;
+    if (!targetMessage) return undefined;
+
+    const timeoutId = window.setTimeout(() => {
+      handleJumpToMessage(targetMessage);
+    }, 0);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [
+    handleJumpToMessage,
+    jumpToMessageRequest?.message,
+    jumpToMessageRequest?.requestedAt,
+  ]);
 
   const handleScrollToBottom = useCallback(() => {
     scrollToLatestMessage("smooth");
@@ -1139,8 +1161,11 @@ const ChatWindow = ({
           onUploadAttachment={onUploadAttachment}
           onCreatePoll={onCreatePoll}
           onCreateReminder={onCreateReminder}
+          onSendContact={onSendContact}
           onTypingChange={onTypingChange}
           onCancelDraft={onCancelDraft}
+          organizationId={conversationOrganizationId}
+          currentUserId={currentUserId}
           initialContent={editingMessage?.content || ""}
           mode={editingMessage ? "edit" : replyToMessage ? "reply" : "send"}
           draftPreview={draftPreview}
@@ -1148,6 +1173,7 @@ const ChatWindow = ({
           placeholder={`Trả lời ${isPrivate ? displayName : `# ${displayName}`}...`}
           mentionableUsers={mentionableUsers}
           allowMentionEveryone={!isPrivate}
+          allowPoll={!isPrivate}
         />
       </div>
       <PinnedMessagesModal

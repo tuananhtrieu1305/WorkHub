@@ -984,6 +984,77 @@ const MessageText = ({ content }) => {
   return <div className="space-y-1">{blocks}</div>;
 };
 
+const getContactProfileFromMessage = (message) => {
+  const contact = message?.contact || {};
+  const user = contact.user || {};
+  const userId = contact.userId || user._id || user.id;
+
+  return {
+    ...user,
+    _id: user._id || userId,
+    id: user.id || userId,
+    fullName:
+      contact.fullName || user.fullName || message?.content || "Người dùng",
+    email: contact.email || user.email || "",
+    avatar: contact.avatar || user.avatar || "",
+    position: contact.position || user.position || "",
+    role: contact.role || user.role || "",
+    roleLabel: contact.roleLabel || user.roleLabel || "",
+  };
+};
+
+const ContactCardMessage = ({ message, isMine, onOpenUserProfile }) => {
+  const profile = getContactProfileFromMessage(message);
+  const avatarUrl = getAvatarUrl(profile.avatar);
+  const displayName = profile.fullName || "Người dùng";
+  const subtitle =
+    profile.position || profile.roleLabel || profile.email || "Thành viên";
+  const initial = displayName.charAt(0).toUpperCase();
+
+  return (
+    <button
+      type="button"
+      onClick={() => onOpenUserProfile?.(profile)}
+      className={`chat-contact-card flex w-[min(19rem,72vw)] items-center gap-3 rounded-2xl border p-3 text-left shadow-sm transition hover:-translate-y-0.5 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-blue-300 ${
+        isMine
+          ? "border-blue-100 bg-white text-slate-950"
+          : "border-slate-200 bg-white text-slate-950"
+      }`}
+      aria-label={`Xem hồ sơ ${displayName}`}
+    >
+      {avatarUrl ? (
+        <img
+          src={avatarUrl}
+          alt={displayName}
+          className="size-12 shrink-0 rounded-xl object-cover"
+          loading="lazy"
+        />
+      ) : (
+        <span className="flex size-12 shrink-0 items-center justify-center rounded-xl bg-blue-50 text-base font-black text-blue-700">
+          {initial}
+        </span>
+      )}
+      <span className="min-w-0 flex-1">
+        <span className="mb-1 inline-flex items-center gap-1.5 rounded-full bg-blue-50 px-2 py-0.5 text-[11px] font-black text-blue-700">
+          <span className="material-symbols-outlined text-[14px]">
+            contact_page
+          </span>
+          Danh thiếp
+        </span>
+        <strong className="block truncate text-sm font-black">
+          {displayName}
+        </strong>
+        <span className="block truncate text-xs font-semibold text-slate-500">
+          {subtitle}
+        </span>
+      </span>
+      <span className="material-symbols-outlined shrink-0 text-[22px] text-slate-400">
+        badge
+      </span>
+    </button>
+  );
+};
+
 const MessageAttachments = ({
   attachments = [],
   isMine,
@@ -1534,7 +1605,10 @@ const MessageBubble = ({
   const isPollMessage = !isDeleted && message.type === "poll" && message.poll;
   const isReminderMessage =
     !isDeleted && message.type === "reminder" && message.reminder;
-  const isStructuredMessage = isPollMessage || isReminderMessage;
+  const isContactMessage =
+    !isDeleted && message.type === "contact" && message.contact;
+  const isStructuredMessage =
+    isPollMessage || isReminderMessage || isContactMessage;
   const messageAttachments = isStructuredMessage ? [] : message.attachments || [];
   const feedPostLink = !isStructuredMessage
     ? getFirstFeedPostLink(message.content)
@@ -1545,7 +1619,9 @@ const MessageBubble = ({
   const hasFeedPostPreview = Boolean(feedPostLink);
   const hasMessageContent = !isStructuredMessage && Boolean(messageTextContent);
   const hasMessageAttachments = messageAttachments.length > 0;
-  const hasRenderableMessageBody = hasMessageContent || hasFeedPostPreview;
+  const hasContactCard = isContactMessage;
+  const hasRenderableMessageBody =
+    hasMessageContent || hasFeedPostPreview || hasContactCard;
   const hasMixedContent = hasRenderableMessageBody && hasMessageAttachments;
   const isAttachmentOnlyMessage =
     !isDeleted && !hasRenderableMessageBody && hasMessageAttachments;
@@ -1590,6 +1666,16 @@ const MessageBubble = ({
             ? "chat-message-poll-surface-highlighted"
             : "chat-message-reminder-surface-highlighted"
           : "",
+      ]
+        .filter(Boolean)
+        .join(" ");
+    }
+
+    if (isContactMessage) {
+      return [
+        "w-fit max-w-full rounded-2xl p-0 transition-colors",
+        mine ? "ml-auto" : "",
+        isHighlighted ? "ring-2 ring-blue-200 ring-offset-2" : "",
       ]
         .filter(Boolean)
         .join(" ");
@@ -2004,6 +2090,13 @@ const MessageBubble = ({
       )}
       {hasFeedPostPreview && (
         <FeedPostLinkCard link={feedPostLink} isMine={mine} />
+      )}
+      {hasContactCard && (
+        <ContactCardMessage
+          message={message}
+          isMine={mine}
+          onOpenUserProfile={onOpenUserProfile}
+        />
       )}
       <MessageAttachments
         attachments={messageAttachments}

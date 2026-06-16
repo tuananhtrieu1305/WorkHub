@@ -28,6 +28,13 @@ export const getMessagePreviewText = (
     const title = message.reminder?.title || message.content;
     return title ? `Nhắc hẹn: ${title}` : "Nhắc hẹn";
   }
+  if (message.type === "contact") {
+    const name =
+      message.contact?.fullName ||
+      message.contact?.user?.fullName ||
+      message.content;
+    return name ? `Danh thiếp: ${name}` : "Danh thiếp";
+  }
   const normalizedContent =
     typeof message.content === "string"
       ? message.content.replace(/\s+/g, " ").trim()

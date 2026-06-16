@@ -5,9 +5,11 @@ import {
   serializePostAttachments,
 } from "../src/presenters/postPresenter.js";
 import {
+  buildConversationAvatarProxyUrl,
   buildConversationAttachmentDownloadUrl,
   serializeConversationAttachments,
 } from "../src/presenters/conversationPresenter.js";
+import { buildR2ConversationAvatarKey } from "../src/services/r2StorageService.js";
 
 process.env.R2_BUCKET_NAME = "workhub-private";
 
@@ -61,4 +63,14 @@ test("conversation R2 attachments are serialized through the protected API media
   );
   assert.equal(attachment.storageKey, storageKey);
   assert.equal(attachment.fileUrl.includes("r2.cloudflarestorage.com"), false);
+});
+
+test("conversation avatars use the public avatar proxy instead of protected attachment downloads", () => {
+  const storageKey = buildR2ConversationAvatarKey("conversation-1", "team.png");
+  const avatarUrl = buildConversationAvatarProxyUrl(storageKey);
+
+  assert.equal(storageKey.startsWith("avatars/conversations/conversation-1/"), true);
+  assert.equal(avatarUrl.startsWith("/api/users/avatars?"), true);
+  assert.equal(avatarUrl.includes("/attachments/download"), false);
+  assert.equal(avatarUrl.includes(encodeURIComponent(storageKey)), true);
 });

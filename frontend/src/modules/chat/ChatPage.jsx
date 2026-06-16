@@ -200,6 +200,7 @@ const ChatPage = () => {
   );
   const [showDetail, setShowDetail] = useState(true);
   const [showMobileDetail, setShowMobileDetail] = useState(false);
+  const [jumpToMessageRequest, setJumpToMessageRequest] = useState(null);
   const [showNewModal, setShowNewModal] = useState(false);
   const [mobileView, setMobileView] = useState("list"); // "list" | "chat"
   const [typingUsers, setTypingUsers] = useState([]);
@@ -1080,6 +1081,63 @@ const ChatPage = () => {
     ]
   );
 
+  const handleSendContact = useCallback(
+    async (contactUser) => {
+      if (!selectedConversationId) return;
+
+      const contactUserId =
+        contactUser?._id || contactUser?.id || contactUser?.userId;
+      if (!contactUserId) return;
+
+      try {
+        const sendContactResult = await sendConversationMessage(
+          selectedConversationId,
+          {
+            type: "contact",
+            content: contactUser.fullName || "",
+            contact: {
+              userId: contactUserId,
+            },
+            metadata: {
+              contactUserId,
+            },
+          }
+        );
+        const message = sendContactResult.message || sendContactResult;
+
+        upsertSelectedMessages(message);
+        applySelectedPinnedMessagesUpdate((prev) =>
+          upsertPinnedMessage(prev, message)
+        );
+        setConversations((prev) =>
+          updateConversationPreview(prev, message, {
+            currentUserId: user?._id || user?.id,
+            selectedConversationId,
+          })
+        );
+        setReplyToMessage(null);
+        setEditingMessage(null);
+        handleTypingChange(false);
+      } catch (err) {
+        console.error("Failed to send contact card:", err);
+        toast.error("Không thể gửi danh thiếp", {
+          description:
+            "Danh thiếp chưa được gửi vào cuộc trò chuyện. Hãy chọn thành viên khác và thử lại.",
+        });
+        throw err;
+      }
+    },
+    [
+      applySelectedPinnedMessagesUpdate,
+      handleTypingChange,
+      selectedConversationId,
+      toast,
+      upsertSelectedMessages,
+      user?._id,
+      user?.id,
+    ]
+  );
+
   const handleReplyMessage = useCallback((message) => {
     setEditingMessage(null);
     setReplyToMessage(message);
@@ -1230,6 +1288,7 @@ const ChatPage = () => {
             mergeConversationUpdate(prev, conversation)
           );
         }
+        return updatedMessage;
       } catch (err) {
         console.error("Failed to pin message:", err);
         toast.error("Không thể cập nhật ghim tin nhắn", {
@@ -1378,6 +1437,19 @@ const ChatPage = () => {
     ]
   );
 
+  const handleDetailJumpToMessage = useCallback((message) => {
+    const targetMessageId = getMessageId(message);
+    if (!targetMessageId) return;
+
+    setMobileView("chat");
+    setShowMobileDetail(false);
+    setJumpToMessageRequest({
+      message,
+      targetMessageId,
+      requestedAt: Date.now(),
+    });
+  }, []);
+
   const handleToggleReaction = useCallback(
     async (message, reaction) => {
       if (!selectedConversationId || !message?.id) return;
@@ -1445,6 +1517,7 @@ const ChatPage = () => {
             })
           );
         }
+        return updatedMessage;
       } catch (err) {
         console.error("Failed to vote poll:", err);
         toast.error("Không thể cập nhật bình chọn", {
@@ -1493,6 +1566,7 @@ const ChatPage = () => {
             })
           );
         }
+        return updatedMessage;
       } catch (err) {
         console.error("Failed to add poll option:", err);
         toast.error("Không thể thêm phương án", {
@@ -1540,6 +1614,7 @@ const ChatPage = () => {
             })
           );
         }
+        return updatedMessage;
       } catch (err) {
         console.error("Failed to send poll to group:", err);
         toast.error("Không thể gửi bình chọn vào nhóm", {
@@ -1587,6 +1662,7 @@ const ChatPage = () => {
             })
           );
         }
+        return updatedMessage;
       } catch (err) {
         console.error("Failed to close poll:", err);
         toast.error("Không thể khóa bình chọn", {
@@ -1635,6 +1711,7 @@ const ChatPage = () => {
             })
           );
         }
+        return updatedMessage;
       } catch (err) {
         console.error("Failed to update reminder response:", err);
         toast.error("Không thể cập nhật nhắc hẹn", {
@@ -1685,6 +1762,7 @@ const ChatPage = () => {
             })
           );
         }
+        return updatedMessage;
       } catch (err) {
         console.error("Failed to edit reminder:", err);
         toast.error("Không thể chỉnh sửa nhắc hẹn", {
@@ -1734,6 +1812,7 @@ const ChatPage = () => {
             })
           );
         }
+        return updatedMessage;
       } catch (err) {
         console.error("Failed to cancel reminder:", err);
         toast.error("Không thể hủy nhắc hẹn", {
@@ -1858,6 +1937,7 @@ const ChatPage = () => {
           onUploadAttachment={handleUploadAttachment}
           onCreatePoll={handleCreatePoll}
           onCreateReminder={handleCreateReminder}
+          onSendContact={handleSendContact}
           onTypingChange={handleTypingChange}
           onReplyMessage={handleReplyMessage}
           onEditMessage={handleEditMessage}
@@ -1878,6 +1958,7 @@ const ChatPage = () => {
           onStartCall={startCall}
           onBack={handleBackToList}
           onToggleDetail={handleToggleDetail}
+          jumpToMessageRequest={jumpToMessageRequest}
           replyToMessage={replyToMessage}
           editingMessage={editingMessage}
           typingUsers={typingUsers}
@@ -1897,6 +1978,15 @@ const ChatPage = () => {
             className="flex w-80 rounded-2xl border border-slate-200 bg-white shadow-sm xl:w-[20rem] 2xl:w-80"
             onClose={() => setShowDetail(false)}
             onConversationUpdated={handleConversationUpdated}
+            onJumpToMessage={handleDetailJumpToMessage}
+            onRespondReminder={handleRespondReminder}
+            onCancelReminder={handleCancelReminder}
+            onEditReminder={handleEditReminder}
+            onVotePoll={handleVotePoll}
+            onAddPollOption={handleAddPollOption}
+            onTogglePinMessage={handleTogglePinMessage}
+            onSharePoll={handleSharePoll}
+            onClosePoll={handleClosePoll}
           />
         </div>
       )}
@@ -1916,6 +2006,15 @@ const ChatPage = () => {
             className="chat-detail-drawer fixed bottom-3 right-3 top-[4.75rem] z-50 flex rounded-2xl border border-slate-200 bg-white shadow-2xl xl:hidden"
             onClose={() => setShowMobileDetail(false)}
             onConversationUpdated={handleConversationUpdated}
+            onJumpToMessage={handleDetailJumpToMessage}
+            onRespondReminder={handleRespondReminder}
+            onCancelReminder={handleCancelReminder}
+            onEditReminder={handleEditReminder}
+            onVotePoll={handleVotePoll}
+            onAddPollOption={handleAddPollOption}
+            onTogglePinMessage={handleTogglePinMessage}
+            onSharePoll={handleSharePoll}
+            onClosePoll={handleClosePoll}
           />
         </>
       )}

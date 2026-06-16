@@ -82,6 +82,10 @@ const meetingSchema = new Schema(
       ref: "Project",
       default: null,
     },
+    aiSummaryEnabled: {
+      type: Boolean,
+      default: false,
+    },
     startedAt: {
       type: Date,
       default: null,
