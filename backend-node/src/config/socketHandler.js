@@ -1,11 +1,13 @@
 import jwt from "jsonwebtoken";
 import User from "../models/User.js";
 import Conversation from "../models/Conversation.js";
+import Call from "../models/Call.js";
 import {
   buildPresencePayload,
   markUserConnected,
   markUserDisconnected,
 } from "../services/presenceService.js";
+import { applyCallHeartbeat } from "../utils/callPolicy.js";
 import {
   getConversationParticipantUserRoomName,
   getConversationRoomName,
@@ -146,6 +148,41 @@ export const setupSocket = (io) => {
         });
       } catch (error) {
         console.error("Typing status error:", error.message);
+      }
+    });
+
+    socket.on("call_heartbeat", async ({ callId } = {}, acknowledge) => {
+      try {
+        if (!callId) {
+          acknowledge?.({ ok: false, reason: "missing_call_id" });
+          return;
+        }
+
+        const call = await Call.findOne({
+          _id: callId,
+          status: { $in: ["connecting", "active"] },
+          "participants.userId": socket.user._id,
+        });
+        if (!call) {
+          acknowledge?.({ ok: false, reason: "call_not_found" });
+          return;
+        }
+
+        const { participants, updated } = applyCallHeartbeat(
+          call.participants,
+          socket.user._id,
+          new Date(),
+        );
+        if (!updated) {
+          acknowledge?.({ ok: false, reason: "participant_not_found" });
+          return;
+        }
+
+        await Call.findByIdAndUpdate(call._id, { $set: { participants } });
+        acknowledge?.({ ok: true });
+      } catch (error) {
+        console.error("Call socket heartbeat error:", error.message);
+        acknowledge?.({ ok: false, reason: "server_error" });
       }
     });
 

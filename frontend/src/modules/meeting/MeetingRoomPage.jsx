@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Alert, Button, Select, Spin, Switch, Tooltip, Typography, message } from "antd";
+import { Alert, Button, Select, Spin, Switch, Tag, Tooltip, Typography, message } from "antd";
 import { useNavigate, useParams } from "react-router-dom";
 import {
   ArrowLeftOutlined,
   AudioMutedOutlined,
   AudioOutlined,
   CopyOutlined,
+  DownloadOutlined,
+  FileTextOutlined,
   ReloadOutlined,
   SettingOutlined,
   VideoCameraOutlined,
@@ -14,6 +16,7 @@ import {
 import { useMeetingContext } from "./meetingContextValue";
 import MeetingUI from "./MeetingUI";
 import { getMeeting } from "../../services/meetingService";
+import { formatMeetingDateTime } from "../../components/layout/notificationPanelState";
 import {
   buildJoinMediaDefaults,
   buildPreviewMediaConstraints,
@@ -26,6 +29,218 @@ const { Text, Title } = Typography;
 const EMPTY_DEVICE_OPTIONS = {
   audioInputs: [],
   videoInputs: [],
+};
+
+const getRecordingMediaType = (url = "") => {
+  const cleanUrl = String(url).split("?")[0].toLowerCase();
+  return /\.(aac|flac|m4a|mp3|ogg|wav)$/i.test(cleanUrl) ? "audio" : "video";
+};
+
+const getSummaryStatusTag = (summary, meeting) => {
+  if (meeting?.aiSummaryEnabled === false) {
+    return <Tag>AI summary off</Tag>;
+  }
+
+  if (summary?.status === "completed") {
+    return <Tag color="blue">AI summary ready</Tag>;
+  }
+  if (summary?.status === "processing") {
+    return <Tag color="gold">AI processing</Tag>;
+  }
+  if (summary?.status === "failed") {
+    return <Tag color="red">AI failed</Tag>;
+  }
+  return <Tag>No summary yet</Tag>;
+};
+
+const MeetingSummaryPanel = ({ summary, meeting }) => {
+  const isAiSummaryDisabled = meeting?.aiSummaryEnabled === false;
+  const hasCompletedSummary = summary?.status === "completed";
+  const hasTranscript = Boolean(summary?.transcript);
+  const hasRecording = Boolean(summary?.recordingUrl);
+  const recordingMediaType = getRecordingMediaType(summary?.recordingUrl);
+
+  return (
+    <section className="rounded-3xl border border-slate-200/80 bg-white p-5 shadow-sm shadow-slate-200/70 sm:p-6">
+      <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex min-w-0 items-start gap-3">
+          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-blue-50 text-blue-600">
+            <FileTextOutlined className="text-lg" />
+          </div>
+          <div>
+            <h2 className="m-0 text-lg font-bold text-slate-950">
+              AI Meeting Summary
+            </h2>
+            <p className="mt-1 text-sm leading-6 text-slate-500">
+              Kết quả được tạo sau khi recording của cuộc họp xử lý xong.
+            </p>
+          </div>
+        </div>
+        {getSummaryStatusTag(summary, meeting)}
+      </div>
+
+      {isAiSummaryDisabled && (
+        <Alert
+          type="info"
+          showIcon
+          message="AI summary không được bật"
+          description="Cuộc họp này không ghi âm và không tạo AI summary."
+        />
+      )}
+
+      {!summary && !isAiSummaryDisabled && (
+        <Alert
+          type="info"
+          showIcon
+          message="Chưa có summary"
+          description="Nếu cuộc họp vừa kết thúc, WorkHub sẽ tự xử lý recording và cập nhật kết quả ở đây."
+        />
+      )}
+
+      {summary?.status === "processing" && (
+        <Alert
+          type="warning"
+          showIcon
+          message="Đang xử lý AI summary"
+          description="Transcript và summary sẽ xuất hiện sau khi Workers AI xử lý xong recording."
+        />
+      )}
+
+      {summary?.status === "failed" && (
+        <Alert
+          type="error"
+          showIcon
+          message="Không thể tạo AI summary"
+          description={summary.errorMessage || "Vui lòng thử lại sau."}
+        />
+      )}
+
+      {hasRecording && (
+        <div className="mt-5">
+          <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+            <h3 className="m-0 text-sm font-bold uppercase tracking-wide text-slate-500">
+              Recording
+            </h3>
+            <div className="flex flex-wrap gap-2">
+              <Button
+                size="small"
+                href={summary.recordingUrl}
+                target="_blank"
+                rel="noreferrer"
+              >
+                Open
+              </Button>
+              <Button
+                size="small"
+                icon={<DownloadOutlined />}
+                href={summary.recordingUrl}
+                download
+              >
+                Download
+              </Button>
+            </div>
+          </div>
+          <div className="overflow-hidden rounded-2xl border border-slate-200 bg-slate-950">
+            {recordingMediaType === "audio" ? (
+              <div className="bg-slate-50 p-4">
+                <audio controls className="w-full" src={summary.recordingUrl} />
+              </div>
+            ) : (
+              <video
+                controls
+                className="aspect-video w-full bg-slate-950"
+                src={summary.recordingUrl}
+              />
+            )}
+          </div>
+        </div>
+      )}
+
+      {hasCompletedSummary && (
+        <div className="space-y-5">
+          <div>
+            <h3 className="m-0 text-sm font-bold uppercase tracking-wide text-slate-500">
+              Tóm tắt
+            </h3>
+            <p className="mt-2 whitespace-pre-wrap text-sm leading-7 text-slate-700">
+              {summary.summary || "Không có nội dung summary."}
+            </p>
+          </div>
+
+          {!!summary.decisions?.length && (
+            <div>
+              <h3 className="m-0 text-sm font-bold uppercase tracking-wide text-slate-500">
+                Decisions
+              </h3>
+              <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-slate-700">
+                {summary.decisions.map((item) => (
+                  <li key={item}>{item}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {!!summary.actionItems?.length && (
+            <div>
+              <h3 className="m-0 text-sm font-bold uppercase tracking-wide text-slate-500">
+                Action items
+              </h3>
+              <div className="mt-2 space-y-2">
+                {summary.actionItems.map((item, index) => (
+                  <div
+                    key={`${item.title}-${index}`}
+                    className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700"
+                  >
+                    <div className="font-semibold text-slate-950">{item.title}</div>
+                    <div className="mt-1 text-xs text-slate-500">
+                      {[item.owner, item.dueDate, item.priority].filter(Boolean).join(" · ")}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {!!summary.followUps?.length && (
+            <div>
+              <h3 className="m-0 text-sm font-bold uppercase tracking-wide text-slate-500">
+                Follow-ups
+              </h3>
+              <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-slate-700">
+                {summary.followUps.map((item) => (
+                  <li key={item}>{item}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          <div>
+            <h3 className="m-0 text-sm font-bold uppercase tracking-wide text-slate-500">
+              Full transcript
+            </h3>
+            <div className="mt-2 max-h-96 overflow-auto rounded-2xl border border-slate-200 bg-slate-50 p-4">
+              <p className="m-0 whitespace-pre-wrap text-sm leading-7 text-slate-600">
+                {summary.transcript || "Không có transcript."}
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {!hasCompletedSummary && hasTranscript && (
+        <div className="mt-5">
+          <h3 className="m-0 text-sm font-bold uppercase tracking-wide text-slate-500">
+            Full transcript
+          </h3>
+          <div className="mt-2 max-h-96 overflow-auto rounded-2xl border border-slate-200 bg-slate-50 p-4">
+            <p className="m-0 whitespace-pre-wrap text-sm leading-7 text-slate-600">
+              {summary.transcript}
+            </p>
+          </div>
+        </div>
+      )}
+    </section>
+  );
 };
 
 export default function MeetingRoomPage() {
@@ -41,6 +256,7 @@ export default function MeetingRoomPage() {
     joinActiveMeeting,
   } = useMeetingContext();
   const [roomInfo, setRoomInfo] = useState(null);
+  const [meetingSummary, setMeetingSummary] = useState(null);
   const [isLoadingRoom, setIsLoadingRoom] = useState(true);
   const [error, setError] = useState("");
   const [previewError, setPreviewError] = useState("");
@@ -108,6 +324,7 @@ export default function MeetingRoomPage() {
         const data = await getMeeting(id);
         if (isMounted) {
           setRoomInfo(data.meeting);
+          setMeetingSummary(data.summary || null);
         }
       } catch (err) {
         if (isMounted) {
@@ -274,6 +491,54 @@ export default function MeetingRoomPage() {
       <div className="flex min-h-full flex-col items-center justify-center gap-4 bg-[#f8f9fc] text-slate-700">
         <Spin size="large" />
         <Text className="!text-slate-500">Đang tải thông tin phòng họp...</Text>
+      </div>
+    );
+  }
+
+  if (!isInRoom && displayMeeting?.status === "ended") {
+    return (
+      <div className="min-h-full bg-[#f8f9fc] px-4 py-5 sm:px-6 lg:px-8">
+        <div className="mx-auto flex max-w-5xl flex-col gap-5">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <Button icon={<ArrowLeftOutlined />} onClick={() => navigate("/meetings")}>
+              Danh sách
+            </Button>
+            <Button
+              icon={<ReloadOutlined />}
+              onClick={() => window.location.reload()}
+            >
+              Làm mới
+            </Button>
+          </div>
+
+          <section className="rounded-3xl border border-slate-200/80 bg-white p-5 shadow-sm shadow-slate-200/70 sm:p-6">
+            <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+              <div className="min-w-0">
+                <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold text-slate-600">
+                  Meeting history
+                </div>
+                <Title level={2} className="!m-0 !text-2xl !font-bold !text-slate-950 sm:!text-3xl">
+                  {displayMeeting?.title || "Cuộc họp WorkHub"}
+                </Title>
+                <div className="mt-3 flex flex-wrap items-center gap-3 text-sm text-slate-500">
+                  <span className="font-mono">ID: {displayMeetingId}</span>
+                  <span>{displayMeeting?.startedAt ? formatMeetingDateTime(displayMeeting.startedAt) : ""}</span>
+                  <Tooltip title="Sao chép Meeting ID">
+                    <Button
+                      size="small"
+                      type="text"
+                      icon={<CopyOutlined />}
+                      onClick={handleCopyMeetingId}
+                    />
+                  </Tooltip>
+                </div>
+              </div>
+              <Tag color="default">Đã kết thúc</Tag>
+            </div>
+          </section>
+
+          <MeetingSummaryPanel summary={meetingSummary} meeting={displayMeeting} />
+        </div>
       </div>
     );
   }

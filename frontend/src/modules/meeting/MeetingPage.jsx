@@ -1,9 +1,11 @@
-import { useEffect, useState } from "react";
-import { Button, Empty, Form, Input, Skeleton, Tag, Tooltip, Typography, message } from "antd";
+import { useCallback, useEffect, useState } from "react";
+import { Button, Checkbox, Empty, Form, Input, Skeleton, Tabs, Tag, Tooltip, Typography, message } from "antd";
 import { Link, useNavigate } from "react-router-dom";
 import {
   CalendarOutlined,
   CopyOutlined,
+  FileTextOutlined,
+  HistoryOutlined,
   LoginOutlined,
   ReloadOutlined,
   TeamOutlined,
@@ -29,6 +31,46 @@ const getMeetingId = (meeting) => meeting?.id || meeting?._id || "";
 const getMeetingTime = (meeting) =>
   meeting?.startTime || meeting?.startedAt || meeting?.scheduledAt || meeting?.createdAt;
 
+const getSummaryTag = (meeting) => {
+  if (meeting?.aiSummaryEnabled === false) {
+    return (
+      <Tag className="!m-0 !rounded-md !border-slate-200 !bg-slate-50 !px-2 !py-0.5 !text-slate-500">
+        AI summary off
+      </Tag>
+    );
+  }
+
+  if (meeting?.summaryStatus === "completed") {
+    return (
+      <Tag className="!m-0 !rounded-md !border-blue-200 !bg-blue-50 !px-2 !py-0.5 !text-blue-700">
+        AI summary ready
+      </Tag>
+    );
+  }
+
+  if (meeting?.summaryStatus === "processing") {
+    return (
+      <Tag className="!m-0 !rounded-md !border-amber-200 !bg-amber-50 !px-2 !py-0.5 !text-amber-700">
+        AI processing
+      </Tag>
+    );
+  }
+
+  if (meeting?.summaryStatus === "failed") {
+    return (
+      <Tag className="!m-0 !rounded-md !border-red-200 !bg-red-50 !px-2 !py-0.5 !text-red-700">
+        AI failed
+      </Tag>
+    );
+  }
+
+  return (
+    <Tag className="!m-0 !rounded-md !border-slate-200 !bg-slate-50 !px-2 !py-0.5 !text-slate-600">
+      No summary yet
+    </Tag>
+  );
+};
+
 export default function MeetingPage() {
   const navigate = useNavigate();
   const { createMeeting, joinMeeting } = useMeetingContext();
@@ -36,53 +78,71 @@ export default function MeetingPage() {
   const [form] = Form.useForm();
   const [joinForm] = Form.useForm();
   const [meetings, setMeetings] = useState([]);
+  const [activeTab, setActiveTab] = useState("active");
   const [loading, setLoading] = useState(false);
   const [creating, setCreating] = useState(false);
   const [joining, setJoining] = useState(false);
 
-  const loadMeetings = async () => {
+  const loadMeetings = useCallback(async () => {
     setLoading(true);
     try {
-      const data = await listMeetings({ page: 1, size: 12, status: "active" });
+      const data = await listMeetings({
+        page: 1,
+        size: 12,
+        status: activeTab === "history" ? "ended" : "active",
+      });
       setMeetings(Array.isArray(data) ? data : data.content || []);
     } catch (error) {
       message.error(error.response?.data?.message || "Không thể tải danh sách cuộc họp");
     } finally {
       setLoading(false);
     }
-  };
+  }, [activeTab]);
 
   useEffect(() => {
     loadMeetings();
-  }, []);
+  }, [loadMeetings]);
 
   useEffect(() => {
     if (!socket) return undefined;
 
     const handleMeetingCreated = ({ meeting }) => {
+      if (activeTab !== "active") return;
       setMeetings((currentMeetings) =>
         upsertActiveMeeting(currentMeetings, meeting),
       );
     };
     const handleMeetingEnded = ({ meeting }) => {
-      setMeetings((currentMeetings) =>
-        removeMeetingById(currentMeetings, meeting?.id || meeting?._id),
-      );
+      if (activeTab === "active") {
+        setMeetings((currentMeetings) =>
+          removeMeetingById(currentMeetings, meeting?.id || meeting?._id),
+        );
+      } else {
+        loadMeetings();
+      }
+    };
+    const handleSummaryUpdated = () => {
+      if (activeTab === "history") loadMeetings();
     };
 
     socket.on("meeting_created", handleMeetingCreated);
     socket.on("meeting_ended", handleMeetingEnded);
+    socket.on("meeting_ai_summary_updated", handleSummaryUpdated);
 
     return () => {
       socket.off("meeting_created", handleMeetingCreated);
       socket.off("meeting_ended", handleMeetingEnded);
+      socket.off("meeting_ai_summary_updated", handleSummaryUpdated);
     };
-  }, [socket]);
+  }, [activeTab, loadMeetings, socket]);
 
   const handleCreate = async (values) => {
     setCreating(true);
     try {
-      const data = await createMeeting({ title: values.title.trim() });
+      const data = await createMeeting({
+        title: values.title.trim(),
+        enableAiSummary: Boolean(values.enableAiSummary),
+      });
       message.success("Đã tạo cuộc họp");
       navigate(`/meetings/${data.meeting.id}`);
     } catch (error) {
@@ -167,9 +227,13 @@ export default function MeetingPage() {
                     >
                       {meeting.title || "Cuộc họp WorkHub"}
                     </Link>
-                    <Tag className="!m-0 !rounded-md !border-emerald-200 !bg-emerald-50 !px-2 !py-0.5 !text-emerald-700">
-                      Đang hoạt động
-                    </Tag>
+                    {activeTab === "active" ? (
+                      <Tag className="!m-0 !rounded-md !border-emerald-200 !bg-emerald-50 !px-2 !py-0.5 !text-emerald-700">
+                        Đang hoạt động
+                      </Tag>
+                    ) : (
+                      getSummaryTag(meeting)
+                    )}
                   </div>
                   <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-2 text-sm text-slate-500">
                     <span className="inline-flex items-center gap-1.5">
@@ -196,11 +260,11 @@ export default function MeetingPage() {
                   />
                 </Tooltip>
                 <Button
-                  type="primary"
-                  icon={<LoginOutlined />}
+                  type={activeTab === "active" ? "primary" : "default"}
+                  icon={activeTab === "active" ? <LoginOutlined /> : <FileTextOutlined />}
                   onClick={() => navigate(meetingPath)}
                 >
-                  Vào phòng chờ
+                  {activeTab === "active" ? "Vào phòng chờ" : "Xem summary"}
                 </Button>
               </div>
             </article>
@@ -234,7 +298,9 @@ export default function MeetingPage() {
                   <TeamOutlined className="text-blue-600" />
                   {meetings.length}
                 </div>
-                <div className="text-xs text-slate-500">phòng đang mở</div>
+                <div className="text-xs text-slate-500">
+                  {activeTab === "active" ? "phòng đang mở" : "cuộc họp đã xong"}
+                </div>
               </div>
               <Button
                 size="large"
@@ -263,7 +329,12 @@ export default function MeetingPage() {
                 </div>
               </div>
 
-              <Form form={form} layout="vertical" onFinish={handleCreate}>
+              <Form
+                form={form}
+                layout="vertical"
+                initialValues={{ enableAiSummary: false }}
+                onFinish={handleCreate}
+              >
                 <Form.Item
                   label="Tiêu đề cuộc họp"
                   name="title"
@@ -274,6 +345,13 @@ export default function MeetingPage() {
                     maxLength={160}
                     placeholder="Ví dụ: Daily sync team Backend"
                   />
+                </Form.Item>
+                <Form.Item
+                  name="enableAiSummary"
+                  valuePropName="checked"
+                  className="!mb-5"
+                >
+                  <Checkbox>Ghi âm và tạo AI summary sau cuộc họp</Checkbox>
                 </Form.Item>
                 <Button
                   type="primary"
@@ -291,15 +369,38 @@ export default function MeetingPage() {
               <div className="flex flex-col gap-3 border-b border-slate-100 px-5 py-5 sm:flex-row sm:items-center sm:justify-between">
                 <div>
                   <h2 className="m-0 text-lg font-bold text-slate-950">
-                    Cuộc họp đang hoạt động
+                    {activeTab === "active" ? "Cuộc họp đang hoạt động" : "Lịch sử cuộc họp"}
                   </h2>
                   <p className="mt-1 text-sm text-slate-500">
-                    Chọn một phòng để vào phòng chờ trước khi tham gia.
+                    {activeTab === "active"
+                      ? "Chọn một phòng để vào phòng chờ trước khi tham gia."
+                      : "Xem lại cuộc họp đã kết thúc và kết quả AI summary."}
                   </p>
                 </div>
-                <Tag className="!m-0 !rounded-lg !border-blue-100 !bg-blue-50 !px-3 !py-1 !text-blue-700">
-                  {meetings.length} active
-                </Tag>
+                <Tabs
+                  activeKey={activeTab}
+                  onChange={setActiveTab}
+                  items={[
+                    {
+                      key: "active",
+                      label: (
+                        <span className="inline-flex items-center gap-2">
+                          <VideoCameraOutlined />
+                          Đang diễn ra
+                        </span>
+                      ),
+                    },
+                    {
+                      key: "history",
+                      label: (
+                        <span className="inline-flex items-center gap-2">
+                          <HistoryOutlined />
+                          Lịch sử
+                        </span>
+                      ),
+                    },
+                  ]}
+                />
               </div>
               {renderMeetingList()}
             </section>
