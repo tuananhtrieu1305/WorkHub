@@ -48,6 +48,47 @@
   }
 }
 
+.workhub-skeleton {
+  position: relative;
+  overflow: hidden;
+  background:
+    linear-gradient(90deg, #e8edf4 0%, #f7f9fc 42%, #e2e8f0 78%);
+  background-size: 240% 100%;
+  animation: workhubSkeletonShimmer 1.25s ease-in-out infinite;
+}
+
+@keyframes workhubSkeletonShimmer {
+  from {
+    background-position: 160% 0;
+  }
+  to {
+    background-position: -80% 0;
+  }
+}
+
+.route-loading-screen {
+  min-height: 100%;
+  display: grid;
+  place-items: center;
+  background: #f8fafc;
+  color: #64748b;
+}
+
+.route-loading-spinner {
+  width: 2.5rem;
+  height: 2.5rem;
+  border-radius: 999px;
+  border: 3px solid #bfdbfe;
+  border-top-color: #2563eb;
+  animation: workhubSpinner 780ms linear infinite;
+}
+
+@keyframes workhubSpinner {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 .workhub-notification-panel {
   transform-origin: top right;
   animation: workhubPanelReveal 160ms ease-out both;
@@ -141,8 +182,14 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .workhub-skeleton,
+  .route-loading-spinner,
   .workhub-reaction-tray,
   .workhub-reaction-option {
     animation: none;
+  }
+
+  .workhub-skeleton {
+    background: #e5e7eb;
   }
 }

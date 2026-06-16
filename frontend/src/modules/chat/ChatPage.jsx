@@ -1746,6 +1746,7 @@ const ChatPage = () => {
         <ConversationList
           conversations={conversations}
           selectedId={selectedConversationId}
+          isLoading={!hasLoadedConversations}
           onSelect={handleSelectConversation}
           onMarkRead={handleMarkConversationRead}
           onCreateNew={() => setShowNewModal(true)}

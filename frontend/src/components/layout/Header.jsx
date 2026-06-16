@@ -38,6 +38,7 @@ import {
   markNotificationsReadLocally,
   removeNotificationById,
 } from "./notificationPanelState";
+import { NotificationPanelSkeleton } from "../common/Skeleton";
 
 const inboxTabs = [
   { key: "all", label: "Tất cả" },
@@ -115,6 +116,7 @@ const Header = ({ overlay = false }) => {
   const [notifications, setNotifications] = useState([]);
   const [meetings, setMeetings] = useState([]);
   const [unreadCount, setUnreadCount] = useState(0);
+  const [isLoadingPanelData, setIsLoadingPanelData] = useState(false);
   const [isMarkingAllRead, setIsMarkingAllRead] = useState(false);
   const dropdownRef = useRef(null);
   const notificationRef = useRef(null);
@@ -132,6 +134,7 @@ const Header = ({ overlay = false }) => {
   };
 
   const loadNotificationPanelData = useCallback(async () => {
+    setIsLoadingPanelData(true);
     try {
       const [notifRes, meetingRes] = await Promise.allSettled([
         getNotifications({ page: 1, size: 20 }),
@@ -156,6 +159,8 @@ const Header = ({ overlay = false }) => {
       }
     } catch (error) {
       console.error("Failed to load notification panel data:", error);
+    } finally {
+      setIsLoadingPanelData(false);
     }
   }, []);
 
@@ -775,7 +780,9 @@ const Header = ({ overlay = false }) => {
                     </div>
 
                     <div className="space-y-2">
-                      {filteredNotifications.length === 0 ? (
+                      {isLoadingPanelData && notifications.length === 0 ? (
+                        <NotificationPanelSkeleton />
+                      ) : filteredNotifications.length === 0 ? (
                         <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 px-4 py-7 text-center">
                           <span className="material-symbols-outlined mb-2 block text-3xl leading-none text-slate-300">
                             mark_email_read
@@ -880,7 +887,9 @@ const Header = ({ overlay = false }) => {
                     </h3>
 
                     <div className="space-y-2">
-                      {meetings.length === 0 ? (
+                      {isLoadingPanelData && meetings.length === 0 ? (
+                        <NotificationPanelSkeleton count={2} />
+                      ) : meetings.length === 0 ? (
                         <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 px-4 py-7 text-center">
                           <span className="material-symbols-outlined mb-2 block text-3xl leading-none text-slate-300">
                             event_available

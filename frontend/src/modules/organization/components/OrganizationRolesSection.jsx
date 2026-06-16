@@ -1,5 +1,6 @@
 import { permissionLabels } from "../organizationUtils";
 import Icon from "./Icon";
+import { PanelListSkeleton } from "../../../components/common/Skeleton";
 
 const OrganizationRolesSection = ({
   isLoading,
@@ -42,11 +43,7 @@ const OrganizationRolesSection = ({
           <span className="text-right">Thao tác</span>
         </div>
         {isLoading ? (
-          <div className="grid gap-0 divide-y divide-slate-100">
-            {[0, 1, 2].map((item) => (
-              <div key={item} className="h-20 animate-pulse bg-white" />
-            ))}
-          </div>
+          <PanelListSkeleton count={3} />
         ) : (
           <div className="divide-y divide-slate-100">
             {roles.map((role) => (

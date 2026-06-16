@@ -3,6 +3,7 @@ import { useAuth } from "../../context/AuthContext";
 import { getPosts } from "../../api/postApi";
 import CreatePostBox from "./CreatePostBox";
 import PostCard from "./PostCard";
+import { FeedListSkeleton, FeedPostSkeleton } from "../../components/common/Skeleton";
 
 const toComparableId = (value) => {
   if (value == null) return "";
@@ -121,10 +122,7 @@ const FeedPage = () => {
       <CreatePostBox onPostCreated={handlePostCreated} />
 
       {isInitialLoad ? (
-        <div className="flex flex-col items-center justify-center py-16 gap-4">
-          <span className="w-10 h-10 border-3 border-blue-200 border-t-blue-600 rounded-full animate-spin" />
-          <p className="text-sm text-slate-400 font-medium">Đang tải bảng tin...</p>
-        </div>
+        <FeedListSkeleton count={3} />
       ) : posts.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-16 gap-4">
           <span className="material-symbols-outlined text-6xl text-slate-200">
@@ -150,10 +148,8 @@ const FeedPage = () => {
 
           {/* Infinite scroll sentinel */}
           {hasMore && (
-            <div ref={sentinelRef} className="flex items-center justify-center py-6">
-              {isLoading && (
-                <span className="w-8 h-8 border-2 border-blue-200 border-t-blue-600 rounded-full animate-spin" />
-              )}
+            <div ref={sentinelRef} className="py-2">
+              {isLoading && <FeedPostSkeleton compact />}
             </div>
           )}
 

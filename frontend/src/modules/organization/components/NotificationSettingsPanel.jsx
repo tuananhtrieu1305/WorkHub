@@ -1,5 +1,6 @@
 import { notificationOptions } from "../organizationUtils";
 import Icon from "./Icon";
+import { SkeletonBlock } from "../../../components/common/Skeleton";
 
 const NotificationSettingsPanel = ({
   isLoading,
@@ -10,9 +11,9 @@ const NotificationSettingsPanel = ({
   <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
     {isLoading
       ? [0, 1, 2, 3, 4, 5].map((item) => (
-          <div
+          <SkeletonBlock
             key={item}
-            className="h-16 animate-pulse rounded-2xl bg-slate-100"
+            className="h-16 rounded-2xl"
           />
         ))
       : notificationOptions.map(([key, label, icon]) => {

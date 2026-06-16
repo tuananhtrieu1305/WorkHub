@@ -39,6 +39,7 @@
   .profile-modal-shell,
   .profile-modal-identity,
   .profile-info-card,
+  .profile-role-card,
   .profile-empty-state,
   .profile-theme-option {
     transition:
@@ -172,35 +173,63 @@
   }
 
   .profile-modal-shell {
-    width: min(100%, 64rem);
-    min-height: min(46rem, 94vh);
-    border: 1px solid color-mix(in srgb, var(--profile-accent) 18%, #ffffff);
+    width: min(100%, 58rem);
+    max-height: calc(100dvh - 2rem);
+    border: 1px solid color-mix(in srgb, var(--profile-accent) 14%, #ffffff);
     background:
-      linear-gradient(180deg, color-mix(in srgb, var(--profile-bg) 18%, #ffffff) 0%, #ffffff 46%);
-    box-shadow: 0 28px 80px rgba(15, 23, 42, 0.28);
+      linear-gradient(180deg, color-mix(in srgb, var(--profile-bg) 14%, #ffffff) 0%, #ffffff 42%);
+    box-shadow: 0 24px 70px rgba(15, 23, 42, 0.26);
     animation: profileModalIn 240ms cubic-bezier(0.19, 1, 0.22, 1) both;
   }
 
   .profile-modal-identity {
-    border: 1px solid color-mix(in srgb, var(--profile-accent) 18%, #ffffff);
-    background: rgba(255, 255, 255, 0.94);
+    border: 1px solid color-mix(in srgb, var(--profile-accent) 14%, #ffffff);
+    background:
+      linear-gradient(135deg, rgba(255, 255, 255, 0.96), color-mix(in srgb, var(--profile-bg) 7%, #ffffff));
     box-shadow:
-      0 20px 48px rgba(15, 23, 42, 0.1),
+      0 18px 42px rgba(15, 23, 42, 0.1),
       inset 0 1px 0 rgba(255, 255, 255, 0.88);
   }
 
   .profile-modal-scroll {
-    max-height: calc(94vh - 1.5rem);
+    max-height: calc(100dvh - 2rem);
   }
 
   .profile-modal-tabbar {
-    border: 1px solid color-mix(in srgb, var(--profile-accent) 12%, #e2e8f0);
-    background: color-mix(in srgb, var(--profile-bg) 18%, #f8fafc);
+    grid-template-columns: repeat(var(--profile-tab-count), minmax(0, 1fr));
+    border: 1px solid color-mix(in srgb, var(--profile-accent) 10%, #e2e8f0);
+    background: color-mix(in srgb, var(--profile-bg) 12%, #f8fafc);
+  }
+
+  .profile-modal-tab-indicator {
+    position: absolute;
+    inset-block: 0.25rem;
+    left: 0.25rem;
+    width: calc((100% - 0.5rem) / var(--profile-tab-count));
+    border: 1px solid color-mix(in srgb, var(--profile-accent) 24%, #ffffff);
+    border-radius: 0.85rem;
+    background: color-mix(in srgb, var(--profile-bg) 48%, #ffffff);
+    box-shadow: 0 10px 24px color-mix(in srgb, var(--profile-accent) 12%, transparent);
+    transform: translateX(calc(var(--profile-tab-index) * 100%));
+    transition:
+      transform 260ms cubic-bezier(0.19, 1, 0.22, 1),
+      background 260ms ease,
+      border-color 260ms ease;
+  }
+
+  .profile-modal-tab:hover {
+    background: rgba(255, 255, 255, 0.48);
+  }
+
+  .profile-modal-tab:focus-visible,
+  .profile-close-button:focus-visible {
+    outline: 3px solid color-mix(in srgb, var(--profile-accent) 26%, transparent);
+    outline-offset: 2px;
   }
 
   .profile-info-card {
-    border: 1px solid color-mix(in srgb, var(--profile-accent) 13%, #dbe3ee);
-    background: rgba(255, 255, 255, 0.9);
+    border: 1px solid color-mix(in srgb, var(--profile-accent) 10%, #dbe3ee);
+    background: rgba(255, 255, 255, 0.92);
     box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.72);
   }
 
@@ -215,15 +244,56 @@
   }
 
   .profile-empty-state {
-    border: 1px dashed color-mix(in srgb, var(--profile-accent) 24%, #cbd5e1);
+    border: 1px solid color-mix(in srgb, var(--profile-accent) 12%, #dbe3ee);
     background:
-      linear-gradient(135deg, color-mix(in srgb, var(--profile-bg) 24%, #ffffff), #ffffff);
+      linear-gradient(135deg, color-mix(in srgb, var(--profile-bg) 16%, #ffffff), #ffffff);
   }
 
   .profile-chip {
     background: color-mix(in srgb, var(--profile-bg) 46%, #ffffff);
     color: var(--profile-text);
     border: 1px solid color-mix(in srgb, var(--profile-accent) 20%, #ffffff);
+  }
+
+  .profile-stat-pill {
+    border: 1px solid color-mix(in srgb, var(--profile-accent) 10%, #dbe3ee);
+    background: color-mix(in srgb, var(--profile-bg) 28%, #ffffff);
+    color: var(--profile-text);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .profile-mini-badge,
+  .profile-fact-row {
+    border: 1px solid color-mix(in srgb, var(--profile-accent) 10%, #e2e8f0);
+    background: color-mix(in srgb, var(--profile-bg) 18%, #ffffff);
+    color: var(--profile-text);
+  }
+
+  .profile-role-card {
+    border: 1px solid color-mix(in srgb, var(--profile-accent) 10%, #dbe3ee);
+    background:
+      linear-gradient(135deg, rgba(255, 255, 255, 0.96), color-mix(in srgb, var(--profile-bg) 12%, #ffffff));
+    box-shadow:
+      0 12px 32px color-mix(in srgb, var(--profile-accent) 7%, transparent),
+      inset 0 1px 0 rgba(255, 255, 255, 0.76);
+  }
+
+  .profile-role-card:hover {
+    transform: translateY(-1px);
+    border-color: color-mix(in srgb, var(--profile-accent) 22%, #dbe3ee);
+  }
+
+  .profile-role-swatch {
+    background: color-mix(in srgb, var(--role-color) 14%, #ffffff);
+    color: var(--role-color);
+    border: 1px solid color-mix(in srgb, var(--role-color) 24%, #ffffff);
+  }
+
+  .profile-skeleton {
+    background:
+      linear-gradient(90deg, #e2e8f0 0%, #f8fafc 42%, #e2e8f0 84%);
+    background-size: 220% 100%;
+    animation: profileSkeleton 1.15s ease-in-out infinite;
   }
 }
 
@@ -247,11 +317,21 @@
   }
 }
 
+@keyframes profileSkeleton {
+  from {
+    background-position: 120% 0;
+  }
+  to {
+    background-position: -120% 0;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .profile-theme-frame,
   .profile-theme-frame *,
   .profile-modal-backdrop,
-  .profile-modal-shell {
+  .profile-modal-shell,
+  .profile-skeleton {
     animation: none !important;
     transition-duration: 1ms !important;
   }

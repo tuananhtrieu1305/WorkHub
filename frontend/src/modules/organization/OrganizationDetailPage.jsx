@@ -12,6 +12,7 @@ import OrganizationTransferOwnerModal from "./components/OrganizationTransferOwn
 import OrganizationWorkspaceHeader from "./components/OrganizationWorkspaceHeader";
 import OrganizationWorkspaceTabs from "./components/OrganizationWorkspaceTabs";
 import { useOrganizationWorkspace } from "./hooks/useOrganizationWorkspace";
+import { SkeletonBlock } from "../../components/common/Skeleton";
 
 const OrganizationDetailPage = () => {
   const { state, actions } = useOrganizationWorkspace();
@@ -20,9 +21,9 @@ const OrganizationDetailPage = () => {
     return (
       <main className="organization-page min-h-full px-4 py-5 text-slate-950 sm:px-6 lg:px-8">
         <div className="mx-auto grid w-full max-w-7xl gap-5">
-          <div className="h-80 animate-pulse rounded-[2rem] bg-white ring-1 ring-slate-200" />
-          <div className="h-20 animate-pulse rounded-3xl bg-white ring-1 ring-slate-200" />
-          <div className="h-96 animate-pulse rounded-3xl bg-white ring-1 ring-slate-200" />
+          <SkeletonBlock className="h-80 rounded-[2rem] ring-1 ring-slate-200" />
+          <SkeletonBlock className="h-20 rounded-3xl ring-1 ring-slate-200" />
+          <SkeletonBlock className="h-96 rounded-3xl ring-1 ring-slate-200" />
         </div>
       </main>
     );

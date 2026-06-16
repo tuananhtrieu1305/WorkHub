@@ -13,6 +13,7 @@ import {
   getConversationPreview,
   getConversationTabItems,
 } from "./conversationListState";
+import { ConversationListSkeleton } from "../../components/common/Skeleton";
 
 const filterTabs = [
   { key: "all", label: "Tất cả" },
@@ -71,6 +72,7 @@ const formatRelativeTime = (dateStr) => {
 const ConversationList = ({
   conversations = [],
   selectedId,
+  isLoading = false,
   onSelect,
   onMarkRead,
   onCreateNew,
@@ -314,7 +316,9 @@ const ConversationList = ({
 
       {/* Conversation List */}
       <div className="flex-1 overflow-y-auto chat-conversations-scroll">
-        {conversations.length === 0 ? (
+        {isLoading ? (
+          <ConversationListSkeleton />
+        ) : conversations.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-16 px-6 text-center">
             <span className="material-symbols-outlined mb-3 text-5xl text-slate-300">
               forum

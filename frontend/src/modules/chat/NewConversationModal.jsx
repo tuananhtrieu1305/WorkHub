@@ -10,6 +10,7 @@ import {
   getAvatarReferrerPolicy,
   getAvatarUrl,
 } from "../../utils/avatar";
+import { PanelListSkeleton } from "../../components/common/Skeleton";
 
 const getUserId = (user) => String(user?.id || user?._id || "");
 
@@ -251,12 +252,7 @@ const NewConversationModal = ({ isOpen, onClose, onCreate }) => {
 
           <div className="border border-slate-200 rounded-xl overflow-hidden">
             {isSearching ? (
-              <div className="p-6 text-center">
-                <div className="route-loading-spinner mx-auto mb-3" />
-                <p className="text-sm text-slate-400 font-medium">
-                  Đang tìm người dùng...
-                </p>
-              </div>
+              <PanelListSkeleton count={3} iconRounded="rounded-full" />
             ) : searchResults.length === 0 ? (
               <div className="p-6 text-center">
                 <span className="material-symbols-outlined text-3xl text-slate-300 mb-2 block">

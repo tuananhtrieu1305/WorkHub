@@ -10,6 +10,7 @@ import RegisterPage from "../modules/auth/RegisterPage";
 import VerifyEmailPage from "../modules/auth/VerifyEmailPage";
 import ForgotPasswordPage from "../modules/auth/ForgotPasswordPage";
 import ResetPasswordPage from "../modules/auth/ResetPasswordPage";
+import { RoutePageSkeleton } from "../components/common/Skeleton";
 
 const MeetingPage = lazy(() => import("../modules/meeting/MeetingPage"));
 const MeetingRoomPage = lazy(() => import("../modules/meeting/MeetingRoomPage"));
@@ -23,10 +24,7 @@ const OrganizationDetailPage = lazy(
 );
 
 const LazyFallback = () => (
-  <div className="route-loading-screen">
-    <div className="route-loading-spinner" />
-    <p>Đang tải...</p>
-  </div>
+  <RoutePageSkeleton />
 );
 
 export const router = createBrowserRouter([

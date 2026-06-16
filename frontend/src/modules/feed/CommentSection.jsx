@@ -39,6 +39,10 @@ import {
   getAvatarUrl,
 } from "../../utils/avatar";
 import UserProfileModal from "../profile/UserProfileModal";
+import {
+  CommentListSkeleton,
+  CommentReplySkeleton,
+} from "../../components/common/Skeleton";
 
 const MAX_COMMENT_IMAGES = 4;
 
@@ -1017,7 +1021,13 @@ const CommentSection = ({ postId, initialCommentsCount = 0, onCommentCountChange
 
     const threadRows = [];
 
-    if (repliesCount > 0 && !isExpanded) {
+    if (repliesCount > 0 && !isExpanded && isLoadingReplies) {
+      threadRows.push({
+        key: `${commentId}-replies-loading`,
+        className: "pr-1",
+        node: <CommentReplySkeleton />,
+      });
+    } else if (repliesCount > 0 && !isExpanded) {
       threadRows.push({
         key: `${commentId}-view-replies`,
         node: (
@@ -1026,12 +1036,7 @@ const CommentSection = ({ postId, initialCommentsCount = 0, onCommentCountChange
             onClick={() => handleToggleReplies(commentId)}
             className="inline-flex min-h-5 items-center gap-1 rounded-full pr-2 text-xs font-bold text-slate-500 transition-colors hover:text-blue-600"
           >
-            {isLoadingReplies && (
-              <span className="size-3 rounded-full border-2 border-blue-200 border-t-blue-600 animate-spin" />
-            )}
-            {isLoadingReplies
-              ? "Đang tải phản hồi"
-              : repliesCount === 1
+            {repliesCount === 1
               ? "Xem 1 phản hồi"
               : `Xem ${repliesCount} phản hồi`}
           </button>
@@ -1226,9 +1231,7 @@ const CommentSection = ({ postId, initialCommentsCount = 0, onCommentCountChange
       {/* Comments list */}
       <div className="px-5 pb-4">
         {isLoading && comments.length === 0 ? (
-          <div className="flex items-center justify-center py-4">
-            <span className="w-5 h-5 border-2 border-blue-200 border-t-blue-600 rounded-full animate-spin" />
-          </div>
+          <CommentListSkeleton count={3} />
         ) : comments.length === 0 ? (
           <p className="text-center text-sm text-slate-400 py-4 font-medium">
             Chưa có bình luận nào. Hãy là người đầu tiên!
@@ -1243,21 +1246,18 @@ const CommentSection = ({ postId, initialCommentsCount = 0, onCommentCountChange
 
             {/* Load more */}
             {hasMore && (
-              <button
-                type="button"
-                onClick={() => fetchComments(page + 1)}
-                disabled={isLoading}
-                className="text-sm text-blue-600 hover:text-blue-700 font-bold py-2 transition-colors flex items-center gap-1 justify-center"
-              >
-                {isLoading ? (
-                  <span className="w-4 h-4 border-2 border-blue-200 border-t-blue-600 rounded-full animate-spin" />
-                ) : (
-                  <>
-                    <span className="material-symbols-outlined text-base">expand_more</span>
-                    Xem thêm bình luận
-                  </>
-                )}
-              </button>
+              isLoading ? (
+                <CommentListSkeleton count={2} compact />
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => fetchComments(page + 1)}
+                  className="flex items-center justify-center gap-1 py-2 text-sm font-bold text-blue-600 transition-colors hover:text-blue-700"
+                >
+                  <span className="material-symbols-outlined text-base">expand_more</span>
+                  Xem thêm bình luận
+                </button>
+              )
             )}
           </div>
         )}

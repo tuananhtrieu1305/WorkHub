@@ -2,6 +2,7 @@ import path from "node:path";
 import User from "../models/User.js";
 import Conversation from "../models/Conversation.js";
 import OrganizationMember from "../models/OrganizationMember.js";
+import OrganizationRole from "../models/OrganizationRole.js";
 import Project from "../models/Project.js";
 import UserPreference from "../models/UserPreference.js";
 import ActivityLog from "../models/ActivityLog.js";
@@ -18,7 +19,10 @@ import {
   getR2StorageService,
 } from "../services/r2StorageService.js";
 import { contentDisposition } from "../utils/fileResponse.js";
-import { buildUserOrganizationContext } from "../services/organizationService.js";
+import {
+  buildUserOrganizationContext,
+  getRoleDefinition,
+} from "../services/organizationService.js";
 import { getConversationRoomName } from "../utils/conversationRealtime.js";
 
 let ioInstance = null;
@@ -292,6 +296,56 @@ const formatProjectSummary = (project) => ({
   status: project.status,
 });
 
+export const formatScopedProfileRole = (membership, role = null) => {
+  if (!membership) return null;
+
+  const definition = getRoleDefinition(membership.role, role);
+
+  return {
+    key: definition.key,
+    name: definition.name,
+    description: definition.description,
+    color: definition.color,
+    isSystem: definition.isSystem,
+    status: membership.status,
+    joinedAt: membership.joinedAt || null,
+  };
+};
+
+const buildScopedProfileRoles = async (userId, organizationId) => {
+  if (!userId || !organizationId) return [];
+
+  const membership = await OrganizationMember.findOne({
+    organizationId,
+    userId,
+    status: "active",
+  });
+
+  if (!membership) return [];
+
+  const role = await OrganizationRole.findOne({
+    organizationId,
+    key: membership.role,
+    archivedAt: null,
+  });
+
+  return [formatScopedProfileRole(membership, role)].filter(Boolean);
+};
+
+const buildActiveOrganizationRole = (activeOrganization) => {
+  if (!activeOrganization?.role) return null;
+
+  return {
+    key: activeOrganization.role,
+    name: activeOrganization.roleLabel || activeOrganization.role,
+    description: "Vai trò trong tổ chức đang hoạt động.",
+    color: activeOrganization.roleColor || "#64748b",
+    isSystem: ["owner", "admin", "member"].includes(activeOrganization.role),
+    status: activeOrganization.memberStatus || "active",
+    joinedAt: activeOrganization.joinedAt || null,
+  };
+};
+
 const emitActivityStatusChanged = async (user) => {
   if (!ioInstance) return;
 
@@ -461,29 +515,46 @@ const normalizeProfileUpdates = (payload = {}, currentUser = {}) => {
   return updates;
 };
 
-const formatUserDetail = (user, projects, organizationContext = {}) => ({
-  id: user._id,
-  _id: user._id,
-  fullName: user.fullName,
-  email: user.email,
-  phone: user.phone,
-  position: user.position,
-  status: user.status,
-  ...getPresenceFields(user),
-  role: user.role,
-  avatar: user.avatar,
-  ...formatProfileFields(user),
-  isVerified: user.isVerified,
-  authProvider: user.authProvider,
-  projects: projects
-    ? projects.map(formatProjectSummary)
-    : [],
-  activeOrganizationId: organizationContext.activeOrganization?.id || null,
-  activeOrganization: organizationContext.activeOrganization || null,
-  organizations: organizationContext.organizations || [],
-  createdAt: user.createdAt,
-  updatedAt: user.updatedAt,
-});
+const formatUserDetail = (
+  user,
+  projects,
+  organizationContext = {},
+  { includeOrganizations = true } = {},
+) => {
+  const activeOrganizationRole = buildActiveOrganizationRole(
+    organizationContext.activeOrganization,
+  );
+
+  return {
+    id: user._id,
+    _id: user._id,
+    fullName: user.fullName,
+    email: user.email,
+    phone: user.phone,
+    position: user.position,
+    status: user.status,
+    ...getPresenceFields(user),
+    role: user.role,
+    avatar: user.avatar,
+    ...formatProfileFields(user),
+    isVerified: user.isVerified,
+    authProvider: user.authProvider,
+    projects: projects ? projects.map(formatProjectSummary) : [],
+    activeOrganizationId: organizationContext.activeOrganization?.id || null,
+    activeOrganization: organizationContext.activeOrganization || null,
+    organizations: includeOrganizations
+      ? organizationContext.organizations || []
+      : [],
+    pendingOrganizations: includeOrganizations
+      ? organizationContext.pendingOrganizations || []
+      : [],
+    organizationRoles:
+      organizationContext.organizationRoles ||
+      (activeOrganizationRole ? [activeOrganizationRole] : []),
+    createdAt: user.createdAt,
+    updatedAt: user.updatedAt,
+  };
+};
 
 export const getUsers = async (req, res) => {
   try {
@@ -667,18 +738,43 @@ export const getUserById = async (req, res) => {
       return res.status(404).json({ message: "User not found" });
     }
 
-    const projects = await Project.find({
+    const isCurrentUser = String(req.user._id) === String(user._id);
+    const projectQuery = {
       "members.userId": user._id,
-    }).select("_id name description status");
+    };
 
-    const organizationContext = await buildUserOrganizationContext(user, {
-      baseUrl: process.env.FRONTEND_URL || `${req.protocol}://${req.get("host")}`,
-      persistFallback: true,
-    });
+    if (!isCurrentUser) {
+      if (!req.organizationId) {
+        projectQuery._id = { $exists: false };
+      } else {
+        projectQuery.organizationId = req.organizationId;
+      }
+    }
+
+    const projects = await Project.find(projectQuery).select(
+      "_id name description status",
+    );
+
+    const organizationContext = isCurrentUser
+      ? await buildUserOrganizationContext(user, {
+          baseUrl:
+            process.env.FRONTEND_URL || `${req.protocol}://${req.get("host")}`,
+          persistFallback: true,
+        })
+      : {
+          organizationRoles: await buildScopedProfileRoles(
+            user._id,
+            req.organizationId,
+          ),
+        };
 
     res
       .status(200)
-      .json(formatUserDetail(user, projects, organizationContext));
+      .json(
+        formatUserDetail(user, projects, organizationContext, {
+          includeOrganizations: isCurrentUser,
+        }),
+      );
   } catch (error) {
     console.error("GetUserById error:", error.message);
     if (error.kind === "ObjectId") {

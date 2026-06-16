@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { formatDate, hasPermission } from "../organizationUtils";
 import Icon from "./Icon";
 import MemberAvatar from "./MemberAvatar";
+import { TableRowsSkeleton } from "../../../components/common/Skeleton";
 
 const SECOND_MS = 1000;
 
@@ -158,14 +159,7 @@ const OrganizationInvitesSection = ({
                 </thead>
                 <tbody className="divide-y divide-slate-100 bg-white">
                   {isLoadingJoinRequests ? (
-                    [0, 1, 2].map((item) => (
-                      <tr key={item}>
-                        <td
-                          colSpan={5}
-                          className="h-20 animate-pulse bg-slate-50"
-                        />
-                      </tr>
-                    ))
+                    <TableRowsSkeleton rows={3} columns={5} colSpan={5} />
                   ) : joinRequests.length ? (
                     joinRequests.map((request) => (
                       <tr
@@ -336,11 +330,7 @@ const OrganizationInvitesSection = ({
             </thead>
             <tbody className="divide-y divide-slate-100 bg-white">
               {isLoading ? (
-                [0, 1, 2].map((item) => (
-                  <tr key={item}>
-                    <td colSpan={6} className="h-20 animate-pulse bg-slate-50" />
-                  </tr>
-                ))
+                <TableRowsSkeleton rows={3} columns={6} colSpan={6} />
               ) : visibleInvites.length ? (
                 visibleInvites.map((invite) => {
                   const expiresAt = toTime(invite.expiresAt);

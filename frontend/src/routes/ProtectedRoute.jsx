@@ -1,17 +1,13 @@
 import { Navigate, useLocation } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
+import { RoutePageSkeleton } from "../components/common/Skeleton";
 
 const ProtectedRoute = ({ children }) => {
   const { user, loading } = useAuth();
   const location = useLocation();
 
   if (loading) {
-    return (
-      <div className="route-loading-screen">
-        <div className="route-loading-spinner" />
-        <p>Đang tải...</p>
-      </div>
-    );
+    return <RoutePageSkeleton />;
   }
 
   if (!user) {

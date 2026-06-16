@@ -5,6 +5,7 @@ import UserProfileModal from "../../profile/UserProfileModal";
 import { roleLabels } from "../organizationUtils";
 import Icon from "./Icon";
 import MemberAvatar from "./MemberAvatar";
+import { PanelListSkeleton } from "../../../components/common/Skeleton";
 
 const getMemberUserId = (member = {}) =>
   String(member.user?._id || member.user?.id || member.userId || "");
@@ -92,15 +93,7 @@ const OrganizationMembersPanel = ({
 
     <div className="mt-4 overflow-hidden rounded-2xl ring-1 ring-slate-200">
       {isLoadingMembers ? (
-        <div className="grid gap-0 divide-y divide-slate-100">
-          {[0, 1, 2].map((item) => (
-            <div key={item} className="flex items-center gap-3 px-4 py-4">
-              <span className="size-10 animate-pulse rounded-xl bg-slate-100" />
-              <span className="h-4 flex-1 animate-pulse rounded bg-slate-100" />
-              <span className="h-7 w-20 animate-pulse rounded-lg bg-slate-100" />
-            </div>
-          ))}
-        </div>
+        <PanelListSkeleton count={3} />
       ) : (
         <div className="divide-y divide-slate-100">
           {activeMembers.map((member) => (

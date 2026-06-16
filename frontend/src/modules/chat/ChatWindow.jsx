@@ -20,6 +20,7 @@ import {
 import ActivityStatusIcon from "./ActivityStatusIcon";
 import { buildMessageTimeline } from "./messageTimeline";
 import { getMessagePreviewText } from "./chatMessagePreview";
+import { MessageThreadSkeleton } from "../../components/common/Skeleton";
 
 const getComparableId = (value) => {
   if (value == null) return "";
@@ -961,11 +962,8 @@ const ChatWindow = ({
         className="chat-messages-pane chat-messages-scroll flex flex-1 flex-col overflow-y-auto px-4 py-6 sm:px-6"
       >
         {isLoadingMessages ? (
-          <div className="flex-1 flex flex-col items-center justify-center text-center">
-            <div className="route-loading-spinner mb-3" />
-            <p className="text-sm font-semibold text-slate-600">
-              Đang tải tin nhắn...
-            </p>
+          <div className="flex-1">
+            <MessageThreadSkeleton />
           </div>
         ) : messages.length === 0 ? (
           <div className="flex-1 flex flex-col items-center justify-center text-center">
@@ -987,9 +985,8 @@ const ChatWindow = ({
             className="chat-messages-content flex w-full flex-col"
           >
             {isLoadingOlderMessages && (
-              <div className="mb-3 flex items-center justify-center gap-2 text-xs font-semibold text-slate-500">
-                <span className="h-4 w-4 rounded-full border-2 border-blue-200 border-t-blue-600 animate-spin" />
-                <span>Đang tải tin nhắn cũ...</span>
+              <div className="mb-3">
+                <MessageThreadSkeleton count={2} compact />
               </div>
             )}
             {timelineItems.map((item) => {
