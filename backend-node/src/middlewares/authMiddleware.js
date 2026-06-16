@@ -2,6 +2,8 @@ import jwt from "jsonwebtoken";
 import User from "../models/User.js";
 import Organization from "../models/Organization.js";
 import OrganizationMember from "../models/OrganizationMember.js";
+import OrganizationRole from "../models/OrganizationRole.js";
+import { normalizeRolePermissions } from "../utils/organizationPolicy.js";
 
 const inactiveAccountMessage =
   "Your account is not active. Please contact an administrator.";
@@ -49,10 +51,22 @@ const protect = async (req, res, next) => {
           });
 
           if (organization) {
+            const roleDefinition = await OrganizationRole.findOne({
+              organizationId: requestedOrganizationId,
+              key: membership.role,
+              archivedAt: null,
+            });
+            const permissions = normalizeRolePermissions(
+              membership.role,
+              roleDefinition?.permissions,
+            );
             req.organizationId = organization._id;
             req.organization = organization;
             req.organizationMembership = membership;
+            req.organizationMembership.permissions = permissions;
             req.user.activeOrganizationId = organization._id;
+            req.user.activeOrganizationRole = membership.role;
+            req.user.activeOrganizationPermissions = permissions;
           }
         }
       }

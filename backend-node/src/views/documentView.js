@@ -7,18 +7,24 @@ import {
   deleteDocument,
   downloadDocument,
   downloadSharedDocument,
+  getDocumentStats,
   getDocument,
+  listDocuments,
   listDocumentVersions,
   previewDocument,
   previewDocumentVersion,
   previewSharedDocument,
   updateDocument,
+  uploadDocumentToPortal,
   uploadDocumentVersion,
 } from "../presenters/documentPresenter.js";
 
 const router = express.Router();
 const shareRouter = express.Router();
 
+router.get("/", protect, asyncHandler(listDocuments));
+router.post("/", protect, uploadSingleDocument, asyncHandler(uploadDocumentToPortal));
+router.get("/stats", protect, asyncHandler(getDocumentStats));
 router.get("/:id", protect, asyncHandler(getDocument));
 router.put("/:id", protect, asyncHandler(updateDocument));
 router.delete("/:id", protect, asyncHandler(deleteDocument));

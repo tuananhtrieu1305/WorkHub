@@ -16,6 +16,10 @@ export const permissionLabels = {
   manageSettings: "Cài đặt nâng cao",
   createInvites: "Tạo lời mời",
   pauseInvites: "Tạm dừng lời mời",
+  viewDocumentInsights: "Xem thống kê tài liệu",
+  manageDocuments: "Quản lý mọi tài liệu",
+  manageDocumentFolders: "Quản lý thư mục tài liệu",
+  shareDocuments: "Tạo liên kết chia sẻ tài liệu",
 };
 
 export const notificationOptions = [

@@ -69,6 +69,10 @@ const folderSchema = new Schema(
         default: [],
       },
     },
+    isDefaultPortalFolder: {
+      type: Boolean,
+      default: false,
+    },
     deletedAt: {
       type: Date,
       default: null,
@@ -80,6 +84,7 @@ const folderSchema = new Schema(
 );
 
 folderSchema.index({ organizationId: 1, parentId: 1, deletedAt: 1 });
+folderSchema.index({ organizationId: 1, isDefaultPortalFolder: 1, deletedAt: 1 });
 folderSchema.index({ ownerId: 1 });
 
 const Folder = mongoose.model("Folder", folderSchema);

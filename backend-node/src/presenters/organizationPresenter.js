@@ -15,6 +15,7 @@ import {
 import { logActivity } from "../services/activityLogService.js";
 import { contentDisposition } from "../utils/fileResponse.js";
 import {
+  ORGANIZATION_PERMISSION_KEYS,
   hasOrganizationPermission,
   normalizeInviteCode,
   normalizeRoleKey,
@@ -582,17 +583,7 @@ export const getOrganizationRoleList = async (req, res) => {
   res.json({
     content: roles.map(serializeOrganizationRole),
     canManageRoles,
-    permissionKeys: [
-      "viewOverview",
-      "viewMembers",
-      "manageOrganization",
-      "manageMembers",
-      "manageRoles",
-      "manageInvites",
-      "manageSettings",
-      "createInvites",
-      "pauseInvites",
-    ],
+    permissionKeys: ORGANIZATION_PERMISSION_KEYS,
   });
 };
 

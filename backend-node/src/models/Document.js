@@ -33,6 +33,25 @@ const documentSchema = new Schema(
       maxlength: 2000,
       default: "",
     },
+    category: {
+      type: String,
+      enum: [
+        "general",
+        "policy",
+        "report",
+        "contract",
+        "design",
+        "finance",
+        "technical",
+        "other",
+      ],
+      default: "general",
+      required: true,
+    },
+    tags: {
+      type: [String],
+      default: [],
+    },
     folderId: {
       type: Schema.Types.ObjectId,
       ref: "Folder",
@@ -100,6 +119,20 @@ const documentSchema = new Schema(
         default: [],
       },
     },
+    previewCount: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
+    downloadCount: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
+    lastAccessedAt: {
+      type: Date,
+      default: null,
+    },
     deletedAt: {
       type: Date,
       default: null,
@@ -111,6 +144,7 @@ const documentSchema = new Schema(
 );
 
 documentSchema.index({ organizationId: 1, folderId: 1, status: 1, deletedAt: 1 });
+documentSchema.index({ organizationId: 1, updatedAt: -1 });
 documentSchema.index({ ownerId: 1 });
 documentSchema.index({ currentVersionId: 1 });
 documentSchema.index(

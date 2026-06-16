@@ -10,6 +10,10 @@ export const ORGANIZATION_PERMISSION_KEYS = [
   "manageSettings",
   "createInvites",
   "pauseInvites",
+  "viewDocumentInsights",
+  "manageDocuments",
+  "manageDocumentFolders",
+  "shareDocuments",
 ];
 
 export const DEFAULT_ORGANIZATION_ACCENT_COLOR = "#2563eb";
@@ -51,6 +55,10 @@ export const DEFAULT_ORGANIZATION_ROLES = [
       manageSettings: true,
       createInvites: true,
       pauseInvites: true,
+      viewDocumentInsights: true,
+      manageDocuments: true,
+      manageDocumentFolders: true,
+      shareDocuments: true,
     },
   },
   {
@@ -70,6 +78,10 @@ export const DEFAULT_ORGANIZATION_ROLES = [
       manageSettings: true,
       createInvites: true,
       pauseInvites: true,
+      viewDocumentInsights: true,
+      manageDocuments: true,
+      manageDocumentFolders: true,
+      shareDocuments: true,
     },
   },
   {
@@ -90,6 +102,10 @@ export const DEFAULT_ORGANIZATION_ROLES = [
       manageSettings: false,
       createInvites: true,
       pauseInvites: false,
+      viewDocumentInsights: false,
+      manageDocuments: false,
+      manageDocumentFolders: false,
+      shareDocuments: false,
     },
   },
 ];

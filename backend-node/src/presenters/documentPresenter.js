@@ -35,6 +35,213 @@ const hashToken = (token) => {
   return crypto.createHash("sha256").update(token).digest("hex");
 };
 
+const DOCUMENT_CATEGORIES = new Set([
+  "general",
+  "policy",
+  "report",
+  "contract",
+  "design",
+  "finance",
+  "technical",
+  "other",
+]);
+
+const toId = (value) => {
+  if (!value) return "";
+  return String(value._id || value.id || value);
+};
+
+const parsePage = (value, fallback) => {
+  const parsed = Number.parseInt(value, 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+};
+
+const escapeRegExp = (value = "") =>
+  String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+const normalizeDocumentCategory = (value) => {
+  const category = String(value || "").trim().toLowerCase();
+  return DOCUMENT_CATEGORIES.has(category) ? category : "general";
+};
+
+const normalizeDocumentTags = (value) => {
+  const raw = (() => {
+    if (Array.isArray(value)) return value;
+    if (typeof value !== "string") return [];
+    const trimmed = value.trim();
+    if (!trimmed) return [];
+    try {
+      const parsed = JSON.parse(trimmed);
+      if (Array.isArray(parsed)) return parsed;
+    } catch {
+      return trimmed.split(",");
+    }
+    return [];
+  })();
+
+  return [
+    ...new Set(
+      raw
+        .map((tag) => String(tag || "").trim().replace(/\s+/g, " ").slice(0, 40))
+        .filter(Boolean),
+    ),
+  ].slice(0, 12);
+};
+
+const readableDocumentScope = (user) => {
+  if (permission.canManageAllDocuments(user)) return null;
+
+  const userId = toId(user?._id);
+  return {
+    $or: [
+      { ownerId: userId },
+      { createdBy: userId },
+      { "permissions.visibility": "organization" },
+      {
+        "permissions.users": {
+          $elemMatch: {
+            userId,
+            role: { $in: ["viewer", "editor"] },
+          },
+        },
+      },
+    ],
+  };
+};
+
+const getDocumentSort = (sort = "recent") => {
+  switch (sort) {
+    case "name":
+      return { name: 1 };
+    case "oldest":
+      return { updatedAt: 1 };
+    case "created":
+      return { createdAt: -1 };
+    default:
+      return { updatedAt: -1 };
+  }
+};
+
+const getVersionPayload = (version) => {
+  const item = version?.toObject?.() || version;
+  if (!item) return null;
+  return {
+    id: toId(item._id),
+    versionNumber: item.versionNumber,
+    originalName: item.originalName,
+    mimeType: item.mimeType,
+    extension: item.extension,
+    size: item.size,
+    checksum: item.checksum,
+    scanStatus: item.scanStatus,
+    uploadedBy: toId(item.uploadedBy),
+    createdAt: item.createdAt,
+    updatedAt: item.updatedAt,
+  };
+};
+
+const getUserPayload = (user) => {
+  const item = user?.toObject?.() || user;
+  if (!item) return null;
+  return {
+    id: toId(item._id),
+    fullName: item.fullName || "",
+    email: item.email || "",
+    avatar: item.avatar || "",
+    position: item.position || "",
+  };
+};
+
+const getFolderPayload = (folder) => {
+  const item = folder?.toObject?.() || folder;
+  if (!item) return null;
+  return {
+    id: toId(item._id),
+    name: item.name || "",
+    parentId: toId(item.parentId) || null,
+    isDefaultPortalFolder: Boolean(item.isDefaultPortalFolder),
+  };
+};
+
+const serializeDocument = (document, user) => {
+  const item = document?.toObject?.() || document;
+  const version = getVersionPayload(item.currentVersionId);
+  return {
+    id: toId(item._id),
+    name: item.name,
+    description: item.description || "",
+    category: item.category || "general",
+    tags: item.tags || [],
+    folderId: toId(item.folderId?._id || item.folderId),
+    organizationId: toId(item.organizationId),
+    ownerId: toId(item.ownerId?._id || item.ownerId),
+    createdBy: toId(item.createdBy?._id || item.createdBy),
+    updatedBy: toId(item.updatedBy?._id || item.updatedBy),
+    status: item.status,
+    currentVersion: version,
+    versionCounter: item.versionCounter || version?.versionNumber || 0,
+    permissions: item.permissions || {},
+    previewCount: item.previewCount || 0,
+    downloadCount: item.downloadCount || 0,
+    lastAccessedAt: item.lastAccessedAt || null,
+    owner: getUserPayload(item.ownerId),
+    creator: getUserPayload(item.createdBy),
+    folder: getFolderPayload(item.folderId),
+    createdAt: item.createdAt,
+    updatedAt: item.updatedAt,
+    capabilities: {
+      canRead: permission.canRead(user, item),
+      canEdit: permission.canEdit(user, item),
+      canDelete: permission.canDelete(user, item),
+      canShare: permission.canShare(user, item),
+      canUploadVersion: permission.canEdit(user, item),
+    },
+  };
+};
+
+const ensureDefaultPortalFolder = async (req) => {
+  const organizationId = getRequestOrganizationId(req);
+  if (!organizationId) {
+    throw new ApiError(
+      409,
+      "Please create or join an organization before uploading documents",
+      "NO_ACTIVE_ORGANIZATION",
+    );
+  }
+
+  const existing = await Folder.findOne({
+    organizationId,
+    isDefaultPortalFolder: true,
+    deletedAt: null,
+  });
+  if (existing) return existing;
+
+  return Folder.create({
+    name: "Tài liệu chung",
+    organizationId,
+    parentId: null,
+    ownerId: req.organization?.ownerId || req.user._id,
+    createdBy: req.user._id,
+    permissions: {
+      visibility: "organization",
+      users: [],
+    },
+    isDefaultPortalFolder: true,
+  });
+};
+
+const resolveUploadFolder = async (req) => {
+  const folderId = req.body.folderId || req.query.folderId;
+  if (!folderId) return ensureDefaultPortalFolder(req);
+
+  const folder = await Folder.findById(folderId);
+  if (!folder || folder.deletedAt) {
+    throw new ApiError(404, "Folder not found");
+  }
+  assertResourceInActiveOrganization(req, folder, "Folder");
+  return folder;
+};
+
 const assertDocumentReadable = (user, document) => {
   if (!document || document.deletedAt || document.status === "deleted") {
     throw new ApiError(404, "Document not found");
@@ -107,9 +314,15 @@ export const uploadDocumentToFolder = async (req, res) => {
         organizationId: getRequestOrganizationId(req),
         createdBy: req.user._id,
         idempotencyKey,
-      });
+      })
+        .populate("ownerId", "_id fullName email avatar position")
+        .populate("createdBy", "_id fullName email avatar position")
+        .populate("folderId", "_id name parentId isDefaultPortalFolder")
+        .populate("currentVersionId");
       if (existing) {
-        return res.status(existing.status === "active" ? 200 : 202).json(existing);
+        return res
+          .status(existing.status === "active" ? 200 : 202)
+          .json(serializeDocument(existing, req.user));
       }
     }
 
@@ -117,6 +330,8 @@ export const uploadDocumentToFolder = async (req, res) => {
     document = await Document.create({
       name: validation.safeName,
       description: req.body.description || "",
+      category: normalizeDocumentCategory(req.body.category),
+      tags: normalizeDocumentTags(req.body.tags),
       folderId: folder._id,
       organizationId: folder.organizationId,
       ownerId: req.user._id,
@@ -192,7 +407,13 @@ export const uploadDocumentToFolder = async (req, res) => {
       await session.endSession();
     }
 
-    return res.status(201).json(document);
+    const responseDocument = await Document.findById(document._id)
+      .populate("ownerId", "_id fullName email avatar position")
+      .populate("createdBy", "_id fullName email avatar position")
+      .populate("folderId", "_id name parentId isDefaultPortalFolder")
+      .populate("currentVersionId");
+
+    return res.status(201).json(serializeDocument(responseDocument, req.user));
   } catch (error) {
     if (document?._id) {
       await Document.findByIdAndUpdate(document._id, { status: "failed" }).catch(() => {});
@@ -203,15 +424,233 @@ export const uploadDocumentToFolder = async (req, res) => {
   }
 };
 
+export const uploadDocumentToPortal = async (req, res) => {
+  let folderResolved = false;
+  try {
+    const folder = await resolveUploadFolder(req);
+    folderResolved = true;
+    req.params.id = folder._id.toString();
+    return uploadDocumentToFolder(req, res);
+  } catch (error) {
+    if (!folderResolved) {
+      await cleanupTempFile(req.file);
+    }
+    throw error;
+  }
+};
+
+export const listDocuments = async (req, res) => {
+  const organizationId = getRequestOrganizationId(req);
+  if (!organizationId) {
+    return res.json({
+      content: [],
+      totalElements: 0,
+      totalPages: 0,
+      currentPage: 1,
+      pageSize: parsePage(req.query.size, 24),
+      capabilities: {
+        canUpload: false,
+        canViewInsights: false,
+        canManageFolders: false,
+        canManageAllDocuments: false,
+      },
+    });
+  }
+
+  const page = parsePage(req.query.page, 1);
+  const size = Math.min(parsePage(req.query.size, 24), 100);
+  const query = {
+    organizationId,
+    deletedAt: null,
+    status: { $ne: "deleted" },
+  };
+  const andClauses = [];
+  const readableScope = readableDocumentScope(req.user);
+
+  if (readableScope) andClauses.push(readableScope);
+  if (req.query.folderId) query.folderId = req.query.folderId;
+  if (req.query.status && req.query.status !== "all") query.status = req.query.status;
+  if (req.query.category && req.query.category !== "all") {
+    query.category = normalizeDocumentCategory(req.query.category);
+  }
+  if (req.query.owner === "mine") {
+    query.ownerId = req.user._id;
+  }
+  if (req.query.extension && req.query.extension !== "all") {
+    andClauses.push({
+      currentVersionId: {
+        $in: await DocumentVersion.find({
+          extension: String(req.query.extension).toLowerCase(),
+        }).distinct("_id"),
+      },
+    });
+  }
+
+  const search = String(req.query.search || "").trim();
+  if (search) {
+    const expression = new RegExp(escapeRegExp(search), "i");
+    andClauses.push({
+      $or: [
+        { name: expression },
+        { description: expression },
+        { category: expression },
+        { tags: expression },
+      ],
+    });
+  }
+  if (andClauses.length) query.$and = andClauses;
+
+  const [documents, totalElements] = await Promise.all([
+    Document.find(query)
+      .populate("ownerId", "_id fullName email avatar position")
+      .populate("createdBy", "_id fullName email avatar position")
+      .populate("folderId", "_id name parentId isDefaultPortalFolder")
+      .populate("currentVersionId")
+      .sort(getDocumentSort(req.query.sort))
+      .skip((page - 1) * size)
+      .limit(size),
+    Document.countDocuments(query),
+  ]);
+
+  res.json({
+    content: documents.map((document) => serializeDocument(document, req.user)),
+    totalElements,
+    totalPages: Math.ceil(totalElements / size),
+    currentPage: page,
+    pageSize: size,
+    capabilities: {
+      canUpload: true,
+      canViewInsights: permission.canViewDocumentInsights(req.user),
+      canManageFolders: permission.canManageDocumentPortal(req.user),
+      canManageAllDocuments: permission.canManageAllDocuments(req.user),
+    },
+  });
+};
+
+export const getDocumentStats = async (req, res) => {
+  const organizationId = getRequestOrganizationId(req);
+  if (!organizationId) {
+    throw new ApiError(
+      409,
+      "Please create or join an organization before viewing document stats",
+      "NO_ACTIVE_ORGANIZATION",
+    );
+  }
+  if (!permission.canViewDocumentInsights(req.user)) {
+    throw new ApiError(403, "You cannot view document statistics");
+  }
+
+  const documents = await Document.find({
+    organizationId,
+    deletedAt: null,
+    status: { $ne: "deleted" },
+  })
+    .populate("ownerId", "_id fullName email avatar position")
+    .populate("folderId", "_id name parentId isDefaultPortalFolder")
+    .populate("currentVersionId")
+    .sort({ updatedAt: -1 });
+
+  const folders = await Folder.find({ organizationId, deletedAt: null });
+  const categoryCounts = new Map();
+  const statusCounts = new Map();
+  const extensionCounts = new Map();
+  const uploaderMap = new Map();
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const dayMs = 24 * 60 * 60 * 1000;
+  const activityMap = new Map();
+  let storageBytes = 0;
+  let downloads = 0;
+  let previews = 0;
+
+  documents.forEach((document) => {
+    const doc = document.toObject();
+    const version = doc.currentVersionId || {};
+    storageBytes += Number(version.size || 0);
+    downloads += Number(doc.downloadCount || 0);
+    previews += Number(doc.previewCount || 0);
+    categoryCounts.set(doc.category || "general", (categoryCounts.get(doc.category || "general") || 0) + 1);
+    statusCounts.set(doc.status || "unknown", (statusCounts.get(doc.status || "unknown") || 0) + 1);
+    const extension = version.extension || "other";
+    extensionCounts.set(extension, (extensionCounts.get(extension) || 0) + 1);
+
+    const ownerId = toId(doc.ownerId?._id || doc.ownerId);
+    if (ownerId) {
+      const existing = uploaderMap.get(ownerId) || {
+        owner: getUserPayload(doc.ownerId),
+        documents: 0,
+        storageBytes: 0,
+      };
+      existing.documents += 1;
+      existing.storageBytes += Number(version.size || 0);
+      uploaderMap.set(ownerId, existing);
+    }
+
+    const createdAt = new Date(doc.createdAt);
+    if (Number.isFinite(createdAt.getTime())) {
+      const key = createdAt.toISOString().slice(0, 10);
+      activityMap.set(key, (activityMap.get(key) || 0) + 1);
+    }
+  });
+
+  const trend = Array.from({ length: 14 }, (_, index) => {
+    const date = new Date(today.getTime() - (13 - index) * dayMs);
+    const key = date.toISOString().slice(0, 10);
+    return {
+      key,
+      label: date.toLocaleDateString("vi-VN", {
+        day: "2-digit",
+        month: "2-digit",
+      }),
+      value: activityMap.get(key) || 0,
+    };
+  });
+
+  res.json({
+    summary: {
+      totalDocuments: documents.length,
+      totalFolders: folders.length,
+      storageBytes,
+      downloads,
+      previews,
+      activeDocuments: statusCounts.get("active") || 0,
+      failedDocuments: statusCounts.get("failed") || 0,
+      uploadingDocuments: statusCounts.get("uploading") || 0,
+    },
+    categories: Array.from(categoryCounts, ([key, value]) => ({ key, value })),
+    statuses: Array.from(statusCounts, ([key, value]) => ({ key, value })),
+    extensions: Array.from(extensionCounts, ([key, value]) => ({ key, value })),
+    trend,
+    topUploaders: Array.from(uploaderMap.values())
+      .sort((a, b) => b.documents - a.documents)
+      .slice(0, 5),
+    recentDocuments: documents
+      .slice(0, 6)
+      .map((document) => serializeDocument(document, req.user)),
+    capabilities: {
+      canViewInsights: true,
+      canManageFolders: permission.canManageDocumentPortal(req.user),
+      canManageAllDocuments: permission.canManageAllDocuments(req.user),
+    },
+  });
+};
+
 export const getDocument = async (req, res) => {
-  const document = await Document.findById(req.params.id);
+  const document = await Document.findById(req.params.id)
+    .populate("ownerId", "_id fullName email avatar position")
+    .populate("createdBy", "_id fullName email avatar position")
+    .populate("folderId", "_id name parentId isDefaultPortalFolder")
+    .populate("currentVersionId");
   assertDocumentReadable(req.user, document);
 
   const versions = await DocumentVersion.find({ documentId: document._id }).sort({
     versionNumber: -1,
   });
 
-  res.json({ ...document.toObject(), versions });
+  res.json({
+    ...serializeDocument(document, req.user),
+    versions: versions.map(getVersionPayload),
+  });
 };
 
 export const updateDocument = async (req, res) => {
@@ -219,15 +658,42 @@ export const updateDocument = async (req, res) => {
   assertDocumentEditable(req.user, document);
 
   const update = { updatedBy: req.user._id };
-  if (req.body.description !== undefined) update.description = req.body.description;
-  if (req.body.name !== undefined) update.name = req.body.name;
+  if (req.body.description !== undefined) {
+    update.description = String(req.body.description || "").trim().slice(0, 2000);
+  }
+  if (req.body.name !== undefined) {
+    const name = String(req.body.name || "").trim();
+    if (!name) throw new ApiError(400, "Document name is required");
+    update.name = name.slice(0, 255);
+  }
+  if (req.body.category !== undefined) {
+    update.category = normalizeDocumentCategory(req.body.category);
+  }
+  if (req.body.tags !== undefined) {
+    update.tags = normalizeDocumentTags(req.body.tags);
+  }
+  if (req.body.folderId !== undefined && req.body.folderId !== toId(document.folderId)) {
+    const folder = await Folder.findById(req.body.folderId);
+    if (!folder || folder.deletedAt) {
+      throw new ApiError(404, "Folder not found");
+    }
+    assertResourceInActiveOrganization(req, folder, "Folder");
+    if (!permission.canUploadToFolder(req.user, folder)) {
+      throw new ApiError(403, "You cannot move documents to this folder");
+    }
+    update.folderId = folder._id;
+  }
 
   const updated = await Document.findByIdAndUpdate(req.params.id, update, {
     new: true,
     runValidators: true,
-  });
+  })
+    .populate("ownerId", "_id fullName email avatar position")
+    .populate("createdBy", "_id fullName email avatar position")
+    .populate("folderId", "_id name parentId isDefaultPortalFolder")
+    .populate("currentVersionId");
 
-  res.json(updated);
+  res.json(serializeDocument(updated, req.user));
 };
 
 export const deleteDocument = async (req, res) => {
@@ -345,6 +811,10 @@ export const downloadDocument = async (req, res) => {
   assertDocumentReadable(req.user, document);
   if (!version) throw new ApiError(404, "Document version not found");
 
+  await Document.findByIdAndUpdate(document._id, {
+    $inc: { downloadCount: 1 },
+    lastAccessedAt: new Date(),
+  });
   await streamVersion({ res, version, dispositionType: "attachment" });
 };
 
@@ -353,6 +823,10 @@ export const previewDocument = async (req, res) => {
   assertDocumentReadable(req.user, document);
   if (!version) throw new ApiError(404, "Document version not found");
 
+  await Document.findByIdAndUpdate(document._id, {
+    $inc: { previewCount: 1 },
+    lastAccessedAt: new Date(),
+  });
   await streamVersion({ res, version, dispositionType: "inline" });
 };
 
@@ -369,7 +843,7 @@ export const previewDocumentVersion = async (req, res) => {
 
 export const createDocumentShare = async (req, res) => {
   const document = await Document.findById(req.params.id);
-  assertDocumentEditable(req.user, document);
+  assertDocumentReadable(req.user, document);
   if (!permission.canShare(req.user, document)) {
     throw new ApiError(403, "You cannot share this document");
   }

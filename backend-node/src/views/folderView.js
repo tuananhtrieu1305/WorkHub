@@ -18,6 +18,7 @@ router.get("/", protect, asyncHandler(listFolders));
 router.post("/", protect, asyncHandler(createFolder));
 router.get("/:id", protect, asyncHandler(getFolder));
 router.put("/:id", protect, asyncHandler(updateFolder));
+router.patch("/:id", protect, asyncHandler(updateFolder));
 router.delete("/:id", protect, asyncHandler(deleteFolder));
 router.get("/:id/documents", protect, asyncHandler(listFolderDocuments));
 router.post(

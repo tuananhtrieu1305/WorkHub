@@ -13,6 +13,10 @@ const organizationRolePermissionsSchema = new Schema(
     manageSettings: { type: Boolean, default: false },
     createInvites: { type: Boolean, default: false },
     pauseInvites: { type: Boolean, default: false },
+    viewDocumentInsights: { type: Boolean, default: false },
+    manageDocuments: { type: Boolean, default: false },
+    manageDocumentFolders: { type: Boolean, default: false },
+    shareDocuments: { type: Boolean, default: false },
   },
   { _id: false },
 );

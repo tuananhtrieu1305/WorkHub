@@ -22,8 +22,6 @@ const parsePage = (value, fallback) => {
 };
 
 const readableDocumentScope = (user) => {
-  if (user?.role === "admin") return null;
-
   const userId = toId(user?._id);
   const clauses = [
     { ownerId: userId },
@@ -103,9 +101,11 @@ export const createFolder = async (req, res) => {
     const parent = await Folder.findById(parentId);
     assertFolderInActiveOrganization(req, parent);
     assertFolderAccess(req.user, parent);
-    if (!permission.canUploadToFolder(req.user, parent)) {
+    if (!permission.canManageFolder(req.user, parent)) {
       throw new ApiError(403, "You cannot create folders here");
     }
+  } else if (!permission.canManageDocumentPortal(req.user)) {
+    throw new ApiError(403, "You cannot create document folders");
   }
 
   const folder = await Folder.create({
@@ -152,7 +152,7 @@ export const updateFolder = async (req, res) => {
   assertFolderInActiveOrganization(req, folder);
   assertFolderAccess(req.user, folder);
 
-  if (!permission.canUploadToFolder(req.user, folder)) {
+  if (!permission.canManageFolder(req.user, folder)) {
     throw new ApiError(403, "You cannot update this folder");
   }
 
@@ -175,7 +175,7 @@ export const deleteFolder = async (req, res) => {
   assertFolderInActiveOrganization(req, folder);
   assertFolderAccess(req.user, folder);
 
-  if (!permission.canUploadToFolder(req.user, folder)) {
+  if (!permission.canManageFolder(req.user, folder)) {
     throw new ApiError(403, "You cannot delete this folder");
   }
 
