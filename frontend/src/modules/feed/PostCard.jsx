@@ -1,8 +1,10 @@
 import { useCallback, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { useAuth } from "../../context/AuthContext";
 import { likePost, deletePost } from "../../api/postApi";
 import CommentSection from "./CommentSection";
 import ReactionPicker from "./ReactionPicker";
+import UserProfileModal from "../profile/UserProfileModal";
 import {
   buildReactionStateFromPost,
   buildOptimisticReactionState,
@@ -25,13 +27,17 @@ const API_URL = import.meta.env.VITE_NODE_API_URL || "http://localhost:5000";
 
 const PostCard = ({ post, onPostDeleted, onPostUpdated }) => {
   const { user } = useAuth();
+  const navigate = useNavigate();
   const [timeReference] = useState(() => Date.now());
   const [showComments, setShowComments] = useState(false);
   const [commentsCount, setCommentsCount] = useState(post.commentsCount || 0);
   const [showMenu, setShowMenu] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [profileModalUser, setProfileModalUser] = useState(null);
 
-  const isAuthor = user?._id === post.author?._id;
+  const currentUserId = String(user?._id || user?.id || "");
+  const authorId = String(post.author?._id || post.author?.id || "");
+  const isAuthor = currentUserId && authorId && currentUserId === authorId;
   const reactionState = buildReactionStateFromPost(post);
 
   const formatTime = (dateStr) => {
@@ -109,6 +115,15 @@ const PostCard = ({ post, onPostDeleted, onPostUpdated }) => {
     setCommentsCount(count);
   }, []);
 
+  const handleOpenAuthorProfile = () => {
+    if (!authorId) return;
+    if (isAuthor) {
+      navigate("/profile");
+      return;
+    }
+    setProfileModalUser(post.author);
+  };
+
   const authorAvatar = getAvatarUrl(post.author?.avatar);
   const authorPosition = post.author?.position || "";
 
@@ -145,7 +160,11 @@ const PostCard = ({ post, onPostDeleted, onPostUpdated }) => {
       <div className="p-4 sm:p-5">
         {/* Header */}
         <div className="mb-4 flex items-center justify-between gap-3">
-          <div className="flex min-w-0 items-center gap-3">
+          <button
+            type="button"
+            onClick={handleOpenAuthorProfile}
+            className="flex min-w-0 items-center gap-3 rounded-xl text-left transition hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-blue-300"
+          >
             {authorAvatar ? (
               <img
                 src={authorAvatar}
@@ -167,7 +186,7 @@ const PostCard = ({ post, onPostDeleted, onPostUpdated }) => {
                 {formatTime(post.createdAt)}
               </p>
             </div>
-          </div>
+          </button>
 
           <div className="relative">
             <button
@@ -359,6 +378,12 @@ const PostCard = ({ post, onPostDeleted, onPostUpdated }) => {
           onCommentCountChange={handleCommentCountChange}
         />
       )}
+      <UserProfileModal
+        open={Boolean(profileModalUser)}
+        userId={profileModalUser?._id || profileModalUser?.id}
+        userPreview={profileModalUser}
+        onClose={() => setProfileModalUser(null)}
+      />
     </article>
   );
 };

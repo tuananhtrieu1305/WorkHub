@@ -30,6 +30,21 @@ export const updateMyAvatar = async (formData) => {
   return data;
 };
 
+export const updateMyProfileBanner = async (file) => {
+  const formData = new FormData();
+  formData.append("banner", file);
+  const { data } = await axiosClient.patch(
+    "/users/me/profile-banner",
+    formData,
+  );
+  return data;
+};
+
+export const deleteMyProfileBanner = async () => {
+  const { data } = await axiosClient.delete("/users/me/profile-banner");
+  return data;
+};
+
 export const searchUsers = async (params = {}) => {
   const { data } = await axiosClient.get("/users/search", { params });
   return data;

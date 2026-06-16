@@ -1,6 +1,63 @@
 import mongoose from "mongoose";
 import bcrypt from "bcryptjs";
 
+const profileLinkSchema = new mongoose.Schema(
+  {
+    label: {
+      type: String,
+      trim: true,
+      maxlength: [80, "Link label must be at most 80 characters"],
+      default: "",
+    },
+    url: {
+      type: String,
+      trim: true,
+      maxlength: [500, "Link URL must be at most 500 characters"],
+      default: "",
+    },
+    type: {
+      type: String,
+      enum: ["website", "blog", "portfolio", "social", "app", "other"],
+      default: "other",
+    },
+  },
+  { _id: false },
+);
+
+const profileThemeSchema = new mongoose.Schema(
+  {
+    useBannerImage: {
+      type: Boolean,
+      default: true,
+    },
+    preset: {
+      type: String,
+      trim: true,
+      maxlength: 40,
+      default: "aurora",
+    },
+    accentColor: {
+      type: String,
+      trim: true,
+      maxlength: 16,
+      default: "#0f766e",
+    },
+    backgroundColor: {
+      type: String,
+      trim: true,
+      maxlength: 16,
+      default: "#ccfbf1",
+    },
+    textColor: {
+      type: String,
+      trim: true,
+      maxlength: 16,
+      default: "#134e4a",
+    },
+  },
+  { _id: false },
+);
+
 const userSchema = new mongoose.Schema(
   {
     fullName: {
@@ -55,6 +112,72 @@ const userSchema = new mongoose.Schema(
     position: {
       type: String,
       default: "",
+    },
+    bio: {
+      type: String,
+      trim: true,
+      maxlength: [160, "Bio must be at most 160 characters"],
+      default: "",
+    },
+    about: {
+      type: String,
+      trim: true,
+      maxlength: [1500, "About must be at most 1500 characters"],
+      default: "",
+    },
+    location: {
+      type: String,
+      trim: true,
+      maxlength: [120, "Location must be at most 120 characters"],
+      default: "",
+    },
+    birthday: {
+      type: Date,
+      default: null,
+    },
+    pronouns: {
+      type: String,
+      trim: true,
+      maxlength: [80, "Pronouns must be at most 80 characters"],
+      default: "",
+    },
+    education: {
+      type: String,
+      trim: true,
+      maxlength: [300, "Education must be at most 300 characters"],
+      default: "",
+    },
+    interests: {
+      type: [String],
+      default: [],
+      validate: {
+        validator: (items) =>
+          items.length <= 20 && items.every((item) => item.length <= 60),
+        message: "Interests must contain at most 20 items under 60 characters",
+      },
+    },
+    socialLinks: {
+      type: [profileLinkSchema],
+      default: [],
+      validate: {
+        validator: (links) => links.length <= 10,
+        message: "Profile links must contain at most 10 items",
+      },
+    },
+    profileBannerUrl: {
+      type: String,
+      trim: true,
+      default: "",
+    },
+    profileBannerStorageKey: {
+      type: String,
+      trim: true,
+      default: "",
+      select: false,
+    },
+    profileTheme: {
+      type: profileThemeSchema,
+      default: () => ({}),
     },
     activeOrganizationId: {
       type: mongoose.Schema.Types.ObjectId,

@@ -59,6 +59,15 @@ export const buildR2AvatarKey = (userId, filename) => {
   return `avatars/${userId}/${timestamp}-${filename}`;
 };
 
+export const buildR2ProfileBannerKey = (userId, filename) => {
+  if (!userId) {
+    throw new Error("userId is required to build profile banner R2 key");
+  }
+
+  const timestamp = Date.now();
+  return `profiles/${userId}/banners/${timestamp}-${filename}`;
+};
+
 export const buildR2OrganizationLogoKey = (organizationId, filename) => {
   if (!organizationId) {
     throw new Error("organizationId is required to build organization logo R2 key");

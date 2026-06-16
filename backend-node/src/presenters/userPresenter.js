@@ -1,3 +1,4 @@
+import path from "node:path";
 import User from "../models/User.js";
 import Conversation from "../models/Conversation.js";
 import OrganizationMember from "../models/OrganizationMember.js";
@@ -5,16 +6,15 @@ import Project from "../models/Project.js";
 import UserPreference from "../models/UserPreference.js";
 import ActivityLog from "../models/ActivityLog.js";
 import { pipeline } from "stream/promises";
-import generateToken from "../utils/generateToken.js";
-import generateRefreshToken from "../utils/generateRefreshToken.js";
+import { fileTypeFromBuffer } from "file-type";
 import {
   activityStatuses,
   buildPresencePayload,
   getPresenceFields,
-  normalizeActivityStatus,
 } from "../services/presenceService.js";
 import {
   buildR2AvatarKey,
+  buildR2ProfileBannerKey,
   getR2StorageService,
 } from "../services/r2StorageService.js";
 import { contentDisposition } from "../utils/fileResponse.js";
@@ -24,6 +24,32 @@ import { getConversationRoomName } from "../utils/conversationRealtime.js";
 let ioInstance = null;
 const activityStatusExpiryTimers = new Map();
 const AVATAR_R2_PREFIX = "avatars/";
+const PROFILE_BANNER_R2_PREFIX = "profiles/";
+const PROFILE_BANNER_R2_SEGMENT = "/banners/";
+const ALLOWED_PROFILE_IMAGE_MIMES = new Set([
+  "image/jpeg",
+  "image/png",
+  "image/gif",
+  "image/webp",
+]);
+const ALLOWED_PROFILE_IMAGE_EXTENSIONS = new Set([
+  ".jpg",
+  ".jpeg",
+  ".png",
+  ".gif",
+  ".webp",
+]);
+const MAX_AVATAR_SIZE_BYTES = 5 * 1024 * 1024;
+const MAX_PROFILE_BANNER_SIZE_BYTES = 8 * 1024 * 1024;
+const HEX_COLOR_REGEX = /^#[0-9a-fA-F]{6}$/;
+const PROFILE_LINK_TYPES = new Set([
+  "website",
+  "blog",
+  "portfolio",
+  "social",
+  "app",
+  "other",
+]);
 
 export const setUserIo = (io) => {
   ioInstance = io;
@@ -37,17 +63,30 @@ const getSingleString = (value, fallback = "") => {
 const isAvatarStorageKey = (storageKey = "") =>
   storageKey.startsWith(AVATAR_R2_PREFIX);
 
+const isProfileBannerStorageKey = (storageKey = "") =>
+  storageKey.startsWith(PROFILE_BANNER_R2_PREFIX) &&
+  storageKey.includes(PROFILE_BANNER_R2_SEGMENT);
+
 export const buildAvatarProxyUrl = (storageKey) => {
   if (!isAvatarStorageKey(storageKey)) return "";
   const params = new URLSearchParams({ key: storageKey });
   return `/api/users/avatars?${params.toString()}`;
 };
 
+export const buildProfileBannerProxyUrl = (storageKey) => {
+  if (!isProfileBannerStorageKey(storageKey)) return "";
+  const params = new URLSearchParams({ key: storageKey });
+  return `/api/users/profile-banners?${params.toString()}`;
+};
+
 const extractAvatarStorageKeyFromUrl = (avatarUrl = "") => {
-  if (!avatarUrl || !String(avatarUrl).startsWith("http")) return "";
+  if (!avatarUrl) return "";
 
   try {
-    const url = new URL(avatarUrl);
+    const url = new URL(avatarUrl, "http://workhub.local");
+    const key = url.searchParams.get("key");
+    if (key && isAvatarStorageKey(key)) return key;
+
     const pathParts = url.pathname.split("/").filter(Boolean);
     const bucketName = process.env.R2_BUCKET_NAME;
     const candidates = [
@@ -63,6 +102,163 @@ const extractAvatarStorageKeyFromUrl = (avatarUrl = "") => {
   }
 };
 
+const createBadRequestError = (message) => {
+  const error = new Error(message);
+  error.statusCode = 400;
+  return error;
+};
+
+const hasOwn = (payload, key) =>
+  Object.prototype.hasOwnProperty.call(payload || {}, key);
+
+const normalizeSingleLineText = (value, maxLength) =>
+  String(value ?? "")
+    .trim()
+    .replace(/\s+/g, " ")
+    .slice(0, maxLength);
+
+const normalizeMultilineText = (value, maxLength) =>
+  String(value ?? "")
+    .replace(/\r\n/g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim()
+    .slice(0, maxLength);
+
+const normalizeBirthday = (value) => {
+  if (!value) return null;
+  const date = new Date(value);
+  if (!Number.isFinite(date.getTime())) {
+    throw createBadRequestError("Birthday must be a valid date");
+  }
+  return date;
+};
+
+const normalizeProfileColor = (value, fallback) => {
+  const color = String(value || "").trim();
+  return HEX_COLOR_REGEX.test(color) ? color : fallback;
+};
+
+const normalizeProfileTheme = (value = {}, currentTheme = {}) => ({
+  useBannerImage:
+    value.useBannerImage !== undefined
+      ? Boolean(value.useBannerImage)
+      : currentTheme?.useBannerImage !== false,
+  preset: normalizeSingleLineText(value.preset || currentTheme?.preset || "aurora", 40),
+  accentColor: normalizeProfileColor(
+    value.accentColor,
+    currentTheme?.accentColor || "#0f766e",
+  ),
+  backgroundColor: normalizeProfileColor(
+    value.backgroundColor,
+    currentTheme?.backgroundColor || "#ccfbf1",
+  ),
+  textColor: normalizeProfileColor(
+    value.textColor,
+    currentTheme?.textColor || "#134e4a",
+  ),
+});
+
+const normalizeExternalUrl = (value) => {
+  const url = String(value || "").trim();
+  if (!url) return "";
+
+  try {
+    const parsed = new URL(url);
+    return ["http:", "https:"].includes(parsed.protocol) ? parsed.toString() : "";
+  } catch {
+    return "";
+  }
+};
+
+const inferProfileLinkLabel = (url) => {
+  try {
+    const parsed = new URL(url);
+    return parsed.hostname.replace(/^www\./, "");
+  } catch {
+    return "Liên kết";
+  }
+};
+
+const normalizeProfileLinks = (links = []) => {
+  if (!Array.isArray(links)) return [];
+
+  return links
+    .slice(0, 10)
+    .map((link) => {
+      const url = normalizeExternalUrl(link?.url);
+      if (!url) return null;
+
+      const type = PROFILE_LINK_TYPES.has(link?.type) ? link.type : "other";
+      const label =
+        normalizeSingleLineText(link?.label, 80) ||
+        inferProfileLinkLabel(url);
+
+      return { label, url, type };
+    })
+    .filter(Boolean);
+};
+
+const normalizeInterests = (interests = []) => {
+  if (!Array.isArray(interests)) return [];
+
+  return [
+    ...new Set(
+      interests
+        .map((interest) => normalizeSingleLineText(interest, 60))
+        .filter(Boolean),
+    ),
+  ].slice(0, 20);
+};
+
+const sanitizeProfileFileName = (fileName = "", fallback = "profile-image") => {
+  const extension = path.extname(fileName).toLowerCase();
+  const baseName = path
+    .basename(fileName || fallback, extension)
+    .replace(/[^a-zA-Z0-9._-]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 80);
+
+  return `${baseName || fallback}${extension || ".png"}`;
+};
+
+const validateProfileImageFile = async (
+  file,
+  { label = "Image", maxSizeBytes = MAX_AVATAR_SIZE_BYTES } = {},
+) => {
+  if (!file) {
+    throw createBadRequestError(`${label} file is required`);
+  }
+
+  if (file.size > maxSizeBytes) {
+    throw createBadRequestError(
+      `${label} file must be smaller than ${Math.round(maxSizeBytes / 1024 / 1024)}MB`,
+    );
+  }
+
+  const extension = path.extname(file.originalname || "").toLowerCase();
+  if (!ALLOWED_PROFILE_IMAGE_EXTENSIONS.has(extension)) {
+    throw createBadRequestError(`${label} file extension is not allowed`);
+  }
+
+  if (!ALLOWED_PROFILE_IMAGE_MIMES.has(file.mimetype)) {
+    throw createBadRequestError("Only JPEG, PNG, GIF, or WebP images are allowed");
+  }
+
+  const detectedType = await fileTypeFromBuffer(file.buffer);
+  if (!detectedType || !ALLOWED_PROFILE_IMAGE_MIMES.has(detectedType.mime)) {
+    throw createBadRequestError(`${label} content is not a supported image`);
+  }
+
+  if (detectedType.mime !== file.mimetype) {
+    throw createBadRequestError(`${label} content does not match its MIME type`);
+  }
+
+  return {
+    safeName: sanitizeProfileFileName(file.originalname, label.toLowerCase()),
+    mimeType: detectedType.mime,
+  };
+};
+
 const formatCurrentUser = (user) => ({
   _id: user._id,
   id: user._id,
@@ -71,6 +267,29 @@ const formatCurrentUser = (user) => ({
   role: user.role,
   avatar: user.avatar,
   ...getPresenceFields(user),
+});
+
+const formatProfileTheme = (theme = {}) =>
+  normalizeProfileTheme(theme?.toObject?.() || theme);
+
+const formatProfileFields = (user) => ({
+  bio: user.bio || "",
+  about: user.about || "",
+  location: user.location || "",
+  birthday: user.birthday ? user.birthday.toISOString() : null,
+  pronouns: user.pronouns || "",
+  education: user.education || "",
+  interests: Array.isArray(user.interests) ? user.interests : [],
+  socialLinks: Array.isArray(user.socialLinks) ? user.socialLinks : [],
+  profileBannerUrl: user.profileBannerUrl || "",
+  profileTheme: formatProfileTheme(user.profileTheme),
+});
+
+const formatProjectSummary = (project) => ({
+  id: project._id,
+  name: project.name,
+  description: project.description,
+  status: project.status,
 });
 
 const emitActivityStatusChanged = async (user) => {
@@ -148,13 +367,10 @@ const formatUserSummary = (user, projects) => ({
   ...getPresenceFields(user),
   position: user.position,
   phone: user.phone,
+  avatar: user.avatar,
+  bio: user.bio || "",
   projects: projects
-    ? projects.map((project) => ({
-        id: project._id,
-        name: project.name,
-        description: project.description,
-        status: project.status,
-      }))
+    ? projects.map(formatProjectSummary)
     : [],
 });
 
@@ -182,6 +398,69 @@ const parsePositiveInt = (value, fallback) => {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
 };
 
+const normalizeProfileUpdates = (payload = {}, currentUser = {}) => {
+  const updates = {};
+
+  if (hasOwn(payload, "fullName")) {
+    const fullName = normalizeSingleLineText(payload.fullName, 50);
+    if (fullName.length < 2) {
+      throw createBadRequestError("Full name must be at least 2 characters");
+    }
+    updates.fullName = fullName;
+  }
+
+  if (hasOwn(payload, "phone")) {
+    updates.phone = normalizeSingleLineText(payload.phone, 30);
+  }
+
+  if (hasOwn(payload, "position")) {
+    updates.position = normalizeSingleLineText(payload.position, 120);
+  }
+
+  if (hasOwn(payload, "bio")) {
+    updates.bio = normalizeSingleLineText(payload.bio, 160);
+  }
+
+  if (hasOwn(payload, "about")) {
+    updates.about = normalizeMultilineText(payload.about, 1500);
+  }
+
+  if (hasOwn(payload, "location")) {
+    updates.location = normalizeSingleLineText(payload.location, 120);
+  }
+
+  if (hasOwn(payload, "birthday")) {
+    updates.birthday = normalizeBirthday(payload.birthday);
+  }
+
+  if (hasOwn(payload, "pronouns")) {
+    updates.pronouns = normalizeSingleLineText(payload.pronouns, 80);
+  }
+
+  if (hasOwn(payload, "education")) {
+    updates.education = normalizeSingleLineText(payload.education, 300);
+  }
+
+  if (hasOwn(payload, "interests")) {
+    updates.interests = normalizeInterests(payload.interests);
+  }
+
+  if (hasOwn(payload, "socialLinks") || hasOwn(payload, "links")) {
+    updates.socialLinks = normalizeProfileLinks(
+      hasOwn(payload, "socialLinks") ? payload.socialLinks : payload.links,
+    );
+  }
+
+  if (hasOwn(payload, "profileTheme")) {
+    updates.profileTheme = normalizeProfileTheme(
+      payload.profileTheme,
+      currentUser.profileTheme?.toObject?.() || currentUser.profileTheme,
+    );
+  }
+
+  return updates;
+};
+
 const formatUserDetail = (user, projects, organizationContext = {}) => ({
   id: user._id,
   _id: user._id,
@@ -193,15 +472,11 @@ const formatUserDetail = (user, projects, organizationContext = {}) => ({
   ...getPresenceFields(user),
   role: user.role,
   avatar: user.avatar,
+  ...formatProfileFields(user),
   isVerified: user.isVerified,
   authProvider: user.authProvider,
   projects: projects
-    ? projects.map((project) => ({
-        id: project._id,
-        name: project.name,
-        description: project.description,
-        status: project.status,
-      }))
+    ? projects.map(formatProjectSummary)
     : [],
   activeOrganizationId: organizationContext.activeOrganization?.id || null,
   activeOrganization: organizationContext.activeOrganization || null,
@@ -503,18 +778,16 @@ export const getMe = async (req, res) => {
 
 export const updateProfile = async (req, res) => {
   try {
-    const { fullName, phone, position } = req.body;
-
     const user = await User.findById(req.user._id);
 
     if (!user) {
       return res.status(404).json({ message: "User not found" });
     }
 
-    // Only allow updating these fields for personal profile
-    if (fullName !== undefined) user.fullName = fullName;
-    if (phone !== undefined) user.phone = phone;
-    if (position !== undefined) user.position = position;
+    const updates = normalizeProfileUpdates(req.body, user);
+    Object.entries(updates).forEach(([key, value]) => {
+      user[key] = value;
+    });
 
     await user.save();
 
@@ -532,7 +805,14 @@ export const updateProfile = async (req, res) => {
       .json(formatUserDetail(user, projects, organizationContext));
   } catch (error) {
     console.error("UpdateProfile error:", error.message);
-    res.status(500).json({ message: "Server error, please try again" });
+    res
+      .status(error.statusCode || 500)
+      .json({
+        message:
+          error.statusCode === 400
+            ? error.message
+            : "Server error, please try again",
+      });
   }
 };
 
@@ -617,56 +897,187 @@ export const streamAvatar = async (req, res) => {
   }
 };
 
+export const streamProfileBanner = async (req, res) => {
+  try {
+    const storageKey = getSingleString(req.query.key).trim();
+
+    if (!storageKey || !isProfileBannerStorageKey(storageKey)) {
+      return res.status(400).json({ message: "Invalid profile banner key" });
+    }
+
+    const object = await getR2StorageService().getObjectStream({
+      key: storageKey,
+    });
+
+    if (!object.body) {
+      return res.status(404).json({ message: "Profile banner not found" });
+    }
+
+    res.setHeader(
+      "Content-Type",
+      object.contentType || "application/octet-stream",
+    );
+    if (object.contentLength !== undefined) {
+      res.setHeader("Content-Length", String(object.contentLength));
+    }
+    res.setHeader(
+      "Content-Disposition",
+      contentDisposition("inline", storageKey.split("/").pop() || "banner"),
+    );
+    res.setHeader("Cache-Control", "public, max-age=3600");
+
+    await pipeline(object.body, res);
+  } catch (error) {
+    console.error("StreamProfileBanner error:", error.message);
+    return res.status(404).json({ message: "Profile banner not found" });
+  }
+};
+
 export const updateAvatar = async (req, res) => {
   try {
-    if (!req.file) {
-      return res.status(400).json({ message: "Avatar file is required" });
-    }
-
-    // Validate file size (5MB)
-    const maxSize = 5 * 1024 * 1024; // 5MB
-    if (req.file.size > maxSize) {
-      return res
-        .status(400)
-        .json({ message: "File size must be less than 5MB" });
-    }
-
-    // Validate file type
-    const allowedMimes = ["image/jpeg", "image/png", "image/gif", "image/webp"];
-    if (!allowedMimes.includes(req.file.mimetype)) {
-      return res.status(400).json({ message: "Only image files are allowed" });
-    }
-
     const user = await User.findById(req.user._id);
 
     if (!user) {
       return res.status(404).json({ message: "User not found" });
     }
 
-    // Upload to R2
+    const validation = await validateProfileImageFile(req.file, {
+      label: "Avatar",
+      maxSizeBytes: MAX_AVATAR_SIZE_BYTES,
+    });
     const storage = getR2StorageService();
-    const filename = req.file.originalname;
-    const storageKey = buildR2AvatarKey(req.user._id.toString(), filename);
+    const storageKey = buildR2AvatarKey(
+      req.user._id.toString(),
+      validation.safeName,
+    );
 
     await storage.putObject({
       key: storageKey,
       body: req.file.buffer,
-      contentType: req.file.mimetype,
+      contentType: validation.mimeType,
       contentLength: req.file.size,
       metadata: {
         userId: req.user._id.toString(),
+        mediaType: "avatar",
       },
     });
 
+    const oldStorageKey = extractAvatarStorageKeyFromUrl(user.avatar);
     user.avatar = buildAvatarProxyUrl(storageKey);
 
     await user.save();
+
+    if (oldStorageKey && oldStorageKey !== storageKey) {
+      storage.deleteObject({ key: oldStorageKey }).catch(() => {});
+    }
 
     res.status(200).json({
       avatarUrl: user.avatar,
     });
   } catch (error) {
     console.error("UpdateAvatar error:", error.message);
+    res
+      .status(error.statusCode || 500)
+      .json({
+        message:
+          error.statusCode === 400
+            ? error.message
+            : "Server error, please try again",
+      });
+  }
+};
+
+export const updateProfileBanner = async (req, res) => {
+  try {
+    const user = await User.findById(req.user._id).select(
+      "+profileBannerStorageKey",
+    );
+
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    const validation = await validateProfileImageFile(req.file, {
+      label: "Profile banner",
+      maxSizeBytes: MAX_PROFILE_BANNER_SIZE_BYTES,
+    });
+    const storage = getR2StorageService();
+    const storageKey = buildR2ProfileBannerKey(
+      req.user._id.toString(),
+      validation.safeName,
+    );
+
+    await storage.putObject({
+      key: storageKey,
+      body: req.file.buffer,
+      contentType: validation.mimeType,
+      contentLength: req.file.size,
+      metadata: {
+        userId: req.user._id.toString(),
+        mediaType: "profile-banner",
+      },
+    });
+
+    const oldStorageKey = user.profileBannerStorageKey;
+    user.profileBannerStorageKey = storageKey;
+    user.profileBannerUrl = buildProfileBannerProxyUrl(storageKey);
+    user.profileTheme = normalizeProfileTheme(
+      { ...(user.profileTheme?.toObject?.() || user.profileTheme), useBannerImage: true },
+      user.profileTheme,
+    );
+    await user.save();
+
+    if (oldStorageKey && oldStorageKey !== storageKey) {
+      storage.deleteObject({ key: oldStorageKey }).catch(() => {});
+    }
+
+    res.status(200).json({
+      bannerUrl: user.profileBannerUrl,
+      profileBannerUrl: user.profileBannerUrl,
+      profileTheme: formatProfileTheme(user.profileTheme),
+    });
+  } catch (error) {
+    console.error("UpdateProfileBanner error:", error.message);
+    res
+      .status(error.statusCode || 500)
+      .json({
+        message:
+          error.statusCode === 400
+            ? error.message
+            : "Server error, please try again",
+      });
+  }
+};
+
+export const deleteProfileBanner = async (req, res) => {
+  try {
+    const user = await User.findById(req.user._id).select(
+      "+profileBannerStorageKey",
+    );
+
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    const oldStorageKey = user.profileBannerStorageKey;
+    user.profileBannerStorageKey = "";
+    user.profileBannerUrl = "";
+    user.profileTheme = normalizeProfileTheme(
+      { ...(user.profileTheme?.toObject?.() || user.profileTheme), useBannerImage: false },
+      user.profileTheme,
+    );
+    await user.save();
+
+    if (oldStorageKey) {
+      getR2StorageService().deleteObject({ key: oldStorageKey }).catch(() => {});
+    }
+
+    res.status(200).json({
+      profileBannerUrl: "",
+      profileTheme: formatProfileTheme(user.profileTheme),
+    });
+  } catch (error) {
+    console.error("DeleteProfileBanner error:", error.message);
     res.status(500).json({ message: "Server error, please try again" });
   }
 };

@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from "react";
+import { useNavigate } from "react-router-dom";
 import { useAuth } from "../../context/AuthContext";
 import {
   getComments,
@@ -37,6 +38,7 @@ import {
   getAvatarReferrerPolicy,
   getAvatarUrl,
 } from "../../utils/avatar";
+import UserProfileModal from "../profile/UserProfileModal";
 
 const MAX_COMMENT_IMAGES = 4;
 
@@ -395,6 +397,7 @@ const CommentReactionDetailsModal = ({ comment, onClose }) => {
 const CommentSection = ({ postId, initialCommentsCount = 0, onCommentCountChange }) => {
   const { user } = useAuth();
   const { socket } = useSocket();
+  const navigate = useNavigate();
   const [comments, setComments] = useState([]);
   const [newComment, setNewComment] = useState("");
   const [commentImages, setCommentImages] = useState([]);
@@ -405,6 +408,7 @@ const CommentSection = ({ postId, initialCommentsCount = 0, onCommentCountChange
   const [expandedReplies, setExpandedReplies] = useState({});
   const [loadingReplies, setLoadingReplies] = useState({});
   const [reactionDetailsCommentId, setReactionDetailsCommentId] = useState(null);
+  const [profileModalUser, setProfileModalUser] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submittingReplyTo, setSubmittingReplyTo] = useState(null);
@@ -422,6 +426,7 @@ const CommentSection = ({ postId, initialCommentsCount = 0, onCommentCountChange
   const activeOrganizationId = toComparableId(
     user?.activeOrganization?.id || user?.activeOrganizationId,
   );
+  const currentUserId = getComparableUserId(user);
 
   useEffect(() => {
     commentCountChangeRef.current = onCommentCountChange;
@@ -841,6 +846,16 @@ const CommentSection = ({ postId, initialCommentsCount = 0, onCommentCountChange
     );
   };
 
+  const openAuthorProfile = (author) => {
+    const authorId = getComparableUserId(author);
+    if (!authorId) return;
+    if (authorId === currentUserId) {
+      navigate("/profile");
+      return;
+    }
+    setProfileModalUser(author);
+  };
+
   const renderCommentBubble = (
     comment,
     { isReply = false, replyTargetName = "" } = {}
@@ -855,9 +870,13 @@ const CommentSection = ({ postId, initialCommentsCount = 0, onCommentCountChange
           hasReactionCluster ? "mb-3 pb-4 pr-5" : "pb-2.5"
         }`}
       >
-        <p className="text-sm font-bold text-slate-950">
+        <button
+          type="button"
+          onClick={() => openAuthorProfile(comment.author)}
+          className="block max-w-full truncate text-left text-sm font-bold text-slate-950 hover:underline focus:outline-none focus:ring-2 focus:ring-blue-300"
+        >
           {comment.author?.fullName || "Ẩn danh"}
-        </p>
+        </button>
         {renderCommentContent(comment, replyTargetName)}
         <CommentImageGrid attachments={comment.attachments} isReply={isReply} />
         <CommentReactionCluster
@@ -1081,18 +1100,25 @@ const CommentSection = ({ postId, initialCommentsCount = 0, onCommentCountChange
     return (
       <div className={`flex ${depth > 0 ? "gap-2" : "gap-3"} group`}>
         <div className={avatarColumnClassName}>
-          {commentAvatar ? (
-            <img
-              src={commentAvatar}
-              alt={comment.author?.fullName}
-              referrerPolicy={getAvatarReferrerPolicy(commentAvatar)}
-              className={avatarClassName}
-            />
-          ) : (
-            <div className={fallbackClassName}>
-              {comment.author?.fullName?.charAt(0) || "?"}
-            </div>
-          )}
+          <button
+            type="button"
+            onClick={() => openAuthorProfile(comment.author)}
+            className="rounded-full focus:outline-none focus:ring-2 focus:ring-blue-300"
+            aria-label={`Xem hồ sơ ${comment.author?.fullName || "người dùng"}`}
+          >
+            {commentAvatar ? (
+              <img
+                src={commentAvatar}
+                alt={comment.author?.fullName}
+                referrerPolicy={getAvatarReferrerPolicy(commentAvatar)}
+                className={avatarClassName}
+              />
+            ) : (
+              <div className={fallbackClassName}>
+                {comment.author?.fullName?.charAt(0) || "?"}
+              </div>
+            )}
+          </button>
         </div>
         <div className="flex-1 min-w-0">
           {renderCommentBubble(comment, {
@@ -1243,6 +1269,12 @@ const CommentSection = ({ postId, initialCommentsCount = 0, onCommentCountChange
         onClose={() => setReactionDetailsCommentId(null)}
       />
     )}
+    <UserProfileModal
+      open={Boolean(profileModalUser)}
+      userId={profileModalUser?._id || profileModalUser?.id}
+      userPreview={profileModalUser}
+      onClose={() => setProfileModalUser(null)}
+    />
     </>
   );
 };

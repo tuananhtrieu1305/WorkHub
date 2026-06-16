@@ -9,6 +9,7 @@ import {
 import { createPortal } from "react-dom";
 import MessageBubble from "./MessageBubble";
 import ChatInput from "./ChatInput";
+import UserProfileModal from "../profile/UserProfileModal";
 import { App } from "antd";
 import { useAuth } from "../../context/AuthContext";
 import { getAvatarReferrerPolicy, getAvatarUrl } from "../../utils/avatar";
@@ -394,6 +395,7 @@ const ChatWindow = ({
   const [showScrollToBottomButton, setShowScrollToBottomButton] =
     useState(false);
   const [isPinnedListOpen, setIsPinnedListOpen] = useState(false);
+  const [profileModalUser, setProfileModalUser] = useState(null);
   const conversationId = conversation?.id || conversation?._id;
   const latestMessage = messages[messages.length - 1];
   const latestMessageKey =
@@ -741,6 +743,15 @@ const ChatWindow = ({
     scrollToLatestMessage("smooth");
   }, [scrollToLatestMessage]);
 
+  const handleOpenUserProfile = useCallback(
+    (profileUser) => {
+      const profileUserId = getComparableId(profileUser?._id || profileUser?.id);
+      if (!profileUserId || profileUserId === currentUserId) return;
+      setProfileModalUser(profileUser);
+    },
+    [currentUserId, setProfileModalUser],
+  );
+
   // Empty state - no conversation selected
   if (!conversation) {
     return (
@@ -845,7 +856,13 @@ const ChatWindow = ({
           </button>
 
           {/* Avatar */}
-          <div className="relative shrink-0">
+          <button
+            type="button"
+            onClick={() => isPrivate && handleOpenUserProfile(otherParticipant)}
+            disabled={!isPrivate}
+            className="relative shrink-0 rounded-full text-left focus:outline-none focus:ring-2 focus:ring-blue-300 disabled:cursor-default"
+            aria-label={isPrivate ? `Xem hồ sơ ${displayName}` : undefined}
+          >
             {isPrivate ? (
               displayAvatar ? (
                 <img
@@ -865,13 +882,18 @@ const ChatWindow = ({
             )}
             {/* Online indicator - for private chats */}
             {isPrivate && <ActivityStatusBadge meta={activityStatusMeta} />}
-          </div>
+          </button>
 
           {/* Info */}
           <div className="flex min-h-10 flex-col justify-center min-w-0">
-            <h2 className="truncate text-base font-bold leading-tight text-slate-950">
+            <button
+              type="button"
+              onClick={() => isPrivate && handleOpenUserProfile(otherParticipant)}
+              disabled={!isPrivate}
+              className="truncate text-left text-base font-bold leading-tight text-slate-950 hover:underline focus:outline-none focus:ring-2 focus:ring-blue-300 disabled:cursor-default disabled:hover:no-underline"
+            >
               {isPrivate ? displayName : `# ${displayName}`}
-            </h2>
+            </button>
             {shouldShowActivityStatus ? (
               <p
                 className={`text-xs font-medium truncate ${activityStatusMeta.textClassName}`}
@@ -1044,6 +1066,7 @@ const ChatWindow = ({
                     onEditReminder={onEditReminder}
                     onJumpToMessage={handleJumpToMessage}
                     onOpenPinnedList={() => setIsPinnedListOpen(true)}
+                    onOpenUserProfile={handleOpenUserProfile}
                   />
                 </div>
               );
@@ -1108,6 +1131,12 @@ const ChatWindow = ({
           handleJumpToMessage(pinnedMessage);
         }}
         onUnpinMessage={onTogglePinMessage}
+      />
+      <UserProfileModal
+        open={Boolean(profileModalUser)}
+        userId={profileModalUser?._id || profileModalUser?.id}
+        userPreview={profileModalUser}
+        onClose={() => setProfileModalUser(null)}
       />
     </main>
   );

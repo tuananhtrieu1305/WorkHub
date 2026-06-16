@@ -1359,6 +1359,7 @@ const MessageBubble = ({
   onEditReminder,
   onJumpToMessage,
   onOpenPinnedList,
+  onOpenUserProfile,
 }) => {
   const { user } = useAuth();
   const [isMenuOpen, setIsMenuOpen] = useState(false);
@@ -1634,26 +1635,39 @@ const MessageBubble = ({
     }
   }
 
-  const renderAvatar = (className = "") => {
+  const renderAvatar = (className = "", clickable = false) => {
     if (!showAvatar) {
       return <div className="chat-message-avatar-slot" aria-hidden="true" />;
     }
 
-    return avatarUrl ? (
-      <div className="chat-message-avatar-slot">
-        <img
-          src={avatarUrl}
-          alt={senderName}
-          className={`chat-message-avatar w-9 h-9 rounded-full object-cover shadow-sm ${className}`}
-        />
-      </div>
+    const avatarNode = avatarUrl ? (
+      <img
+        src={avatarUrl}
+        alt={senderName}
+        className={`chat-message-avatar w-9 h-9 rounded-full object-cover shadow-sm ${className}`}
+      />
     ) : (
+      <div
+        className={`chat-message-avatar flex w-9 h-9 items-center justify-center rounded-full bg-slate-200 text-sm font-bold text-slate-600 shadow-sm ${className}`}
+      >
+        {senderInitial}
+      </div>
+    );
+
+    return (
       <div className="chat-message-avatar-slot">
-        <div
-          className={`chat-message-avatar flex w-9 h-9 items-center justify-center rounded-full bg-slate-200 text-sm font-bold text-slate-600 shadow-sm ${className}`}
-        >
-          {senderInitial}
-        </div>
+        {clickable ? (
+          <button
+            type="button"
+            onClick={() => onOpenUserProfile?.(message.sender)}
+            className="rounded-full focus:outline-none focus:ring-2 focus:ring-blue-300"
+            aria-label={`Xem hồ sơ ${senderName}`}
+          >
+            {avatarNode}
+          </button>
+        ) : (
+          avatarNode
+        )}
       </div>
     );
   };
@@ -2011,13 +2025,17 @@ const MessageBubble = ({
           hideHoverTime();
         }}
       >
-        {renderAvatar("cursor-pointer")}
+        {renderAvatar("cursor-pointer", true)}
         <div className="flex max-w-[82%] flex-col items-start gap-1 sm:max-w-[70%]">
         {shouldShowSenderHeader && (
           <div className="flex items-baseline gap-2">
-            <span className="text-sm font-bold text-slate-900 cursor-pointer hover:underline">
+            <button
+              type="button"
+              onClick={() => onOpenUserProfile?.(message.sender)}
+              className="text-sm font-bold text-slate-900 cursor-pointer hover:underline focus:outline-none focus:ring-2 focus:ring-blue-300"
+            >
               {senderName}
-            </span>
+            </button>
             {renderPinnedLabel()}
           </div>
         )}

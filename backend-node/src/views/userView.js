@@ -8,9 +8,12 @@ import {
   getMe,
   searchUsersForChat,
   streamAvatar,
+  streamProfileBanner,
   updateProfile,
   updateActivityStatus,
   updateAvatar,
+  updateProfileBanner,
+  deleteProfileBanner,
   getPreferences,
   updatePreferences,
   getUserActivities,
@@ -22,12 +25,28 @@ import upload from "../config/multer.js";
 const router = express.Router();
 
 router.get("/avatars", streamAvatar);
+router.get("/profile-banners", streamProfileBanner);
 
 // Profile endpoints (for /me)
 router.get("/me", protect, getMe);
 router.put("/me", protect, updateProfile);
+router.patch("/me", protect, updateProfile);
 router.patch("/me/activity-status", protect, updateActivityStatus);
 router.put("/me/avatar", protect, upload.single("avatar"), updateAvatar);
+router.patch("/me/avatar", protect, upload.single("avatar"), updateAvatar);
+router.put(
+  "/me/profile-banner",
+  protect,
+  upload.single("banner"),
+  updateProfileBanner,
+);
+router.patch(
+  "/me/profile-banner",
+  protect,
+  upload.single("banner"),
+  updateProfileBanner,
+);
+router.delete("/me/profile-banner", protect, deleteProfileBanner);
 router.get("/me/preferences", protect, getPreferences);
 router.put("/me/preferences", protect, updatePreferences);
 router.get("/search", protect, searchUsersForChat);

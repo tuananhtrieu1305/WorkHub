@@ -1,0 +1,258 @@
+@property --profile-accent {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: #0f766e;
+}
+
+@property --profile-bg {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: #ccfbf1;
+}
+
+@property --profile-text {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: #134e4a;
+}
+
+@layer components {
+  .profile-theme-frame {
+    color: var(--profile-text);
+    transition:
+      --profile-accent 620ms cubic-bezier(0.19, 1, 0.22, 1),
+      --profile-bg 620ms cubic-bezier(0.19, 1, 0.22, 1),
+      --profile-text 620ms cubic-bezier(0.19, 1, 0.22, 1),
+      background 620ms cubic-bezier(0.19, 1, 0.22, 1),
+      border-color 360ms ease,
+      box-shadow 360ms ease,
+      color 360ms ease;
+  }
+
+  .profile-page-shell {
+    background:
+      linear-gradient(145deg, color-mix(in srgb, var(--profile-bg) 72%, #ffffff) 0%, #ffffff 48%, color-mix(in srgb, var(--profile-accent) 9%, #f8fafc) 100%);
+  }
+
+  .profile-hero-card,
+  .profile-edit-section,
+  .profile-modal-shell,
+  .profile-modal-identity,
+  .profile-info-card,
+  .profile-empty-state,
+  .profile-theme-option {
+    transition:
+      --profile-accent 620ms cubic-bezier(0.19, 1, 0.22, 1),
+      --profile-bg 620ms cubic-bezier(0.19, 1, 0.22, 1),
+      --profile-text 620ms cubic-bezier(0.19, 1, 0.22, 1),
+      background 520ms cubic-bezier(0.19, 1, 0.22, 1),
+      border-color 360ms ease,
+      box-shadow 360ms ease,
+      transform 220ms ease,
+      color 240ms ease;
+  }
+
+  .profile-hero-card {
+    border: 1px solid color-mix(in srgb, var(--profile-accent) 18%, #ffffff);
+    background: color-mix(in srgb, #ffffff 88%, var(--profile-bg));
+    box-shadow:
+      0 24px 60px color-mix(in srgb, var(--profile-accent) 13%, transparent),
+      inset 0 1px 0 rgba(255, 255, 255, 0.86);
+  }
+
+  .profile-banner-surface {
+    background-size: 160% 160%;
+    transition:
+      --profile-accent 620ms cubic-bezier(0.19, 1, 0.22, 1),
+      --profile-bg 620ms cubic-bezier(0.19, 1, 0.22, 1),
+      --profile-text 620ms cubic-bezier(0.19, 1, 0.22, 1),
+      background 620ms cubic-bezier(0.19, 1, 0.22, 1);
+  }
+
+  .profile-primary-button {
+    background: linear-gradient(135deg, var(--profile-accent), color-mix(in srgb, var(--profile-accent) 82%, #0f172a));
+    color: #ffffff;
+    box-shadow: 0 16px 32px color-mix(in srgb, var(--profile-accent) 24%, transparent);
+  }
+
+  .profile-primary-button:hover,
+  .profile-primary-button:focus-visible {
+    transform: translateY(-2px);
+    box-shadow: 0 20px 38px color-mix(in srgb, var(--profile-accent) 30%, transparent);
+  }
+
+  .profile-primary-button:active {
+    transform: translateY(0) scale(0.98);
+  }
+
+  .profile-secondary-button {
+    background: color-mix(in srgb, var(--profile-bg) 62%, #ffffff);
+    color: var(--profile-text);
+    border: 1px solid color-mix(in srgb, var(--profile-accent) 28%, #ffffff);
+    box-shadow: 0 10px 24px color-mix(in srgb, var(--profile-accent) 12%, transparent);
+  }
+
+  .profile-secondary-button:hover,
+  .profile-secondary-button:focus-visible {
+    transform: translateY(-2px);
+    background: color-mix(in srgb, var(--profile-bg) 78%, #ffffff);
+  }
+
+  .profile-danger-soft-button {
+    background: #fff1f2;
+    color: #be123c;
+    border: 1px solid #fecdd3;
+  }
+
+  .profile-danger-soft-button:hover,
+  .profile-danger-soft-button:focus-visible {
+    transform: translateY(-2px);
+    background: #ffffff;
+  }
+
+  .profile-input {
+    min-height: 2.75rem;
+    border: 1px solid color-mix(in srgb, var(--profile-accent) 13%, #dbe3ee);
+    background: rgba(255, 255, 255, 0.92);
+    color: #0f172a;
+    outline: none;
+    transition:
+      border-color 180ms ease,
+      box-shadow 180ms ease,
+      background 180ms ease;
+  }
+
+  .profile-input::placeholder {
+    color: #94a3b8;
+  }
+
+  .profile-input:focus {
+    border-color: var(--profile-accent);
+    box-shadow: 0 0 0 4px color-mix(in srgb, var(--profile-accent) 18%, transparent);
+    background: #ffffff;
+  }
+
+  .profile-edit-section {
+    border: 1px solid color-mix(in srgb, var(--profile-accent) 22%, #ffffff);
+    background:
+      linear-gradient(135deg, color-mix(in srgb, var(--profile-bg) 34%, #ffffff), rgba(255, 255, 255, 0.94));
+    box-shadow: 0 18px 44px color-mix(in srgb, var(--profile-accent) 9%, transparent);
+  }
+
+  .profile-section-rail {
+    border: 1px solid color-mix(in srgb, var(--profile-accent) 22%, #ffffff);
+    background: color-mix(in srgb, var(--profile-bg) 44%, #ffffff);
+  }
+
+  .profile-section-icon {
+    background: color-mix(in srgb, var(--profile-bg) 72%, #ffffff);
+    color: var(--profile-accent);
+  }
+
+  .profile-theme-option {
+    border: 1px solid #e2e8f0;
+    background: rgba(255, 255, 255, 0.9);
+  }
+
+  .profile-theme-option:hover,
+  .profile-theme-option:focus-visible {
+    transform: translateY(-2px);
+    border-color: color-mix(in srgb, var(--profile-accent) 32%, #ffffff);
+    box-shadow: 0 14px 30px color-mix(in srgb, var(--profile-accent) 12%, transparent);
+  }
+
+  .profile-theme-option.is-active {
+    border-color: var(--profile-accent);
+    background: color-mix(in srgb, var(--profile-bg) 42%, #ffffff);
+    box-shadow: 0 16px 34px color-mix(in srgb, var(--profile-accent) 16%, transparent);
+  }
+
+  .profile-modal-backdrop {
+    animation: profileBackdropIn 180ms ease-out both;
+  }
+
+  .profile-modal-shell {
+    width: min(100%, 64rem);
+    min-height: min(46rem, 94vh);
+    border: 1px solid color-mix(in srgb, var(--profile-accent) 18%, #ffffff);
+    background:
+      linear-gradient(180deg, color-mix(in srgb, var(--profile-bg) 22%, #ffffff) 0%, #ffffff 46%);
+    box-shadow: 0 28px 80px rgba(15, 23, 42, 0.28);
+    animation: profileModalIn 240ms cubic-bezier(0.19, 1, 0.22, 1) both;
+  }
+
+  .profile-modal-identity {
+    border: 1px solid color-mix(in srgb, var(--profile-accent) 18%, #ffffff);
+    background: rgba(255, 255, 255, 0.94);
+    box-shadow:
+      0 20px 48px rgba(15, 23, 42, 0.1),
+      inset 0 1px 0 rgba(255, 255, 255, 0.88);
+  }
+
+  .profile-modal-scroll {
+    max-height: calc(94vh - 1.5rem);
+  }
+
+  .profile-modal-tabbar {
+    border: 1px solid color-mix(in srgb, var(--profile-accent) 12%, #e2e8f0);
+    background: color-mix(in srgb, var(--profile-bg) 24%, #f8fafc);
+  }
+
+  .profile-info-card {
+    border: 1px solid color-mix(in srgb, var(--profile-accent) 13%, #dbe3ee);
+    background: rgba(255, 255, 255, 0.9);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.72);
+  }
+
+  .profile-info-card:hover {
+    border-color: color-mix(in srgb, var(--profile-accent) 28%, #dbe3ee);
+    box-shadow: 0 12px 28px color-mix(in srgb, var(--profile-accent) 10%, transparent);
+  }
+
+  .profile-info-icon {
+    background: color-mix(in srgb, var(--profile-bg) 60%, #ffffff);
+    color: var(--profile-accent);
+  }
+
+  .profile-empty-state {
+    border: 1px dashed color-mix(in srgb, var(--profile-accent) 24%, #cbd5e1);
+    background:
+      linear-gradient(135deg, color-mix(in srgb, var(--profile-bg) 30%, #ffffff), #ffffff);
+  }
+
+  .profile-chip {
+    background: color-mix(in srgb, var(--profile-bg) 62%, #ffffff);
+    color: var(--profile-text);
+    border: 1px solid color-mix(in srgb, var(--profile-accent) 20%, #ffffff);
+  }
+}
+
+@keyframes profileBackdropIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes profileModalIn {
+  from {
+    opacity: 0;
+    transform: translateY(14px) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .profile-theme-frame,
+  .profile-theme-frame *,
+  .profile-modal-backdrop,
+  .profile-modal-shell {
+    animation: none !important;
+    transition-duration: 1ms !important;
+  }
+}

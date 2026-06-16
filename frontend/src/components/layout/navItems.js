@@ -76,4 +76,15 @@ export const navItems = [
     hoverBg: "#eef2ff",
     iconFill: false,
   },
+  {
+    label: "Hồ sơ",
+    path: "/profile",
+    icon: "person",
+    color: "#0f766e",
+    activeBg: "#ccfbf1",
+    activeBorder: "#5eead4",
+    activeShadow: "rgba(15, 118, 110, 0.24)",
+    hoverBg: "#f0fdfa",
+    iconFill: true,
+  },
 ];

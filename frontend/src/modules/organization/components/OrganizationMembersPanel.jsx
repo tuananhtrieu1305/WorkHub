@@ -1,20 +1,35 @@
+import { useState } from "react";
+import { useNavigate } from "react-router-dom";
+import { useAuth } from "../../../context/AuthContext";
+import UserProfileModal from "../../profile/UserProfileModal";
 import { roleLabels } from "../organizationUtils";
 import Icon from "./Icon";
 import MemberAvatar from "./MemberAvatar";
 
-const MemberRow = ({ member }) => (
-  <div className="grid gap-3 px-4 py-4 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
-    <div className="flex min-w-0 items-center gap-3">
-      <MemberAvatar member={member} />
-      <div className="min-w-0">
-        <p className="truncate text-sm font-black text-slate-950">
-          {member.user?.fullName || "Người dùng"}
-        </p>
-        <p className="truncate text-xs font-semibold text-slate-500">
-          {member.user?.email}
-        </p>
-      </div>
+const getMemberUserId = (member = {}) =>
+  String(member.user?._id || member.user?.id || member.userId || "");
+
+const MemberIdentityButton = ({ member, onOpenProfile }) => (
+  <button
+    type="button"
+    onClick={() => onOpenProfile?.(member)}
+    className="flex min-w-0 items-center gap-3 rounded-xl text-left transition hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-blue-300"
+  >
+    <MemberAvatar member={member} />
+    <div className="min-w-0">
+      <p className="truncate text-sm font-black text-slate-950">
+        {member.user?.fullName || "Người dùng"}
+      </p>
+      <p className="truncate text-xs font-semibold text-slate-500">
+        {member.user?.email}
+      </p>
     </div>
+  </button>
+);
+
+const MemberRow = ({ member, onOpenProfile }) => (
+  <div className="grid gap-3 px-4 py-4 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
+    <MemberIdentityButton member={member} onOpenProfile={onOpenProfile} />
     <div className="flex flex-wrap items-center gap-2 sm:justify-end">
       <span
         className={`inline-flex items-center gap-1 rounded-lg px-2.5 py-1 text-xs font-black ${
@@ -49,7 +64,23 @@ const OrganizationMembersPanel = ({
   onReviewRequest,
   pendingMembers,
   reviewingMemberId,
-}) => (
+}) => {
+  const { user } = useAuth();
+  const navigate = useNavigate();
+  const [profileModalUser, setProfileModalUser] = useState(null);
+  const currentUserId = String(user?._id || user?.id || "");
+
+  const openMemberProfile = (member) => {
+    const memberUserId = getMemberUserId(member);
+    if (!memberUserId) return;
+    if (memberUserId === currentUserId) {
+      navigate("/profile");
+      return;
+    }
+    setProfileModalUser(member.user);
+  };
+
+  return (
   <div className="rounded-2xl bg-white p-4 ring-1 ring-slate-200">
     <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
       <h4 className="text-lg font-black text-slate-950">Thành viên</h4>
@@ -73,7 +104,11 @@ const OrganizationMembersPanel = ({
       ) : (
         <div className="divide-y divide-slate-100">
           {activeMembers.map((member) => (
-            <MemberRow key={member.id} member={member} />
+            <MemberRow
+              key={member.id}
+              member={member}
+              onOpenProfile={openMemberProfile}
+            />
           ))}
         </div>
       )}
@@ -91,17 +126,10 @@ const OrganizationMembersPanel = ({
                 key={member.id}
                 className="grid gap-3 px-4 py-4 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center"
               >
-                <div className="flex min-w-0 items-center gap-3">
-                  <MemberAvatar member={member} />
-                  <div className="min-w-0">
-                    <p className="truncate text-sm font-black text-slate-950">
-                      {member.user?.fullName || "Người dùng"}
-                    </p>
-                    <p className="truncate text-xs font-semibold text-slate-500">
-                      {member.user?.email}
-                    </p>
-                  </div>
-                </div>
+                <MemberIdentityButton
+                  member={member}
+                  onOpenProfile={openMemberProfile}
+                />
                 <div className="flex flex-wrap items-center gap-2 sm:justify-end">
                   <button
                     type="button"
@@ -142,7 +170,14 @@ const OrganizationMembersPanel = ({
         </div>
       </div>
     )}
+    <UserProfileModal
+      open={Boolean(profileModalUser)}
+      userId={profileModalUser?._id || profileModalUser?.id}
+      userPreview={profileModalUser}
+      onClose={() => setProfileModalUser(null)}
+    />
   </div>
-);
+  );
+};
 
 export default OrganizationMembersPanel;
