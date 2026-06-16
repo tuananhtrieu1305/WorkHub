@@ -443,7 +443,6 @@ const FileRow = ({ item, isDownloading, hasError, onDownload }) => (
 const ChatDetailPanel = ({
   conversation,
   currentUserId,
-  onClose,
   onConversationUpdated,
   onJumpToMessage,
   onRespondReminder,
@@ -805,25 +804,6 @@ const ChatDetailPanel = ({
     <aside
       className={`chat-detail-panel h-full shrink-0 flex-col overflow-hidden ${className}`}
     >
-      <div className="flex shrink-0 items-center justify-between border-b border-slate-200/80 bg-white/95 px-4 py-3 backdrop-blur">
-        <div>
-          <p className="text-[11px] font-black uppercase tracking-wide text-blue-600">
-            WorkHub
-          </p>
-          <h2 className="text-sm font-black text-slate-950">
-            Chi tiết hội thoại
-          </h2>
-        </div>
-        <button
-          onClick={onClose}
-          className={iconButtonClass}
-          title="Đóng"
-          type="button"
-        >
-          <span className="material-symbols-outlined text-[20px]">close</span>
-        </button>
-      </div>
-
       <div className="chat-conversations-scroll min-h-0 flex-1 overflow-y-auto bg-slate-50/80">
         <section className="relative overflow-hidden border-b border-slate-200/80 bg-white px-4 py-5">
           <div className="absolute inset-x-0 top-0 h-24 bg-[radial-gradient(circle_at_24%_10%,rgba(37,99,235,0.15),transparent_42%),radial-gradient(circle_at_86%_16%,rgba(16,185,129,0.13),transparent_36%)]" />

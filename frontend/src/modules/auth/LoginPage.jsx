@@ -4,7 +4,7 @@ import { useAuth } from "../../context/AuthContext";
 import { resendOTP } from "../../api/authApi";
 import { useGoogleLogin } from "@react-oauth/google";
 import axios from "axios";
-import workHubLogo from "../../assets/WorkHub_logo_blue_background.png";
+import workHubLogo from "../../assets/WorkHub_logo.png";
 import InteractiveBackground from "./InteractiveBackground";
 import AuthFormBackground from "./AuthFormBackground";
 import "../../styles/auth/index.css";

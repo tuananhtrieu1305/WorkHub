@@ -21,7 +21,7 @@ import {
   removeMeetingById,
   upsertActiveMeeting,
 } from "../../modules/meeting/meetingListState";
-import workHubLogo from "../../assets/WorkHub_logo_blue_background.png";
+import workHubLogo from "../../assets/WorkHub_logo.png";
 import {
   getAvatarReferrerPolicy,
   getAvatarUrl,

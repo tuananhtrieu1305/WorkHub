@@ -5,7 +5,7 @@ import { fileURLToPath } from "url";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-const logoPath = path.resolve(__dirname, "../assets/WorkHub_logo_blue_background.png");
+const logoPath = path.resolve(__dirname, "../assets/WorkHub_logo.png");
 
 
 const transporter = nodemailer.createTransport({
@@ -143,7 +143,7 @@ export const sendVerificationEmail = async (email, fullName, otp) => {
     html: baseTemplate(content),
     attachments: [
       {
-        filename: "WorkHub_logo_blue_background.png",
+        filename: "WorkHub_logo.png",
         path: logoPath,
         cid: "workhublogo",
       },
@@ -211,7 +211,7 @@ export const sendResetPasswordEmail = async (email, fullName, resetLink) => {
     html: baseTemplate(content),
     attachments: [
       {
-        filename: "WorkHub_logo_blue_background.png",
+        filename: "WorkHub_logo.png",
         path: logoPath,
         cid: "workhublogo",
       },

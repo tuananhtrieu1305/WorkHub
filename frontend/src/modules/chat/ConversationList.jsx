@@ -175,7 +175,14 @@ const ConversationList = ({
       >
         {/* Avatar */}
         <div className="relative shrink-0 mt-0.5">
-          {isGroup ? (
+          {isGroup && avatarUrl ? (
+            <img
+              src={avatarUrl}
+              alt={name}
+              referrerPolicy={getAvatarReferrerPolicy(avatarUrl)}
+              className="w-10 h-10 rounded-xl object-cover ring-2 ring-white shadow-sm"
+            />
+          ) : isGroup ? (
             <div
               className={`w-10 h-10 bg-gradient-to-br ${getChannelGradient(
                 name
