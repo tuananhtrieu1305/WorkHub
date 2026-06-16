@@ -28,6 +28,8 @@ import meetingRoutes from "./views/meetingView.js";
 import { setMeetingIo, startMeetingReconciler } from "./presenters/meetingPresenter.js";
 import callRoutes from "./views/callView.js";
 import { setCallIo, startCallReconciler } from "./presenters/callPresenter.js";
+import cloudflareWebhookRoutes from "./views/cloudflareWebhookView.js";
+import { setMeetingAiSummaryIo } from "./services/meetingAiSummaryService.js";
 import errorMiddleware from "./utils/errorMiddleware.js";
 import { legacyUploadsDir, uploadsDir } from "./config/uploadPaths.js";
 
@@ -65,6 +67,7 @@ export const createApp = () => {
   app.use("/api/admin", adminRoutes);
   app.use("/api/meetings", meetingRoutes);
   app.use("/api/calls", callRoutes);
+  app.use("/api/webhooks/cloudflare", cloudflareWebhookRoutes);
 
   app.get("/", (req, res) => {
     res.send("WorkHub API is running");
@@ -92,6 +95,7 @@ if (process.env.NODE_ENV !== "test") {
   setIo(io);
   setUserIo(io);
   setMeetingIo(io);
+  setMeetingAiSummaryIo(io);
   startMeetingReconciler();
   setCallIo(io);
   startCallReconciler();

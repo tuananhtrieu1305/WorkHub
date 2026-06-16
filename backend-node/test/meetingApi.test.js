@@ -309,6 +309,7 @@ test("GET /api/meetings lists only meetings scoped to the current user", async (
     { status: null, endedAt: null },
     { createdBy: userId },
     { hostUserId: userId },
+    { participants: { $elemMatch: { userId, joinedAt: { $ne: null } } } },
   ]);
 });
 
