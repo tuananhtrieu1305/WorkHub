@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { App } from "antd";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import {
   createOrganizationInvite,
@@ -32,6 +31,7 @@ import {
   isManager,
 } from "../organizationUtils";
 import { DEFAULT_ORGANIZATION_ACCENT } from "../organizationTheme";
+import { useWorkHubToast } from "../../../components/feedback/workHubToast";
 
 export const workspaceTabs = [
   {
@@ -112,6 +112,18 @@ const inviteExpiryDurations = {
 const getErrorMessage = (error, fallback) =>
   error?.response?.data?.message || fallback;
 
+const getOrganizationName = (organization) =>
+  organization?.name || "Tổ chức này";
+
+const getMemberName = (member) =>
+  member?.user?.fullName ||
+  member?.user?.name ||
+  member?.fullName ||
+  member?.name ||
+  "Thành viên";
+
+const getInviteCode = (invite) => invite?.code || "Mã mời";
+
 const buildInvitePayload = (form, { canBypassApproval = false } = {}) => {
   const duration = inviteExpiryDurations[form.expiresIn];
   const expiresAt =
@@ -130,7 +142,7 @@ export const useOrganizationWorkspace = () => {
   const { organizationId } = useParams();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
-  const { message } = App.useApp();
+  const message = useWorkHubToast();
   const {
     user,
     refreshOrganizations,
@@ -239,7 +251,10 @@ export const useOrganizationWorkspace = () => {
       return detail;
     } catch (error) {
       console.error("Failed to load organization detail:", error);
-      message.error(getErrorMessage(error, "Không thể tải tổ chức"));
+      message.error(getErrorMessage(error, "Không thể tải tổ chức"), {
+        description:
+          "Trang quản trị chưa nhận được thông tin tổ chức. Bạn sẽ được đưa về danh sách tổ chức.",
+      });
       navigate("/organization", { replace: true });
       return null;
     } finally {
@@ -255,7 +270,10 @@ export const useOrganizationWorkspace = () => {
       setOverview(await getOrganizationOverview(organizationId));
     } catch (error) {
       console.error("Failed to load organization overview:", error);
-      message.error(getErrorMessage(error, "Không thể tải tổng quan"));
+      message.error(getErrorMessage(error, "Không thể tải tổng quan"), {
+        description:
+          "Các chỉ số hoạt động của tổ chức chưa được tải cho tab Tổng quan.",
+      });
     } finally {
       setLoading((current) => ({ ...current, overview: false }));
     }
@@ -270,7 +288,10 @@ export const useOrganizationWorkspace = () => {
       setMembers(payload.content || []);
     } catch (error) {
       console.error("Failed to load organization members:", error);
-      message.error(getErrorMessage(error, "Không thể tải thành viên"));
+      message.error(getErrorMessage(error, "Không thể tải thành viên"), {
+        description:
+          "Danh sách thành viên chưa được tải theo bộ lọc hiện tại.",
+      });
       setMembers([]);
     } finally {
       setLoading((current) => ({ ...current, members: false }));
@@ -287,7 +308,10 @@ export const useOrganizationWorkspace = () => {
       setPermissionKeys(payload.permissionKeys || []);
     } catch (error) {
       console.error("Failed to load organization roles:", error);
-      message.error(getErrorMessage(error, "Không thể tải vai trò"));
+      message.error(getErrorMessage(error, "Không thể tải vai trò"), {
+        description:
+          "Danh sách vai trò và quyền hạn chưa được tải cho tổ chức này.",
+      });
       setRoles([]);
     } finally {
       setLoading((current) => ({ ...current, roles: false }));
@@ -305,7 +329,10 @@ export const useOrganizationWorkspace = () => {
       setInvites(payload.content || []);
     } catch (error) {
       console.error("Failed to load organization invites:", error);
-      message.error(getErrorMessage(error, "Không thể tải lời mời"));
+      message.error(getErrorMessage(error, "Không thể tải lời mời"), {
+        description:
+          "Danh sách mã mời hiện tại chưa được tải trong tab Lời mời.",
+      });
       setInvites([]);
     } finally {
       setLoading((current) => ({ ...current, invites: false }));
@@ -326,7 +353,10 @@ export const useOrganizationWorkspace = () => {
       setJoinRequestQuestions(payload.joinQuestions || []);
     } catch (error) {
       console.error("Failed to load organization join requests:", error);
-      message.error(getErrorMessage(error, "Không thể tải yêu cầu tham gia"));
+      message.error(getErrorMessage(error, "Không thể tải yêu cầu tham gia"), {
+        description:
+          "Danh sách người đang chờ duyệt chưa được tải cho tổ chức này.",
+      });
       setJoinRequests([]);
       setJoinRequestQuestions([]);
     } finally {
@@ -380,17 +410,24 @@ export const useOrganizationWorkspace = () => {
       try {
         if (roleModal === "edit" && roleForm.id) {
           await updateOrganizationRole(organizationId, roleForm.id, roleForm);
-          message.success("Đã cập nhật vai trò");
+          message.success("Đã cập nhật vai trò", {
+            description: `${roleForm.name.trim()} đã lưu tên, màu hoặc bộ quyền mới.`,
+          });
         } else {
           await createOrganizationRole(organizationId, roleForm);
-          message.success("Đã tạo vai trò");
+          message.success("Đã tạo vai trò", {
+            description: `${roleForm.name.trim()} đã sẵn sàng để gán cho thành viên.`,
+          });
         }
         closeRoleModal();
         loadRoles();
         refreshOrganization();
       } catch (error) {
         console.error("Failed to save organization role:", error);
-        message.error(getErrorMessage(error, "Không thể lưu vai trò"));
+        message.error(getErrorMessage(error, "Không thể lưu vai trò"), {
+          description:
+            "Vai trò chưa được lưu. Hãy kiểm tra tên vai trò và bộ quyền đã chọn.",
+        });
       }
     },
     [
@@ -410,11 +447,16 @@ export const useOrganizationWorkspace = () => {
 
       try {
         await deleteOrganizationRole(organizationId, role.id);
-        message.success("Đã xóa vai trò");
+        message.success("Đã xóa vai trò", {
+          description: `${role.name || "Vai trò này"} đã được gỡ khỏi danh sách vai trò tùy chỉnh.`,
+        });
         loadRoles();
       } catch (error) {
         console.error("Failed to delete organization role:", error);
-        message.error(getErrorMessage(error, "Không thể xóa vai trò"));
+        message.error(getErrorMessage(error, "Không thể xóa vai trò"), {
+          description:
+            "Vai trò vẫn còn trong tổ chức. Hãy kiểm tra thành viên đang dùng vai trò này.",
+        });
       }
     },
     [loadRoles, message, organizationId],
@@ -426,11 +468,16 @@ export const useOrganizationWorkspace = () => {
 
       try {
         await updateOrganizationMember(organizationId, member.id, { role: roleKey });
-        message.success("Đã cập nhật vai trò thành viên");
+        message.success("Đã cập nhật vai trò thành viên", {
+          description: `${getMemberName(member)} đã được gán vai trò ${roleKey}.`,
+        });
         loadMembers();
       } catch (error) {
         console.error("Failed to update member role:", error);
-        message.error(getErrorMessage(error, "Không thể cập nhật thành viên"));
+        message.error(getErrorMessage(error, "Không thể cập nhật thành viên"), {
+          description:
+            "Vai trò của thành viên chưa được thay đổi. Hãy kiểm tra quyền quản trị của bạn.",
+        });
       }
     },
     [loadMembers, message, organizationId],
@@ -471,18 +518,35 @@ export const useOrganizationWorkspace = () => {
         const invite = await createInviteForCurrentForm();
         if (!invite?.code) return;
 
-        message.success("Đã tạo mã mời");
+        message.success("Đã tạo mã mời", {
+          description: message.body({
+            text: "Mã mời mới đã được tạo cho tổ chức này.",
+            rows: [{ label: "Mã mời", value: invite.code }],
+          }),
+          action: {
+            label: "Sao chép mã",
+            onClick: () => copyTextToClipboard(invite.code),
+            successLabel: "Đã sao chép",
+          },
+        });
         return;
       }
 
       await copyTextToClipboard(createdInvite.code);
-      message.success("Đã sao chép mã mời");
+      message.copySuccess("Đã sao chép mã mời", createdInvite.code, {
+        label: "Mã mời",
+        text: "Mã mời đã nằm trong clipboard để gửi cho thành viên mới.",
+      });
     } catch (error) {
       console.error("Failed to copy organization invite code:", error);
       message.error(
         error?.response
           ? getErrorMessage(error, "Không thể tạo lời mời")
           : "Không thể sao chép mã mời",
+        {
+          description:
+            "Mã mời chưa được đưa vào clipboard. Hãy thử sao chép lại hoặc copy thủ công.",
+        },
       );
     }
   }, [createInviteForCurrentForm, createdInvite, message]);
@@ -496,13 +560,20 @@ export const useOrganizationWorkspace = () => {
         if (!shareLink) return;
 
         await copyTextToClipboard(shareLink);
-        message.success("Đã sao chép liên kết mời");
+        message.copySuccess("Đã sao chép liên kết mời", shareLink, {
+          label: "Link",
+          text: "Liên kết mời đã sẵn sàng để gửi cho thành viên mới.",
+        });
       } catch (error) {
         console.error("Failed to create organization invite:", error);
         message.error(
           error?.response
             ? getErrorMessage(error, "Không thể tạo lời mời")
             : "Không thể sao chép liên kết mời",
+          {
+            description:
+              "Liên kết mời chưa được đưa vào clipboard. Hãy tạo lại mã hoặc thử sao chép sau.",
+          },
         );
       }
     },
@@ -515,9 +586,15 @@ export const useOrganizationWorkspace = () => {
 
       try {
         await navigator.clipboard.writeText(invite.code);
-        message.success("Đã sao chép mã mời");
+        message.copySuccess("Đã sao chép mã mời", invite.code, {
+          label: "Mã mời",
+          text: `${getInviteCode(invite)} đã sẵn sàng để gửi cho thành viên mới.`,
+        });
       } catch {
-        message.error("Không thể sao chép mã mời");
+        message.error("Không thể sao chép mã mời", {
+          description:
+            "Trình duyệt chưa cho phép ghi vào clipboard. Hãy copy mã trực tiếp trong bảng lời mời.",
+        });
       }
     },
     [message],
@@ -532,11 +609,19 @@ export const useOrganizationWorkspace = () => {
           status,
           durationHours: status === "paused" ? 1 : undefined,
         });
-        message.success(status === "paused" ? "Đã tạm dừng lời mời" : "Đã cập nhật lời mời");
+        message.success(status === "paused" ? "Đã tạm dừng lời mời" : "Đã cập nhật lời mời", {
+          description:
+            status === "paused"
+              ? `${getInviteCode(invite)} sẽ tạm ngưng nhận thành viên mới trong 1 giờ.`
+              : `${getInviteCode(invite)} đã được cập nhật trạng thái mới.`,
+        });
         loadInvites();
       } catch (error) {
         console.error("Failed to update invite:", error);
-        message.error(getErrorMessage(error, "Không thể cập nhật lời mời"));
+        message.error(getErrorMessage(error, "Không thể cập nhật lời mời"), {
+          description:
+            "Trạng thái mã mời chưa được lưu. Hãy thử lại trong bảng lời mời.",
+        });
       }
     },
     [loadInvites, message, organizationId],
@@ -548,12 +633,17 @@ export const useOrganizationWorkspace = () => {
 
       try {
         await deleteOrganizationInvite(organizationId, invite.id);
-        message.success("Đã xóa lời mời");
+        message.success("Đã xóa lời mời", {
+          description: `${getInviteCode(invite)} đã được gỡ khỏi danh sách mã mời.`,
+        });
         loadInvites();
         refreshOrganization();
       } catch (error) {
         console.error("Failed to delete invite:", error);
-        message.error(getErrorMessage(error, "Không thể xóa lời mời"));
+        message.error(getErrorMessage(error, "Không thể xóa lời mời"), {
+          description:
+            "Mã mời vẫn còn hiệu lực trong danh sách. Hãy thử xóa lại sau.",
+        });
       }
     },
     [loadInvites, message, organizationId, refreshOrganization],
@@ -570,12 +660,17 @@ export const useOrganizationWorkspace = () => {
           durationHours: Number(pauseDurationHours),
         });
         setPauseModalOpen(false);
-        message.success(`Đã tạm dừng ${result.pausedCount || 0} lời mời`);
+        message.success(`Đã tạm dừng ${result.pausedCount || 0} lời mời`, {
+          description: `Các mã mời đã chọn sẽ tạm dừng trong ${pauseDurationHours} giờ.`,
+        });
         loadInvites();
         refreshOrganization();
       } catch (error) {
         console.error("Failed to pause organization invites:", error);
-        message.error(getErrorMessage(error, "Không thể tạm dừng lời mời"));
+        message.error(getErrorMessage(error, "Không thể tạm dừng lời mời"), {
+          description:
+            "Các mã mời đã chọn vẫn giữ trạng thái cũ. Hãy kiểm tra phạm vi tạm dừng và thử lại.",
+        });
       }
     },
     [
@@ -627,10 +722,16 @@ export const useOrganizationWorkspace = () => {
 
         setOrganization(saved);
         refreshOrganizations?.();
-        message.success("Đã cập nhật cài đặt nâng cao");
+        message.success("Đã cập nhật cài đặt nâng cao", {
+          description:
+            "Quy tắc tham gia, quyền mời thành viên và giao diện tổ chức đã được lưu.",
+        });
       } catch (error) {
         console.error("Failed to update organization settings:", error);
-        message.error(getErrorMessage(error, "Không thể lưu cài đặt"));
+        message.error(getErrorMessage(error, "Không thể lưu cài đặt"), {
+          description:
+            "Cài đặt nâng cao chưa được lưu. Hãy kiểm tra quyền quản trị và thử lại.",
+        });
       } finally {
         setLoading((current) => ({ ...current, settings: false }));
       }
@@ -648,6 +749,12 @@ export const useOrganizationWorkspace = () => {
           action === "approve"
             ? "Đã duyệt yêu cầu tham gia"
             : "Đã từ chối yêu cầu tham gia",
+          {
+            description:
+              action === "approve"
+                ? `${getMemberName(member)} đã được thêm vào danh sách thành viên.`
+                : `Yêu cầu tham gia của ${getMemberName(member)} đã bị đóng.`,
+          },
         );
         setSelectedJoinRequest(null);
         loadJoinRequests();
@@ -656,7 +763,10 @@ export const useOrganizationWorkspace = () => {
         refreshOrganizations?.();
       } catch (error) {
         console.error("Failed to review join request:", error);
-        message.error(getErrorMessage(error, "Không thể xử lý yêu cầu"));
+        message.error(getErrorMessage(error, "Không thể xử lý yêu cầu"), {
+          description:
+            "Trạng thái yêu cầu tham gia chưa được cập nhật. Hãy thử lại trong tab Lời mời.",
+        });
       }
     },
     [
@@ -680,12 +790,17 @@ export const useOrganizationWorkspace = () => {
         });
         setOrganization(payload.organization);
         setTransferModalOpen(false);
-        message.success("Đã chuyển quyền sở hữu tổ chức");
+        message.success("Đã chuyển quyền sở hữu tổ chức", {
+          description: `${getMemberName(member)} hiện là chủ sở hữu mới của tổ chức.`,
+        });
         loadMembers();
         refreshOrganizations?.();
       } catch (error) {
         console.error("Failed to transfer organization ownership:", error);
-        message.error(getErrorMessage(error, "Không thể chuyển quyền sở hữu"));
+        message.error(getErrorMessage(error, "Không thể chuyển quyền sở hữu"), {
+          description:
+            "Quyền sở hữu vẫn chưa thay đổi. Hãy kiểm tra thành viên nhận quyền và thử lại.",
+        });
       } finally {
         setIsTransferringOwner(false);
       }
@@ -703,7 +818,10 @@ export const useOrganizationWorkspace = () => {
     async (file) => {
       if (!organizationId || !file) return null;
       if (!hasPermission(activeOrganization, "manageOrganization")) {
-        message.error("Bạn không có quyền cập nhật ảnh biểu ngữ");
+        message.error("Bạn không có quyền cập nhật ảnh biểu ngữ", {
+          description:
+            "Chỉ chủ sở hữu hoặc thành viên có quyền quản lý tổ chức mới được đổi biểu ngữ.",
+        });
         return null;
       }
 
@@ -711,11 +829,18 @@ export const useOrganizationWorkspace = () => {
       try {
         const updatedOrganization = await updateOrganizationBanner(organizationId, file);
         setOrganization(updatedOrganization);
-        message.success("Đã cập nhật ảnh biểu ngữ");
+        message.success("Đã cập nhật ảnh biểu ngữ", {
+          description: `${getOrganizationName(
+            updatedOrganization,
+          )} đã áp dụng ảnh biểu ngữ mới.`,
+        });
         return updatedOrganization;
       } catch (error) {
         console.error("Failed to update organization banner:", error);
-        message.error(getErrorMessage(error, "Không thể cập nhật ảnh biểu ngữ"));
+        message.error(getErrorMessage(error, "Không thể cập nhật ảnh biểu ngữ"), {
+          description:
+            "Ảnh biểu ngữ chưa được lưu. Hãy kiểm tra định dạng, dung lượng hoặc thử lại sau.",
+        });
         return null;
       } finally {
         setLoading((current) => ({ ...current, banner: false }));
@@ -730,16 +855,23 @@ export const useOrganizationWorkspace = () => {
     setLeaving(true);
     try {
       await leaveOrganization(organizationId);
-      message.success("Đã rời tổ chức");
+      message.success("Đã rời tổ chức", {
+        description: `${getOrganizationName(
+          activeOrganization,
+        )} đã được gỡ khỏi danh sách tổ chức của bạn.`,
+      });
       navigate("/organization", { replace: true });
     } catch (error) {
       console.error("Failed to leave organization:", error);
-      message.error(getErrorMessage(error, "Không thể rời tổ chức"));
+      message.error(getErrorMessage(error, "Không thể rời tổ chức"), {
+        description:
+          "Tài khoản của bạn vẫn còn trong tổ chức này. Hãy thử lại hoặc liên hệ chủ sở hữu.",
+      });
     } finally {
       setLeaving(false);
     }
   }, [
-    activeOrganization?.role,
+    activeOrganization,
     leaving,
     leaveOrganization,
     message,

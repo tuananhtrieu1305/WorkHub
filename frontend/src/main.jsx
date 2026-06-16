@@ -6,6 +6,7 @@ import { router } from "./routes/route.jsx";
 import { defineCustomElements } from "@cloudflare/realtimekit-ui/loader";
 import { GoogleOAuthProvider } from '@react-oauth/google';
 import { App as AntdApp } from "antd";
+import WorkHubToaster from "./components/feedback/WorkHubToaster.jsx";
 
 defineCustomElements(window);
 
@@ -14,6 +15,7 @@ createRoot(document.getElementById("root")).render(
     <GoogleOAuthProvider clientId={import.meta.env.VITE_GOOGLE_CLIENT_ID}>
       <AntdApp>
         <RouterProvider router={router} />
+        <WorkHubToaster />
       </AntdApp>
     </GoogleOAuthProvider>
   </StrictMode>,

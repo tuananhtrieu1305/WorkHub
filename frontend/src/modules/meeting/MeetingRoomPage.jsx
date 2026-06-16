@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Alert, Button, Select, Spin, Switch, Tooltip, Typography, message } from "antd";
+import { Alert, Button, Select, Spin, Switch, Tooltip, Typography } from "antd";
 import { useNavigate, useParams } from "react-router-dom";
 import {
   ArrowLeftOutlined,
@@ -20,6 +20,7 @@ import {
   getPreferredDeviceId,
   normalizeMediaDevices,
 } from "./meetingLobbyState";
+import { useWorkHubToast } from "../../components/feedback/workHubToast";
 
 const { Text, Title } = Typography;
 
@@ -31,6 +32,7 @@ const EMPTY_DEVICE_OPTIONS = {
 export default function MeetingRoomPage() {
   const { id } = useParams();
   const navigate = useNavigate();
+  const message = useWorkHubToast();
   const {
     meeting,
     activeMeeting: sessionMeeting,
@@ -247,9 +249,15 @@ export default function MeetingRoomPage() {
 
     try {
       await navigator.clipboard.writeText(String(displayMeetingId));
-      message.success("Đã sao chép Meeting ID");
+      message.copySuccess("Đã sao chép Meeting ID", String(displayMeetingId), {
+        label: "Meeting ID",
+        text: "Meeting ID của phòng hiện tại đã sẵn sàng để chia sẻ.",
+      });
     } catch {
-      message.info("Không thể sao chép tự động");
+      message.info("Không thể sao chép tự động", {
+        description:
+          "Trình duyệt chưa cho phép truy cập clipboard. Bạn có thể sao chép Meeting ID trong phần tiêu đề phòng.",
+      });
     }
   };
 

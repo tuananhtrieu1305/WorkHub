@@ -1,4 +1,3 @@
-import { App } from "antd";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import {
@@ -12,6 +11,7 @@ import {
 import { initRealtimeKitClient } from "../../services/realtimeKitClient";
 import MeetingDock from "./MeetingDock";
 import { MeetingContext } from "./meetingContextValue";
+import { useWorkHubToast } from "../../components/feedback/workHubToast";
 
 const getMeetingId = (meeting) => meeting?.id || meeting?._id || null;
 
@@ -53,7 +53,7 @@ const applyPreferredDevices = async (meetingClient, preferredDevices = {}) => {
 };
 
 export const MeetingProvider = ({ children }) => {
-  const { message } = App.useApp();
+  const message = useWorkHubToast();
   const navigate = useNavigate();
   const location = useLocation();
   const [meeting, setMeeting] = useState(null);
@@ -190,9 +190,15 @@ export const MeetingProvider = ({ children }) => {
       hasJoinedRoomRef.current = false;
       clearActiveMeeting();
       redirectAfterLeave(ended.meeting || currentMeeting);
-      message.success("Da ket thuc cuoc goi");
+      message.success("Đã kết thúc cuộc họp", {
+        description:
+          "Phòng họp đã được đóng và người tham gia sẽ không thể tiếp tục vào phiên này.",
+      });
     } catch (error) {
-      message.error(error.response?.data?.message || "Khong the ket thuc cuoc goi");
+      message.error(error.response?.data?.message || "Không thể kết thúc cuộc họp", {
+        description:
+          "Phiên họp vẫn có thể đang hoạt động. Hãy kiểm tra kết nối hoặc thử kết thúc lại.",
+      });
     } finally {
       isLeavingMeetingRef.current = false;
       setEndingMeeting(false);
@@ -235,7 +241,7 @@ export const MeetingProvider = ({ children }) => {
 
         const token = explicitParticipantToken || participantToken;
         if (!token) {
-          throw new Error("Khong nhan duoc token tham gia cuoc goi");
+          throw new Error("Không nhận được token tham gia cuộc họp");
         }
 
         const nextClient = await initRealtimeKitClient({
@@ -270,7 +276,7 @@ export const MeetingProvider = ({ children }) => {
           reason: "workhub-meeting-join-failed",
         });
         const errorMessage =
-          error.response?.data?.message || error.message || "Khong the vao cuoc goi";
+          error.response?.data?.message || error.message || "Không thể vào cuộc họp";
         setMeetingJoinError(errorMessage);
         throw error;
       } finally {

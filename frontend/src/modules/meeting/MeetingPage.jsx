@@ -1,5 +1,5 @@
-import { useEffect, useState } from "react";
-import { Button, Empty, Form, Input, Skeleton, Tag, Tooltip, Typography, message } from "antd";
+import { useCallback, useEffect, useState } from "react";
+import { Button, Empty, Form, Input, Skeleton, Tag, Tooltip, Typography } from "antd";
 import { Link, useNavigate } from "react-router-dom";
 import {
   CalendarOutlined,
@@ -22,6 +22,7 @@ import {
   removeMeetingById,
   upsertActiveMeeting,
 } from "./meetingListState";
+import { useWorkHubToast } from "../../components/feedback/workHubToast";
 
 const { Text, Title } = Typography;
 
@@ -38,6 +39,7 @@ const toComparableId = (value) => {
 export default function MeetingPage() {
   const navigate = useNavigate();
   const { createMeeting, joinMeeting } = useMeetingContext();
+  const message = useWorkHubToast();
   const { user } = useAuth();
   const { socket } = useSocket();
   const [form] = Form.useForm();
@@ -50,21 +52,24 @@ export default function MeetingPage() {
     user?.activeOrganization?.id || user?.activeOrganizationId,
   );
 
-  const loadMeetings = async () => {
+  const loadMeetings = useCallback(async () => {
     setLoading(true);
     try {
       const data = await listMeetings({ page: 1, size: 12, status: "active" });
       setMeetings(Array.isArray(data) ? data : data.content || []);
     } catch (error) {
-      message.error(error.response?.data?.message || "Không thể tải danh sách cuộc họp");
+      message.error(error.response?.data?.message || "Không thể tải danh sách cuộc họp", {
+        description:
+          "Danh sách phòng họp đang hoạt động chưa được đồng bộ. Hãy bấm Làm mới hoặc thử lại sau.",
+      });
     } finally {
       setLoading(false);
     }
-  };
+  }, [message]);
 
   useEffect(() => {
     loadMeetings();
-  }, [activeOrganizationId]);
+  }, [activeOrganizationId, loadMeetings]);
 
   useEffect(() => {
     if (!socket) return undefined;
@@ -98,11 +103,25 @@ export default function MeetingPage() {
   const handleCreate = async (values) => {
     setCreating(true);
     try {
-      const data = await createMeeting({ title: values.title.trim() });
-      message.success("Đã tạo cuộc họp");
+      const createRequest = createMeeting({ title: values.title.trim() });
+      message.promise(createRequest, {
+        loading: "Đang tạo cuộc họp",
+        success: "Đã tạo cuộc họp",
+        error: (error) =>
+          error.response?.data?.message || "Không thể tạo cuộc họp",
+        description: {
+          loading: "WorkHub đang chuẩn bị phòng họp mới.",
+          success: (data) =>
+            message.details([
+              { label: "Meeting ID", value: data?.meeting?.id },
+            ]),
+          error: "Vui lòng kiểm tra kết nối hoặc thử lại sau.",
+        },
+      });
+      const data = await createRequest;
       navigate(`/meetings/${data.meeting.id}`);
     } catch (error) {
-      message.error(error.response?.data?.message || "Không thể tạo cuộc họp");
+      console.error("Failed to create meeting:", error);
     } finally {
       setCreating(false);
     }
@@ -112,10 +131,25 @@ export default function MeetingPage() {
     const meetingId = values.meetingId.trim();
     setJoining(true);
     try {
-      const data = await joinMeeting(meetingId);
+      const joinRequest = joinMeeting(meetingId);
+      message.promise(joinRequest, {
+        loading: "Đang tham gia cuộc họp",
+        success: "Đã vào phòng họp",
+        error: (error) =>
+          error.response?.data?.message || "Không thể tham gia cuộc họp",
+        description: {
+          loading: message.details([{ label: "Meeting ID", value: meetingId }]),
+          success: (data) =>
+            message.details([
+              { label: "Meeting ID", value: data?.meeting?.id || meetingId },
+            ]),
+          error: "Meeting ID có thể đã hết hạn hoặc bạn chưa có quyền truy cập.",
+        },
+      });
+      const data = await joinRequest;
       navigate(`/meetings/${data.meeting?.id || meetingId}`);
     } catch (error) {
-      message.error(error.response?.data?.message || "Không thể tham gia cuộc họp");
+      console.error("Failed to join meeting:", error);
     } finally {
       setJoining(false);
     }
@@ -126,9 +160,15 @@ export default function MeetingPage() {
 
     try {
       await navigator.clipboard.writeText(meetingId);
-      message.success("Đã sao chép Meeting ID");
+      message.copySuccess("Đã sao chép Meeting ID", meetingId, {
+        label: "Meeting ID",
+        text: "Meeting ID đã nằm trong clipboard để bạn gửi cho người tham gia.",
+      });
     } catch {
-      message.info("Không thể sao chép tự động");
+      message.info("Không thể sao chép tự động", {
+        description:
+          "Trình duyệt chưa cấp quyền clipboard. Bạn có thể sao chép Meeting ID trực tiếp trên thẻ cuộc họp.",
+      });
     }
   };
 

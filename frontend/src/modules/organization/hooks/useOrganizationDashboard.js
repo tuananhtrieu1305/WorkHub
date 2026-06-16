@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
-import { App } from "antd";
 import {
   getNotificationSettings,
   updateNotificationSettings,
@@ -22,6 +21,7 @@ import {
   isManager,
   normalizeInviteValue,
 } from "../organizationUtils";
+import { useWorkHubToast } from "../../../components/feedback/workHubToast";
 
 const allowedImageTypes = new Set([
   "image/jpeg",
@@ -87,6 +87,9 @@ const hasMissingRequiredJoinAnswer = (questions = [], answers = {}) =>
     return !String(value || "").trim();
   });
 
+const getOrganizationName = (organization) =>
+  organization?.name || "Tổ chức này";
+
 export const useOrganizationDashboard = () => {
   const {
     user,
@@ -99,7 +102,7 @@ export const useOrganizationDashboard = () => {
     updateOrganizationLogo,
     updateOrganizationBanner,
   } = useAuth();
-  const { message } = App.useApp();
+  const message = useWorkHubToast();
   const navigate = useNavigate();
   const params = useParams();
   const [searchParams] = useSearchParams();
@@ -254,16 +257,28 @@ export const useOrganizationDashboard = () => {
         setInviteLink("");
         closeActionModal();
         const joinedOrganization = context?.organization;
+        const isPendingJoin = joinedOrganization?.memberStatus === "pending";
         message.success(
-          joinedOrganization?.memberStatus === "pending"
-            ? "Đã gửi yêu cầu tham gia"
-            : "Đã tham gia tổ chức",
+          isPendingJoin ? "Đã gửi yêu cầu tham gia" : "Đã tham gia tổ chức",
+          {
+            description: isPendingJoin
+              ? `${getOrganizationName(
+                  joinedOrganization,
+                )} sẽ xem xét yêu cầu trước khi kích hoạt tài khoản của bạn.`
+              : `${getOrganizationName(
+                  joinedOrganization,
+                )} đã được thêm vào danh sách tổ chức của bạn.`,
+          },
         );
         if (params.inviteCode) navigate("/organization", { replace: true });
       } catch (error) {
         console.error("Failed to join organization:", error);
         message.error(
           error?.response?.data?.message || "Không thể gửi yêu cầu tham gia",
+          {
+            description:
+              "Mã mời chưa được chấp nhận. Hãy kiểm tra lại mã hoặc liên hệ quản trị viên tổ chức.",
+          },
         );
       } finally {
         setIsJoining(false);
@@ -303,16 +318,28 @@ export const useOrganizationDashboard = () => {
         setInviteLink("");
         closeJoinQuestions();
         const joinedOrganization = context?.organization;
+        const isPendingJoin = joinedOrganization?.memberStatus === "pending";
         message.success(
-          joinedOrganization?.memberStatus === "pending"
-            ? "Đã gửi yêu cầu tham gia"
-            : "Đã tham gia tổ chức",
+          isPendingJoin ? "Đã gửi yêu cầu tham gia" : "Đã tham gia tổ chức",
+          {
+            description: isPendingJoin
+              ? `${getOrganizationName(
+                  joinedOrganization,
+                )} đã nhận câu trả lời tham gia của bạn để xét duyệt.`
+              : `${getOrganizationName(
+                  joinedOrganization,
+                )} đã được thêm vào danh sách tổ chức của bạn.`,
+          },
         );
         if (params.inviteCode) navigate("/organization", { replace: true });
       } catch (error) {
         console.error("Failed to submit organization join answers:", error);
         message.error(
           error?.response?.data?.message || "Không thể gửi yêu cầu tham gia",
+          {
+            description:
+              "Câu trả lời tham gia chưa được gửi. Hãy kiểm tra các câu hỏi bắt buộc rồi thử lại.",
+          },
         );
       } finally {
         setIsJoining(false);
@@ -339,12 +366,18 @@ export const useOrganizationDashboard = () => {
       setIsCreating(true);
       try {
         await createOrganization(createForm);
+        const createdName = createForm.name.trim();
         setCreateForm({ name: "", description: "" });
         closeActionModal();
-        message.success("Đã tạo tổ chức mới");
+        message.success("Đã tạo tổ chức mới", {
+          description: `${createdName} đã sẵn sàng để bạn mời thành viên và thiết lập không gian làm việc.`,
+        });
       } catch (error) {
         console.error("Failed to create organization:", error);
-        message.error(error?.response?.data?.message || "Không thể tạo tổ chức");
+        message.error(error?.response?.data?.message || "Không thể tạo tổ chức", {
+          description:
+            "Tổ chức mới chưa được tạo. Hãy kiểm tra tên tổ chức và thử lại.",
+        });
       } finally {
         setIsCreating(false);
       }
@@ -360,11 +393,18 @@ export const useOrganizationDashboard = () => {
       setIsSwitchingId(organizationId);
       try {
         await switchActiveOrganization(organizationId);
-        message.success("Đã chuyển tổ chức");
+        message.success("Đã chuyển tổ chức", {
+          description:
+            "Bảng điều khiển, lời mời và thông báo sẽ hiển thị theo tổ chức vừa chọn.",
+        });
       } catch (error) {
         console.error("Failed to switch organization:", error);
         message.error(
           error?.response?.data?.message || "Không thể chuyển tổ chức",
+          {
+            description:
+              "WorkHub chưa thể đặt tổ chức này làm không gian làm việc hiện tại.",
+          },
         );
       } finally {
         setIsSwitchingId("");
@@ -378,7 +418,10 @@ export const useOrganizationDashboard = () => {
       event?.stopPropagation?.();
       setOpenMenuId("");
       if (!organization) {
-        message.warning("Chưa có tổ chức để tạo lời mời");
+        message.warning("Chưa có tổ chức để tạo lời mời", {
+          description:
+            "Bạn cần tạo hoặc tham gia một tổ chức trước khi phát hành mã mời.",
+        });
         return;
       }
       setInviteModalOrganization(organization);
@@ -426,16 +469,33 @@ export const useOrganizationDashboard = () => {
         const invite = await createInviteForCurrentForm();
         if (!invite?.code) return;
 
-        message.success("Đã tạo mã mời");
+        message.success("Đã tạo mã mời", {
+          description: message.body({
+            text: "Mã mời mới đã được tạo cho tổ chức này.",
+            rows: [{ label: "Mã mời", value: invite.code }],
+          }),
+          action: {
+            label: "Sao chép mã",
+            onClick: () => copyTextToClipboard(invite.code),
+            successLabel: "Đã sao chép",
+          },
+        });
         return;
       }
 
       await copyTextToClipboard(createdInvite.code);
-      message.success("Đã sao chép mã mời");
+      message.copySuccess("Đã sao chép mã mời", createdInvite.code, {
+        label: "Mã mời",
+        text: "Mã mời đã nằm trong clipboard để gửi cho thành viên mới.",
+      });
     } catch (error) {
       console.error("Failed to copy organization invite code:", error);
       message.error(
         error?.response?.data?.message || "Không thể sao chép mã mời",
+        {
+          description:
+            "Mã mời chưa được đưa vào clipboard. Hãy thử bấm Sao chép lại hoặc copy thủ công.",
+        },
       );
     }
   }, [createInviteForCurrentForm, createdInvite, message]);
@@ -449,11 +509,18 @@ export const useOrganizationDashboard = () => {
         if (!shareLink) return;
 
         await copyTextToClipboard(shareLink);
-        message.success("Đã sao chép liên kết mời");
+        message.copySuccess("Đã sao chép liên kết mời", shareLink, {
+          label: "Link",
+          text: "Liên kết mời đã sẵn sàng để gửi cho thành viên mới.",
+        });
       } catch (error) {
         console.error("Failed to create organization invite:", error);
         message.error(
           error?.response?.data?.message || "Không thể sao chép liên kết mời",
+          {
+            description:
+              "Liên kết mời chưa được đưa vào clipboard. Hãy tạo lại mã hoặc thử sao chép sau.",
+          },
         );
       }
     },
@@ -471,11 +538,24 @@ export const useOrganizationDashboard = () => {
         await refreshContext();
         message.success(
           organization.isFavorite ? "Đã bỏ yêu thích" : "Đã đánh dấu yêu thích",
+          {
+            description: organization.isFavorite
+              ? `${getOrganizationName(
+                  organization,
+                )} đã được bỏ khỏi danh sách ưu tiên.`
+              : `${getOrganizationName(
+                  organization,
+                )} sẽ được ưu tiên hiển thị trong danh sách tổ chức.`,
+          },
         );
       } catch (error) {
         console.error("Failed to update favorite organization:", error);
         message.error(
           error?.response?.data?.message || "Không thể cập nhật yêu thích",
+          {
+            description:
+              "Trạng thái yêu thích của tổ chức chưa được lưu. Hãy thử lại sau.",
+          },
         );
       }
     },
@@ -495,11 +575,18 @@ export const useOrganizationDashboard = () => {
           setExpandedOrganizationId("");
           setDetailMembers([]);
         }
-        message.success("Đã rời tổ chức");
+        message.success("Đã rời tổ chức", {
+          description: `${getOrganizationName(
+            organization,
+          )} đã được gỡ khỏi danh sách tổ chức của bạn.`,
+        });
         return true;
       } catch (error) {
         console.error("Failed to leave organization:", error);
-        message.error(error?.response?.data?.message || "Không thể rời tổ chức");
+        message.error(error?.response?.data?.message || "Không thể rời tổ chức", {
+          description:
+            "Tài khoản của bạn vẫn còn trong tổ chức này. Hãy thử lại hoặc liên hệ quản trị viên.",
+        });
         return false;
       } finally {
         setIsLeavingId("");
@@ -541,10 +628,17 @@ export const useOrganizationDashboard = () => {
       setIsLeavingId(organizationId);
       try {
         await leaveOrganization(organizationId);
-        message.success("Đã hủy yêu cầu tham gia");
+        message.success("Đã hủy yêu cầu tham gia", {
+          description: `${getOrganizationName(
+            organization,
+          )} sẽ không còn thấy yêu cầu chờ duyệt của bạn.`,
+        });
       } catch (error) {
         console.error("Failed to cancel organization request:", error);
-        message.error(error?.response?.data?.message || "Không thể hủy yêu cầu");
+        message.error(error?.response?.data?.message || "Không thể hủy yêu cầu", {
+          description:
+            "Yêu cầu tham gia vẫn đang chờ duyệt. Hãy thử hủy lại sau.",
+        });
       } finally {
         setIsLeavingId("");
       }
@@ -574,10 +668,15 @@ export const useOrganizationDashboard = () => {
       setIsUpdating(true);
       try {
         await updateOrganization(organizationId, editForm);
-        message.success("Đã cập nhật tổ chức");
+        message.success("Đã cập nhật tổ chức", {
+          description: `${editForm.name.trim()} đã lưu thay đổi tên, mô tả hoặc màu nhận diện.`,
+        });
       } catch (error) {
         console.error("Failed to update organization:", error);
-        message.error(error?.response?.data?.message || "Không thể cập nhật");
+        message.error(error?.response?.data?.message || "Không thể cập nhật", {
+          description:
+            "Thông tin tổ chức chưa được lưu. Hãy kiểm tra dữ liệu nhập và thử lại.",
+        });
       } finally {
         setIsUpdating(false);
       }
@@ -607,10 +706,17 @@ export const useOrganizationDashboard = () => {
         ...current,
         inviteEnabled: nextInviteEnabled,
       }));
-      message.success(nextInviteEnabled ? "Đã bật link mời" : "Đã tắt link mời");
+      message.success(nextInviteEnabled ? "Đã bật link mời" : "Đã tắt link mời", {
+        description: nextInviteEnabled
+          ? "Thành viên mới có thể dùng link mời hiện tại để gửi yêu cầu tham gia."
+          : "Link mời công khai đã bị tắt và không thể dùng để tham gia tổ chức.",
+      });
     } catch (error) {
       console.error("Failed to toggle invite:", error);
-      message.error(error?.response?.data?.message || "Không thể cập nhật link");
+      message.error(error?.response?.data?.message || "Không thể cập nhật link", {
+        description:
+          "Trạng thái link mời chưa được thay đổi. Hãy thử lại trong phần quản trị tổ chức.",
+      });
     } finally {
       setIsUpdating(false);
     }
@@ -635,10 +741,16 @@ export const useOrganizationDashboard = () => {
         ...editForm,
         rotateInviteCode: true,
       });
-      message.success("Đã đổi link mời");
+      message.success("Đã đổi link mời", {
+        description:
+          "Link mời cũ đã hết hiệu lực. Hãy chia sẻ link mới cho thành viên cần tham gia.",
+      });
     } catch (error) {
       console.error("Failed to rotate invite:", error);
-      message.error(error?.response?.data?.message || "Không thể đổi link mời");
+      message.error(error?.response?.data?.message || "Không thể đổi link mời", {
+        description:
+          "Link mời hiện tại vẫn giữ nguyên vì WorkHub chưa tạo được mã mới.",
+      });
     } finally {
       setIsRotatingInvite(false);
     }
@@ -672,7 +784,9 @@ export const useOrganizationDashboard = () => {
       if (!file || target.type !== type || !target.organizationId) return;
 
       if (!allowedImageTypes.has(file.type)) {
-        message.error("Ảnh phải là JPG, PNG, GIF hoặc WebP");
+        message.error("Ảnh phải là JPG, PNG, GIF hoặc WebP", {
+          description: `${file.name} không thuộc định dạng ảnh được WorkHub hỗ trợ.`,
+        });
         return;
       }
 
@@ -680,6 +794,11 @@ export const useOrganizationDashboard = () => {
       if (file.size > maxSize) {
         message.error(
           type === "banner" ? "Biểu ngữ phải nhỏ hơn 8MB" : "Ảnh phải nhỏ hơn 5MB",
+          {
+            description: `${file.name} vượt giới hạn dung lượng cho ${
+              type === "banner" ? "biểu ngữ tổ chức" : "ảnh đại diện tổ chức"
+            }.`,
+          },
         );
         return;
       }
@@ -688,14 +807,23 @@ export const useOrganizationDashboard = () => {
       try {
         if (type === "banner") {
           await updateOrganizationBanner(target.organizationId, file);
-          message.success("Đã cập nhật biểu ngữ");
+          message.success("Đã cập nhật biểu ngữ", {
+            description:
+              "Ảnh biểu ngữ mới đã được áp dụng cho trang tổ chức.",
+          });
         } else {
           await updateOrganizationLogo(target.organizationId, file);
-          message.success("Đã cập nhật ảnh tổ chức");
+          message.success("Đã cập nhật ảnh tổ chức", {
+            description:
+              "Ảnh đại diện mới đã được áp dụng trong danh sách tổ chức và hồ sơ workspace.",
+          });
         }
       } catch (error) {
         console.error("Failed to upload organization media:", error);
-        message.error(error?.response?.data?.message || "Không thể tải ảnh lên");
+        message.error(error?.response?.data?.message || "Không thể tải ảnh lên", {
+          description:
+            "Ảnh tổ chức chưa được cập nhật. Hãy kiểm tra định dạng, dung lượng hoặc thử lại sau.",
+        });
       } finally {
         setUploadingMedia({ type: "", organizationId: "" });
         uploadTargetRef.current = { type: "", organizationId: "" };
@@ -718,10 +846,19 @@ export const useOrganizationDashboard = () => {
         ]);
         message.success(
           action === "approve" ? "Đã duyệt thành viên" : "Đã từ chối yêu cầu",
+          {
+            description:
+              action === "approve"
+                ? "Thành viên mới đã được kích hoạt trong tổ chức."
+                : "Yêu cầu tham gia đã bị đóng và không được thêm vào tổ chức.",
+          },
         );
       } catch (error) {
         console.error("Failed to review organization request:", error);
-        message.error(error?.response?.data?.message || "Không thể xử lý yêu cầu");
+        message.error(error?.response?.data?.message || "Không thể xử lý yêu cầu", {
+          description:
+            "Trạng thái yêu cầu tham gia chưa được cập nhật. Hãy thử duyệt lại sau.",
+        });
       } finally {
         setReviewingMemberId("");
       }
@@ -756,12 +893,24 @@ export const useOrganizationDashboard = () => {
       try {
         const saved = await updateNotificationSettings({ [key]: nextValue });
         setNotificationSettings(saved);
-        message.success("Đã cập nhật thông báo");
+        message.success("Đã cập nhật thông báo", {
+          description: message.body({
+            text: "Tùy chọn thông báo của tài khoản đã được lưu.",
+            rows: [
+              { label: "Cài đặt", value: key },
+              { label: "Trạng thái", value: nextValue ? "Bật" : "Tắt" },
+            ],
+          }),
+        });
       } catch (error) {
         console.error("Failed to update notification settings:", error);
         setNotificationSettings(previous);
         message.error(
           error?.response?.data?.message || "Không thể cập nhật thông báo",
+          {
+            description:
+              "Tùy chọn thông báo vừa thay đổi đã được hoàn tác trên giao diện.",
+          },
         );
       } finally {
         setSavingNotificationKey("");
@@ -817,7 +966,10 @@ export const useOrganizationDashboard = () => {
       .catch((error) => {
         console.error("Failed to load notification settings:", error);
         if (!ignore) {
-          message.error("Không thể tải cài đặt thông báo");
+          message.error("Không thể tải cài đặt thông báo", {
+            description:
+              "Bảng thông báo chưa có trạng thái bật/tắt mới nhất của tài khoản.",
+          });
         }
       })
       .finally(() => {

@@ -1,0 +1,148 @@
+.workhub-toast-wrapper {
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
+    "Segoe UI", sans-serif;
+}
+
+.workhub-toast-content {
+  color: #0f172a;
+}
+
+.workhub-toast-header {
+  align-items: center;
+}
+
+.workhub-toast-icon-wrap {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.workhub-toast-title {
+  max-width: 19rem;
+  padding-left: 0;
+  color: #0f172a;
+  font-size: 0.8125rem;
+  font-weight: 800;
+  letter-spacing: 0;
+}
+
+.workhub-toast-description {
+  color: #475569;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  line-height: 1.55;
+}
+
+.workhub-toast-action {
+  border: 1px solid #bfdbfe;
+  border-radius: 999px;
+  background: linear-gradient(135deg, #e0f2fe 0%, #dbeafe 100%);
+  color: #1d4ed8;
+  font-size: 0.75rem;
+  font-weight: 800;
+  letter-spacing: 0;
+  padding: 0.5rem 0.72rem;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.75),
+    0 8px 18px rgba(37, 99, 235, 0.12);
+}
+
+.workhub-toast-action-wrapper {
+  display: flex;
+  justify-content: flex-end;
+  padding-top: 0.1rem;
+}
+
+.workhub-toast-action:hover {
+  border-color: #93c5fd;
+  background: linear-gradient(135deg, #dbeafe 0%, #ccfbf1 100%);
+  color: #1e40af;
+}
+
+.workhub-toast-icon {
+  font-size: 1.125rem;
+  font-variation-settings: "FILL" 1, "wght" 700, "GRAD" 0, "opsz" 20;
+  line-height: 1;
+}
+
+.workhub-toast-icon-success {
+  color: #059669;
+}
+
+.workhub-toast-icon-error {
+  color: #e11d48;
+}
+
+.workhub-toast-icon-warning {
+  color: #d97706;
+}
+
+.workhub-toast-icon-info {
+  color: #2563eb;
+}
+
+.workhub-toast-icon-default {
+  color: #475569;
+}
+
+.workhub-toast-body {
+  display: grid;
+  gap: 0.55rem;
+}
+
+.workhub-toast-body p {
+  margin: 0;
+}
+
+.workhub-toast-details {
+  display: grid;
+  gap: 0.45rem;
+}
+
+.workhub-toast-detail-row {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  border-radius: 0.75rem;
+  background: rgba(15, 23, 42, 0.045);
+  padding: 0.5rem 0.6rem;
+}
+
+.workhub-toast-detail-label {
+  flex: 0 0 auto;
+  color: #64748b;
+  font-size: 0.72rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.workhub-toast-detail-value {
+  min-width: 0;
+  overflow: hidden;
+  color: #0f172a;
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Consolas,
+    "Liberation Mono", monospace;
+  font-size: 0.76rem;
+  font-weight: 800;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.workhub-toast-confirm-note {
+  color: #64748b;
+  font-size: 0.78rem;
+}
+
+@media (max-width: 640px) {
+  .workhub-toast-title {
+    max-width: min(17rem, calc(100vw - 7rem));
+  }
+
+  .workhub-toast-detail-row {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 0.2rem;
+  }
+}

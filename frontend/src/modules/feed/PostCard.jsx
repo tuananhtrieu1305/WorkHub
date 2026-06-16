@@ -22,12 +22,14 @@ import {
   getAvatarReferrerPolicy,
   getAvatarUrl,
 } from "../../utils/avatar";
+import { useWorkHubToast } from "../../components/feedback/workHubToast";
 
 const API_URL = import.meta.env.VITE_NODE_API_URL || "http://localhost:5000";
 
 const PostCard = ({ post, onPostDeleted, onPostUpdated }) => {
   const { user } = useAuth();
   const navigate = useNavigate();
+  const message = useWorkHubToast();
   const [timeReference] = useState(() => Date.now());
   const [showComments, setShowComments] = useState(false);
   const [commentsCount, setCommentsCount] = useState(post.commentsCount || 0);
@@ -100,13 +102,32 @@ const PostCard = ({ post, onPostDeleted, onPostUpdated }) => {
   };
 
   const handleDelete = async () => {
-    if (!window.confirm("Bạn có chắc chắn muốn xóa bài đăng này?")) return;
+    const confirmed = await message.confirm({
+      title: "Xóa bài đăng?",
+      description: "Bài đăng sẽ bị xóa khỏi bảng tin sau khi xác nhận.",
+      confirmLabel: "Xóa bài đăng",
+      successLabel: "Đang xóa",
+      type: "error",
+      detailRows: [
+        { label: "Tác giả", value: post.author?.fullName || "Bạn" },
+        { label: "Nội dung", value: post.content || "Bài đăng đính kèm" },
+      ],
+    });
+    if (!confirmed) return;
+
     setIsDeleting(true);
     try {
       await deletePost(post.id);
       onPostDeleted?.(post.id);
+      message.success("Đã xóa bài đăng", {
+        description: "Bảng tin đã được cập nhật.",
+      });
     } catch (err) {
       console.error("Delete post failed:", err);
+      message.error("Không thể xóa bài đăng", {
+        description:
+          "Bài đăng vẫn còn trên bảng tin. Hãy kiểm tra quyền xóa hoặc thử lại sau.",
+      });
       setIsDeleting(false);
     }
   };

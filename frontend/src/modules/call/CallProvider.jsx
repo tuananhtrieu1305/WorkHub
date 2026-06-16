@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { App } from "antd";
 import { useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../../context/AuthContext";
 import { useSocket } from "../../context/SocketContext";
@@ -33,6 +32,7 @@ import {
 import CallDock from "./CallDock";
 import IncomingCallModal from "./IncomingCallModal";
 import OutgoingCallModal from "./OutgoingCallModal";
+import { useWorkHubToast } from "../../components/feedback/workHubToast";
 
 const getPeer = (payload, role) =>
   role === "caller" ? payload?.caller : payload?.callee;
@@ -43,12 +43,20 @@ const toComparableId = (value) => {
 };
 
 const terminalMessages = {
-  busy: "May ban",
-  declined: "Cuoc goi da bi tu choi",
-  cancelled: "Cuoc goi da bi huy",
-  missed: "Khong nghe may",
-  failed: "Cuoc goi that bai",
-  ended: "Cuoc goi da ket thuc",
+  busy: "Máy bận",
+  declined: "Cuộc gọi đã bị từ chối",
+  cancelled: "Cuộc gọi đã bị hủy",
+  missed: "Không nghe máy",
+  failed: "Cuộc gọi thất bại",
+  ended: "Cuộc gọi đã kết thúc",
+};
+
+const terminalDescriptions = {
+  busy: "Người nhận hoặc thiết bị của bạn đang có cuộc gọi khác.",
+  declined: "Người nhận đã từ chối lời mời gọi.",
+  cancelled: "Cuộc gọi đã được hủy trước khi kết nối.",
+  missed: "Cuộc gọi kết thúc vì không có người trả lời.",
+  failed: "Phiên gọi không thể kết nối ổn định. Hãy thử gọi lại sau.",
 };
 
 const addRoomLeftListener = (meetingClient, handler) => {
@@ -66,7 +74,7 @@ const addRoomLeftListener = (meetingClient, handler) => {
 };
 
 export const CallProvider = ({ children }) => {
-  const { message } = App.useApp();
+  const message = useWorkHubToast();
   const { user } = useAuth();
   const { socket } = useSocket();
   const navigate = useNavigate();
@@ -192,7 +200,10 @@ export const CallProvider = ({ children }) => {
         setActiveCall(null);
         redirectAfterEnd(ended.call || call);
       } catch (error) {
-        message.error(error.response?.data?.message || "Khong the ket thuc cuoc goi");
+        message.error(error.response?.data?.message || "Không thể kết thúc cuộc gọi", {
+          description:
+            "Cuộc gọi hiện tại chưa được đóng hoàn toàn. Hãy kiểm tra kết nối hoặc thử kết thúc lại.",
+        });
       } finally {
         isEndingCallRef.current = false;
         setEndingCall(false);
@@ -230,7 +241,7 @@ export const CallProvider = ({ children }) => {
     async ({ call, participantToken } = {}) => {
       const callId = getCallId(call);
       if (!callId) {
-        throw new Error("Khong co thong tin cuoc goi");
+        throw new Error("Không có thông tin cuộc gọi");
       }
 
       const existingClient = callClientRef.current;
@@ -258,7 +269,7 @@ export const CallProvider = ({ children }) => {
           participantToken ||
           (await getJoinToken(callId)).participant?.token;
         if (!token) {
-          throw new Error("Khong nhan duoc token tham gia cuoc goi");
+          throw new Error("Không nhận được token tham gia cuộc gọi");
         }
 
         const meetingClient = await initRealtimeKitClient({
@@ -292,7 +303,7 @@ export const CallProvider = ({ children }) => {
           reason: "workhub-call-join-failed",
         });
         const errorMessage =
-          error.response?.data?.message || error.message || "Khong the vao cuoc goi";
+          error.response?.data?.message || error.message || "Không thể vào cuộc gọi";
         setCallJoinError(errorMessage);
         throw error;
       } finally {
@@ -385,7 +396,10 @@ export const CallProvider = ({ children }) => {
       const hasLiveCall =
         activeCallRef.current && !isTerminalCallStatus(activeCallRef.current.status);
       if (startCallInFlightRef.current || outgoing || incoming || hasLiveCall) {
-        message.warning("Ban dang co cuoc goi dang xu ly");
+        message.warning("Bạn đang có cuộc gọi đang xử lý", {
+          description:
+            "Hãy kết thúc hoặc hủy cuộc gọi hiện tại trước khi bắt đầu cuộc gọi mới.",
+        });
         return;
       }
 
@@ -416,18 +430,35 @@ export const CallProvider = ({ children }) => {
           }).catch(() => {});
         }
         if (error.response?.data?.code === "CALLEE_UNAVAILABLE") {
-          message.warning("Người dùng đang ngoại tuyến");
+          message.warning("Người dùng đang ngoại tuyến", {
+            description: `${
+              callee?.fullName || "Người nhận"
+            } hiện không sẵn sàng nhận cuộc gọi trong WorkHub.`,
+          });
         } else if (error.response?.data?.code === "CALL_BUSY") {
           const isCallerBusy = error.response?.data?.message === "Caller is busy";
           message.warning(
             isCallerBusy
-              ? "Ban dang co cuoc goi dang xu ly"
-              : "Nguoi dung dang ban",
+              ? "Bạn đang có cuộc gọi đang xử lý"
+              : "Người dùng đang bận",
+            {
+              description: isCallerBusy
+                ? "Bạn cần kết thúc phiên gọi hiện tại trước khi gọi tiếp."
+                : `${
+                    callee?.fullName || "Người nhận"
+                  } đang ở trong một cuộc gọi khác.`,
+            },
           );
         } else if (error?.code === "timeout") {
-          message.error("Khong nhan duoc quyen micro/camera");
+          message.error("Không nhận được quyền micro/camera", {
+            description:
+              "Trình duyệt chưa cấp quyền thiết bị nên WorkHub không thể bắt đầu cuộc gọi.",
+          });
         } else {
-          message.error(error.response?.data?.message || "Khong the bat dau cuoc goi");
+          message.error(error.response?.data?.message || "Không thể bắt đầu cuộc gọi", {
+            description:
+              "Cuộc gọi chưa được tạo trong hội thoại này. Hãy kiểm tra kết nối hoặc thử lại sau.",
+          });
         }
         setOutgoing(null);
       } finally {
@@ -468,9 +499,15 @@ export const CallProvider = ({ children }) => {
           statusReason: reason,
           tabInstanceId: identity.tabInstanceId,
         }).catch(() => {});
-        message.error("Khong the mo micro/camera de nghe may");
+        message.error("Không thể mở micro/camera để nghe máy", {
+          description:
+            "Trình duyệt chưa cấp quyền thiết bị nên WorkHub không thể kết nối vào cuộc gọi.",
+        });
       } else {
-        message.error(error.response?.data?.message || "Cuoc goi khong con kha dung");
+        message.error(error.response?.data?.message || "Cuộc gọi không còn khả dụng", {
+          description:
+            "Cuộc gọi có thể đã bị hủy, hết thời gian chờ hoặc không còn thuộc phiên hiện tại.",
+        });
       }
       setIncoming(null);
     } finally {
@@ -486,7 +523,10 @@ export const CallProvider = ({ children }) => {
       await declineCall(call.id);
       setIncoming(null);
     } catch (error) {
-      message.error(error.response?.data?.message || "Khong the tu choi cuoc goi");
+      message.error(error.response?.data?.message || "Không thể từ chối cuộc gọi", {
+        description:
+          "Lựa chọn từ chối chưa được gửi tới hệ thống. Hãy thử lại nếu cuộc gọi vẫn còn hiển thị.",
+      });
     } finally {
       setIncomingLoading(false);
     }
@@ -503,7 +543,10 @@ export const CallProvider = ({ children }) => {
       await cancelCall(call.id);
       setOutgoing(null);
     } catch (error) {
-      message.error(error.response?.data?.message || "Khong the huy cuoc goi");
+      message.error(error.response?.data?.message || "Không thể hủy cuộc gọi", {
+        description:
+          "Cuộc gọi đi vẫn có thể đang đổ chuông. Hãy thử hủy lại hoặc chờ trạng thái cập nhật.",
+      });
     } finally {
       setOutgoingLoading(false);
     }
@@ -559,7 +602,10 @@ export const CallProvider = ({ children }) => {
           participantToken: joined.participant?.token,
         });
       } catch (error) {
-        message.error(error.response?.data?.message || "Khong the vao cuoc goi");
+        message.error(error.response?.data?.message || "Không thể vào cuộc gọi", {
+          description:
+            "WorkHub chưa lấy được phiên tham gia sau khi người nhận nghe máy.",
+        });
       }
     };
 
@@ -582,7 +628,11 @@ export const CallProvider = ({ children }) => {
 
       const text = terminalMessages[call.status];
       if (text && call.status !== "ended") {
-        message.info(text);
+        message.info(text, {
+          description:
+            terminalDescriptions[call.status] ||
+            "Trạng thái cuộc gọi đã được cập nhật.",
+        });
       }
 
       redirectAfterEnd(call);

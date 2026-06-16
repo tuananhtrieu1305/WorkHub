@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { App } from "antd";
 import {
   getMyProfile,
   updateMyAvatar,
@@ -22,6 +21,7 @@ import {
   toDateInputValue,
 } from "./profileUtils";
 import BannerCropModal from "../organization/components/banner/BannerCropModal";
+import { useWorkHubToast } from "../../components/feedback/workHubToast";
 
 const emptyLink = { label: "", url: "", type: "website" };
 
@@ -129,7 +129,7 @@ const AvatarPreview = ({ profile, onPickAvatar, isUploading }) => {
 };
 
 const ProfilePage = () => {
-  const { message } = App.useApp();
+  const message = useWorkHubToast();
   const { user, updateCurrentUser } = useAuth();
   const avatarInputRef = useRef(null);
   const bannerInputRef = useRef(null);
@@ -187,7 +187,12 @@ const ProfilePage = () => {
       })
       .catch((error) => {
         console.error("Failed to load profile:", error);
-        if (!cancelled) message.error("Không thể tải hồ sơ cá nhân");
+        if (!cancelled) {
+          message.error("Không thể tải hồ sơ cá nhân", {
+            description:
+              "Trang hồ sơ chưa nhận được dữ liệu mới nhất. Hãy làm mới trang hoặc thử lại sau.",
+          });
+        }
       })
       .finally(() => {
         if (!cancelled) setIsLoading(false);
@@ -216,14 +221,30 @@ const ProfilePage = () => {
     formData.append("avatar", file);
     setUploading((current) => ({ ...current, avatar: true }));
     try {
-      const result = await updateMyAvatar(formData);
+      const uploadRequest = updateMyAvatar(formData);
+      message.promise(uploadRequest, {
+        loading: "Đang cập nhật avatar",
+        success: "Đã cập nhật avatar",
+        error: (error) =>
+          error?.response?.data?.message || "Không thể cập nhật avatar",
+        description: {
+          loading: message.details([{ label: "Tệp", value: file.name }]),
+          success: "Ảnh đại diện mới đã được đồng bộ vào hồ sơ.",
+          error: "Vui lòng chọn ảnh khác hoặc thử lại sau.",
+        },
+        action: {
+          error: {
+            label: "Chọn lại ảnh",
+            onClick: () => avatarInputRef.current?.click(),
+          },
+        },
+      });
+      const result = await uploadRequest;
       const nextAvatar = result.avatarUrl || result.avatar || "";
       setProfile((current) => ({ ...(current || {}), avatar: nextAvatar }));
       updateCurrentUser?.({ avatar: nextAvatar });
-      message.success("Đã cập nhật avatar");
     } catch (error) {
       console.error("Failed to update avatar:", error);
-      message.error(error?.response?.data?.message || "Không thể cập nhật avatar");
     } finally {
       setUploading((current) => ({ ...current, avatar: false }));
     }
@@ -248,7 +269,19 @@ const ProfilePage = () => {
   const uploadProfileBanner = async (file) => {
     setUploading((current) => ({ ...current, banner: true }));
     try {
-      const result = await updateMyProfileBanner(file);
+      const uploadRequest = updateMyProfileBanner(file);
+      message.promise(uploadRequest, {
+        loading: "Đang cập nhật ảnh biểu ngữ",
+        success: "Đã cập nhật ảnh biểu ngữ",
+        error: (error) =>
+          error?.response?.data?.message || "Không thể cập nhật ảnh biểu ngữ",
+        description: {
+          loading: message.details([{ label: "Tệp", value: file.name }]),
+          success: "Biểu ngữ hồ sơ đã được làm mới.",
+          error: "Vui lòng kiểm tra định dạng ảnh hoặc thử lại sau.",
+        },
+      });
+      const result = await uploadRequest;
       const nextBanner = result.profileBannerUrl || result.bannerUrl || "";
       const nextTheme = result.profileTheme || {
         ...form.profileTheme,
@@ -265,13 +298,9 @@ const ProfilePage = () => {
         profileBannerUrl: nextBanner,
         profileTheme: nextTheme,
       });
-      message.success("Đã cập nhật ảnh biểu ngữ");
       return true;
     } catch (error) {
       console.error("Failed to update profile banner:", error);
-      message.error(
-        error?.response?.data?.message || "Không thể cập nhật ảnh biểu ngữ",
-      );
       return false;
     } finally {
       setUploading((current) => ({ ...current, banner: false }));
@@ -321,14 +350,27 @@ const ProfilePage = () => {
     event.preventDefault();
     setIsSaving(true);
     try {
-      const saved = await updateMyProfile(toProfilePayload(form));
+      const saveRequest = updateMyProfile(toProfilePayload(form));
+      message.promise(saveRequest, {
+        loading: "Đang lưu hồ sơ",
+        success: "Đã lưu hồ sơ cá nhân",
+        error: (error) =>
+          error?.response?.data?.message || "Không thể lưu hồ sơ",
+        description: {
+          loading: "WorkHub đang cập nhật thông tin cá nhân của bạn.",
+          success: message.details([
+            { label: "Tên", value: form.fullName },
+            { label: "Vai trò", value: form.position },
+          ]),
+          error: "Một số thay đổi chưa được lưu. Vui lòng thử lại.",
+        },
+      });
+      const saved = await saveRequest;
       setProfile(saved);
       setForm(toProfileForm(saved));
       updateCurrentUser?.(saved);
-      message.success("Đã lưu hồ sơ cá nhân");
     } catch (error) {
       console.error("Failed to save profile:", error);
-      message.error(error?.response?.data?.message || "Không thể lưu hồ sơ");
     } finally {
       setIsSaving(false);
     }

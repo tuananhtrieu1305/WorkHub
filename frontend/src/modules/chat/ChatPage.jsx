@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { App } from "antd";
 import { useNavigate, useParams } from "react-router-dom";
 import {
   addPollOption as addConversationPollOption,
@@ -55,6 +54,7 @@ import {
   mergeMessagePage,
   setCachedMessagePageState,
 } from "./messagePaginationState";
+import { useWorkHubToast } from "../../components/feedback/workHubToast";
 
 const toComparableId = (value) => {
   if (value == null) return "";
@@ -182,7 +182,7 @@ const mergeConversationUpdate = (
 
 const ChatPage = () => {
   const { user } = useAuth();
-  const { message: toast } = App.useApp();
+  const toast = useWorkHubToast();
   const { conversationId } = useParams();
   const navigate = useNavigate();
   const { socket, isAuthenticated } = useSocket();
@@ -980,7 +980,10 @@ const ChatPage = () => {
         handleTypingChange(false);
       } catch (err) {
         console.error("Failed to create poll:", err);
-        toast.error("Không thể tạo bình chọn");
+        toast.error("Không thể tạo bình chọn", {
+          description:
+            "Bình chọn chưa được gửi vào cuộc trò chuyện. Hãy kiểm tra câu hỏi, phương án và thử lại.",
+        });
         throw err;
       }
     },
@@ -1027,7 +1030,10 @@ const ChatPage = () => {
         handleTypingChange(false);
       } catch (err) {
         console.error("Failed to create reminder:", err);
-        toast.error("Không thể tạo nhắc hẹn");
+        toast.error("Không thể tạo nhắc hẹn", {
+          description:
+            "Nhắc hẹn chưa được gửi vào cuộc trò chuyện. Hãy kiểm tra thời gian, nội dung và thử lại.",
+        });
         throw err;
       }
     },
@@ -1139,16 +1145,25 @@ const ChatPage = () => {
     async (message) => {
       const text = getMessageCopyText(message);
       if (!text) {
-        toast.warning("Tin nhắn không có nội dung để sao chép");
+        toast.warning("Tin nhắn không có nội dung để sao chép", {
+          description:
+            "Tin nhắn này chỉ chứa nội dung hệ thống, tệp hoặc dữ liệu chưa thể chuyển thành văn bản.",
+        });
         return;
       }
 
       try {
         await writeTextToClipboard(text);
-        toast.success("Đã sao chép tin nhắn");
+        toast.copySuccess("Đã sao chép tin nhắn", text, {
+          label: "Tin nhắn",
+          text: "Bạn có thể dán nội dung này vào bất kỳ nơi nào.",
+        });
       } catch (err) {
         console.error("Failed to copy message:", err);
-        toast.error("Không thể sao chép tin nhắn");
+        toast.error("Không thể sao chép tin nhắn", {
+          description:
+            "Trình duyệt chưa cho phép ghi vào clipboard. Hãy thử lại hoặc sao chép thủ công.",
+        });
       }
     },
     [toast]
@@ -1185,7 +1200,11 @@ const ChatPage = () => {
         }
       } catch (err) {
         console.error("Failed to pin message:", err);
-        toast.error("Không thể cập nhật ghim tin nhắn");
+        toast.error("Không thể cập nhật ghim tin nhắn", {
+          description: nextPinnedState
+            ? "Tin nhắn chưa được đưa vào danh sách ghim của cuộc trò chuyện."
+            : "Tin nhắn vẫn còn trong danh sách ghim của cuộc trò chuyện.",
+        });
       }
     },
     [
@@ -1396,7 +1415,10 @@ const ChatPage = () => {
         }
       } catch (err) {
         console.error("Failed to vote poll:", err);
-        toast.error("Không thể cập nhật bình chọn");
+        toast.error("Không thể cập nhật bình chọn", {
+          description:
+            "Lựa chọn của bạn chưa được ghi nhận trong bình chọn này. Hãy thử lại sau.",
+        });
         throw err;
       }
     },
@@ -1441,7 +1463,10 @@ const ChatPage = () => {
         }
       } catch (err) {
         console.error("Failed to add poll option:", err);
-        toast.error("Không thể thêm phương án");
+        toast.error("Không thể thêm phương án", {
+          description:
+            "Phương án mới chưa được thêm vào bình chọn. Hãy kiểm tra nội dung và thử lại.",
+        });
         throw err;
       }
     },
@@ -1485,7 +1510,10 @@ const ChatPage = () => {
         }
       } catch (err) {
         console.error("Failed to send poll to group:", err);
-        toast.error("Không thể gửi bình chọn vào nhóm");
+        toast.error("Không thể gửi bình chọn vào nhóm", {
+          description:
+            "Bình chọn chưa được chia sẻ lại trong cuộc trò chuyện nhóm hiện tại.",
+        });
         throw err;
       }
     },
@@ -1529,7 +1557,10 @@ const ChatPage = () => {
         }
       } catch (err) {
         console.error("Failed to close poll:", err);
-        toast.error("Không thể khóa bình chọn");
+        toast.error("Không thể khóa bình chọn", {
+          description:
+            "Bình chọn vẫn đang mở và thành viên có thể tiếp tục bỏ phiếu.",
+        });
         throw err;
       }
     },
@@ -1574,7 +1605,10 @@ const ChatPage = () => {
         }
       } catch (err) {
         console.error("Failed to update reminder response:", err);
-        toast.error("Không thể cập nhật nhắc hẹn");
+        toast.error("Không thể cập nhật nhắc hẹn", {
+          description:
+            "Phản hồi của bạn cho nhắc hẹn này chưa được lưu vào cuộc trò chuyện.",
+        });
         throw err;
       }
     },
@@ -1621,7 +1655,10 @@ const ChatPage = () => {
         }
       } catch (err) {
         console.error("Failed to edit reminder:", err);
-        toast.error("Không thể chỉnh sửa nhắc hẹn");
+        toast.error("Không thể chỉnh sửa nhắc hẹn", {
+          description:
+            "Nội dung hoặc thời gian mới của nhắc hẹn chưa được cập nhật.",
+        });
         throw err;
       }
     },
@@ -1667,7 +1704,10 @@ const ChatPage = () => {
         }
       } catch (err) {
         console.error("Failed to cancel reminder:", err);
-        toast.error("Không thể hủy nhắc hẹn");
+        toast.error("Không thể hủy nhắc hẹn", {
+          description:
+            "Nhắc hẹn vẫn còn hiệu lực trong cuộc trò chuyện. Hãy thử hủy lại sau.",
+        });
         throw err;
       }
     },

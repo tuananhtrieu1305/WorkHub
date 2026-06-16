@@ -10,7 +10,6 @@ import { createPortal } from "react-dom";
 import MessageBubble from "./MessageBubble";
 import ChatInput from "./ChatInput";
 import UserProfileModal from "../profile/UserProfileModal";
-import { App } from "antd";
 import { useAuth } from "../../context/AuthContext";
 import { getAvatarReferrerPolicy, getAvatarUrl } from "../../utils/avatar";
 import {
@@ -21,6 +20,7 @@ import ActivityStatusIcon from "./ActivityStatusIcon";
 import { buildMessageTimeline } from "./messageTimeline";
 import { getMessagePreviewText } from "./chatMessagePreview";
 import { MessageThreadSkeleton } from "../../components/common/Skeleton";
+import { useWorkHubToast } from "../../components/feedback/workHubToast";
 
 const getComparableId = (value) => {
   if (value == null) return "";
@@ -381,7 +381,7 @@ const ChatWindow = ({
   isComposerDisabled = false,
 }) => {
   const { user } = useAuth();
-  const { message } = App.useApp();
+  const message = useWorkHubToast();
   const messagesPaneRef = useRef(null);
   const messagesContentRef = useRef(null);
   const messageNodeRefs = useRef(new Map());
@@ -717,7 +717,10 @@ const ChatWindow = ({
       }
 
       if (!targetNode) {
-        message.warning("Tin nhắn chưa có trong danh sách hiện tại");
+        message.warning("Tin nhắn chưa có trong danh sách hiện tại", {
+          description:
+            "WorkHub chưa tải được đoạn hội thoại chứa tin nhắn đã ghim. Hãy cuộn lên để tải thêm tin nhắn rồi thử lại.",
+        });
         return;
       }
 
@@ -807,7 +810,9 @@ const ChatWindow = ({
   const handleStartCall = (mediaType) => {
     if (!canAttemptPrivateCall) return;
     if (!isCalleeAvailableForCall) {
-      message.warning("Người dùng đang ngoại tuyến");
+      message.warning("Người dùng đang ngoại tuyến", {
+        description: `${displayName} hiện không sẵn sàng nhận cuộc gọi trong WorkHub.`,
+      });
       return;
     }
     onStartCall?.({

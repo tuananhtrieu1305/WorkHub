@@ -3,6 +3,7 @@ import { formatDate, hasPermission } from "../organizationUtils";
 import Icon from "./Icon";
 import MemberAvatar from "./MemberAvatar";
 import { TableRowsSkeleton } from "../../../components/common/Skeleton";
+import { useWorkHubToast } from "../../../components/feedback/workHubToast";
 
 const SECOND_MS = 1000;
 
@@ -78,6 +79,7 @@ const OrganizationInvitesSection = ({
   organization,
 }) => {
   const [now, setNow] = useState(null);
+  const message = useWorkHubToast();
   const canManageInvites = hasPermission(organization, "manageInvites");
   const canManageMembers = hasPermission(organization, "manageMembers");
   const canCreateInvites =
@@ -103,9 +105,21 @@ const OrganizationInvitesSection = ({
     [invites, now],
   );
 
-  const handleDeleteInvite = (invite) => {
+  const handleDeleteInvite = async (invite) => {
     if (!invite?.canDelete && !canManageInvites) return;
-    if (!window.confirm("Xóa lời mời này khỏi bảng?")) return;
+    const confirmed = await message.confirm({
+      title: "Xóa lời mời?",
+      description: "Mã mời này sẽ không còn xuất hiện trong bảng quản trị.",
+      confirmLabel: "Xóa lời mời",
+      successLabel: "Đã xác nhận",
+      type: "error",
+      detailRows: [
+        { label: "Mã mời", value: invite.code },
+        { label: "Trạng thái", value: getStatusLabel(invite, now) },
+      ],
+    });
+    if (!confirmed) return;
+
     onDeleteInvite?.(invite);
   };
 
