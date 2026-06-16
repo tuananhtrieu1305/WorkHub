@@ -3,6 +3,8 @@ import { test } from "node:test";
 
 import {
   createInviteCode,
+  getMembershipPermissions,
+  getRolesFromMap,
   getMissingRequiredJoinAnswers,
   normalizeOrganizationJoinAnswers,
   normalizeOrganizationJoinQuestions,
@@ -13,10 +15,26 @@ import {
   serializeOrganization,
 } from "../src/services/organizationService.js";
 import {
+  DEFAULT_MEMBER_ROLE_KEY,
   hasOrganizationPermission,
   normalizeOrganizationAccentColor,
+  normalizeRoleKey,
   normalizeRolePermissions,
 } from "../src/utils/organizationPolicy.js";
+
+const toRoleMapKey = (organizationId, roleKey) =>
+  `${organizationId}:${normalizeRoleKey(roleKey) || DEFAULT_MEMBER_ROLE_KEY}`;
+
+const toRoleIdMapKey = (roleId) => `id:${roleId}`;
+
+const buildRoleMap = (roles = []) => {
+  const roleMap = new Map();
+  roles.forEach((role) => {
+    roleMap.set(toRoleIdMapKey(role._id || role.id), role);
+    roleMap.set(toRoleMapKey(role.organizationId, role.key), role);
+  });
+  return roleMap;
+};
 
 test("normalizeOrganizationPayload only includes optional fields when provided", () => {
   const payload = normalizeOrganizationPayload({ name: "  WorkHub Team  " });
@@ -120,6 +138,91 @@ test("serializeOrganization treats ownership as separate from the visible role",
   assert.equal(payload.role, "thanh-vien");
   assert.equal(payload.roleLabel, "Thành viên");
   assert.equal(payload.permissions.manageRoles, true);
+});
+
+test("membership roles are sorted by organization role order and merge permissions", () => {
+  const roles = [
+    {
+      _id: "role-low",
+      organizationId: "organization-1",
+      key: "editor",
+      name: "Editor",
+      sortOrder: 3,
+      permissions: { manageDocuments: true },
+    },
+    {
+      _id: "role-high",
+      organizationId: "organization-1",
+      key: "lead",
+      name: "Lead",
+      sortOrder: 1,
+      permissions: { manageMembers: true },
+    },
+  ];
+  const membership = {
+    organizationId: "organization-1",
+    roleId: "role-low",
+    roleIds: ["role-low", "role-high"],
+    role: "editor",
+    status: "active",
+  };
+  const roleMap = buildRoleMap(roles);
+  const sortedRoles = getRolesFromMap(membership, roleMap);
+  const permissions = getMembershipPermissions(membership, roleMap);
+
+  assert.deepEqual(
+    sortedRoles.map((role) => role.key),
+    ["lead", "editor"],
+  );
+  assert.equal(permissions.manageMembers, true);
+  assert.equal(permissions.manageDocuments, true);
+});
+
+test("serializeOrganization exposes the highest ordered role first", () => {
+  const roles = [
+    {
+      _id: "role-high",
+      organizationId: "organization-1",
+      key: "lead",
+      name: "Lead",
+      description: "Highest role",
+      color: "#0ea5e9",
+      permissions: { manageMembers: true },
+    },
+    {
+      _id: "role-low",
+      organizationId: "organization-1",
+      key: "editor",
+      name: "Editor",
+      description: "Secondary role",
+      color: "#22c55e",
+      permissions: { manageDocuments: true },
+    },
+  ];
+  const payload = serializeOrganization(
+    {
+      _id: "organization-1",
+      name: "WorkHub Team",
+      slug: "workhub-team",
+      settings: {},
+    },
+    {
+      roleId: "role-low",
+      roleIds: ["role-low", "role-high"],
+      role: "editor",
+      status: "active",
+    },
+    { roles },
+  );
+
+  assert.equal(payload.roleId, "role-high");
+  assert.equal(payload.roleLabel, "Lead");
+  assert.deepEqual(
+    payload.roles.map((role) => role.name),
+    ["Lead", "Editor"],
+  );
+  assert.equal(payload.permissions.manageMembers, true);
+  assert.equal(payload.permissions.manageDocuments, true);
 });
 
 test("normalizeOrganizationSettingsPayload accepts default role ids", () => {

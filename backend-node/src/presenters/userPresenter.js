@@ -2,7 +2,6 @@ import path from "node:path";
 import User from "../models/User.js";
 import Conversation from "../models/Conversation.js";
 import OrganizationMember from "../models/OrganizationMember.js";
-import OrganizationRole from "../models/OrganizationRole.js";
 import Project from "../models/Project.js";
 import UserPreference from "../models/UserPreference.js";
 import ActivityLog from "../models/ActivityLog.js";
@@ -21,9 +20,12 @@ import {
 import { contentDisposition } from "../utils/fileResponse.js";
 import {
   buildUserOrganizationContext,
+  getOrganizationRoles,
   getRoleDefinition,
+  getRolesFromMap,
 } from "../services/organizationService.js";
 import { getConversationRoomName } from "../utils/conversationRealtime.js";
+import { DEFAULT_MEMBER_ROLE_KEY, normalizeRoleKey } from "../utils/organizationPolicy.js";
 
 let ioInstance = null;
 const activityStatusExpiryTimers = new Map();
@@ -40,6 +42,22 @@ const ALLOWED_PROFILE_IMAGE_MIMES = new Set([
 const toId = (value) => {
   if (!value) return "";
   return String(value?._id || value?.id || value);
+};
+
+const roleMapKey = (organizationId, roleKey) =>
+  `${toId(organizationId)}:${normalizeRoleKey(roleKey) || DEFAULT_MEMBER_ROLE_KEY}`;
+
+const roleIdMapKey = (roleId) => `id:${toId(roleId)}`;
+
+const buildRoleMap = (roles = []) => {
+  const roleMap = new Map();
+  roles.forEach((role) => {
+    const doc = role?.toObject?.() || role;
+    if (!doc) return;
+    roleMap.set(roleIdMapKey(doc._id || doc.id), role);
+    roleMap.set(roleMapKey(doc.organizationId, doc.key), role);
+  });
+  return roleMap;
 };
 const ALLOWED_PROFILE_IMAGE_EXTENSIONS = new Set([
   ".jpg",
@@ -306,7 +324,7 @@ export const formatScopedProfileRole = (membership, role = null) => {
 
   const definition = getRoleDefinition(role || membership.role);
 
-  const roleId = definition.id || toId(membership.roleId);
+  const roleId = definition.id || toId(role?._id || role?.id || membership.roleId);
 
   return {
     ...(roleId ? { id: roleId } : {}),
@@ -331,29 +349,40 @@ const buildScopedProfileRoles = async (userId, organizationId) => {
 
   if (!membership) return [];
 
-  const role =
-    (membership.roleId
-      ? await OrganizationRole.findOne({
-          _id: membership.roleId,
-          organizationId,
-          archivedAt: null,
-        })
-      : null) ||
-    (membership.role
-      ? await OrganizationRole.findOne({
-          organizationId,
-          key: membership.role,
-          archivedAt: null,
-        })
-      : null);
+  const roles = await getOrganizationRoles(organizationId);
+  const membershipRoles = getRolesFromMap(membership, buildRoleMap(roles));
 
-  return [formatScopedProfileRole(membership, role)].filter(Boolean);
+  if (!membershipRoles.length) {
+    return [formatScopedProfileRole(membership)].filter(Boolean);
+  }
+
+  return membershipRoles
+    .map((role) => formatScopedProfileRole(membership, role))
+    .filter(Boolean);
 };
 
-const buildActiveOrganizationRole = (activeOrganization) => {
-  if (!activeOrganization?.role) return null;
+const buildActiveOrganizationRoles = (activeOrganization) => {
+  const organizationRoles = Array.isArray(activeOrganization?.roles)
+    ? activeOrganization.roles
+    : [];
 
-  return {
+  if (organizationRoles.length) {
+    return organizationRoles.map((role) => ({
+      id: role.id || null,
+      key: role.key,
+      name: role.name || role.key,
+      description: role.description || "Vai trò trong tổ chức đang hoạt động.",
+      color: role.color || "#64748b",
+      isSystem: Boolean(role.isSystem),
+      isOwner: Boolean(activeOrganization.isOwner),
+      status: activeOrganization.memberStatus || "active",
+      joinedAt: activeOrganization.joinedAt || null,
+    }));
+  }
+
+  if (!activeOrganization?.role) return [];
+
+  return [{
     id: activeOrganization.roleId || null,
     key: activeOrganization.role,
     name: activeOrganization.roleLabel || activeOrganization.role,
@@ -363,7 +392,7 @@ const buildActiveOrganizationRole = (activeOrganization) => {
     isOwner: Boolean(activeOrganization.isOwner),
     status: activeOrganization.memberStatus || "active",
     joinedAt: activeOrganization.joinedAt || null,
-  };
+  }];
 };
 
 const emitActivityStatusChanged = async (user) => {
@@ -541,7 +570,7 @@ const formatUserDetail = (
   organizationContext = {},
   { includeOrganizations = true } = {},
 ) => {
-  const activeOrganizationRole = buildActiveOrganizationRole(
+  const activeOrganizationRoles = buildActiveOrganizationRoles(
     organizationContext.activeOrganization,
   );
 
@@ -570,7 +599,7 @@ const formatUserDetail = (
       : [],
     organizationRoles:
       organizationContext.organizationRoles ||
-      (activeOrganizationRole ? [activeOrganizationRole] : []),
+      activeOrganizationRoles,
     createdAt: user.createdAt,
     updatedAt: user.updatedAt,
   };

@@ -164,9 +164,8 @@ const OrganizationRolesSection = ({
                   const roleReorderable =
                     canReorderRoles && role.canReorder !== false;
                   const canDeleteRole =
-                    roleManageable &&
-                    !role.isDefault &&
-                    Number(role.memberCount || 0) === 0;
+                    roleManageable && !role.isDefault;
+                  const roleActionIsEdit = roleManageable;
 
                   return (
                     <tr
@@ -307,13 +306,20 @@ const OrganizationRolesSection = ({
                         <div className="flex justify-end gap-2">
                           <button
                             type="button"
-                            onClick={() => onOpenRoleModal(role)}
-                            disabled={!roleManageable}
-                            className="inline-flex size-9 items-center justify-center rounded-xl bg-blue-50 text-blue-700 transition hover:bg-blue-100 disabled:cursor-not-allowed disabled:opacity-50"
-                            aria-label="Sửa vai trò"
-                            title="Sửa vai trò"
+                            onClick={() =>
+                              onOpenRoleModal(role, {
+                                viewOnly: !roleActionIsEdit,
+                              })
+                            }
+                            className={`inline-flex size-9 items-center justify-center rounded-xl transition ${
+                              roleActionIsEdit
+                                ? "bg-blue-50 text-blue-700 hover:bg-blue-100"
+                                : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                            }`}
+                            aria-label={roleActionIsEdit ? "Sửa vai trò" : "Xem vai trò"}
+                            title={roleActionIsEdit ? "Sửa vai trò" : "Xem vai trò"}
                           >
-                            <Icon name="edit" />
+                            <Icon name={roleActionIsEdit ? "edit" : "visibility"} />
                           </button>
                           <button
                             type="button"
@@ -324,9 +330,7 @@ const OrganizationRolesSection = ({
                             title={
                               role.isDefault
                                 ? "Không thể xóa vai trò mặc định"
-                                : Number(role.memberCount || 0) > 0
-                                  ? "Chuyển thành viên sang vai trò khác trước"
-                                  : "Xóa vai trò"
+                                : "Xóa vai trò"
                             }
                           >
                             <Icon name="delete" />

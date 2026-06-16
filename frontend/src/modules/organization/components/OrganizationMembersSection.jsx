@@ -10,6 +10,35 @@ const activityLabel = (member) => {
   return "Offline";
 };
 
+const getMemberRoles = (member = {}) =>
+  Array.isArray(member.roles) && member.roles.length
+    ? member.roles
+    : [
+        {
+          id: member.roleId,
+          key: member.role,
+          name: member.roleLabel || "Thành viên",
+          color: member.roleColor || "#2563eb",
+        },
+      ];
+
+const MemberRoleBadges = ({ member }) => (
+  <div className="flex flex-wrap gap-1.5">
+    {getMemberRoles(member).map((role) => (
+      <span
+        key={role.id || role.key || role.name}
+        className="inline-flex w-fit items-center rounded-xl px-3 py-1.5 text-xs font-black"
+        style={{
+          backgroundColor: `${role.color || "#2563eb"}18`,
+          color: role.color || "#2563eb",
+        }}
+      >
+        {role.name || "Thành viên"}
+      </span>
+    ))}
+  </div>
+);
+
 const OrganizationMembersSection = ({
   filters,
   isLoading,
@@ -99,69 +128,80 @@ const OrganizationMembersSection = ({
           <PanelListSkeleton count={4} iconRounded="rounded-2xl" />
         ) : members.length ? (
           <div className="divide-y divide-slate-100">
-            {members.map((member) => (
-              <div
-                key={member.id}
-                className="grid gap-3 px-4 py-4 lg:grid-cols-[minmax(260px,1.2fr)_150px_160px_150px_140px] lg:items-center"
-              >
-                <div className="flex min-w-0 items-center gap-3">
-                  <MemberAvatar member={member} />
-                  <div className="min-w-0">
-                    <p className="truncate text-sm font-black text-slate-950">
-                      {member.user?.fullName || "Người dùng"}
-                    </p>
-                    <p className="truncate text-xs font-semibold text-slate-500">
-                      {member.user?.email}
-                    </p>
+            {members.map((member) => {
+              const memberRoleIds = new Set(
+                [
+                  ...(member.roleIds || []),
+                  ...(member.roles || []).map((role) => role.id),
+                ]
+                  .filter(Boolean)
+                  .map((roleId) => String(roleId)),
+              );
+              const assignableRoles = manageableRoles.filter(
+                (role) => !memberRoleIds.has(String(role.id)),
+              );
+
+              return (
+                <div
+                  key={member.id}
+                  className="grid gap-3 px-4 py-4 lg:grid-cols-[minmax(260px,1.2fr)_150px_160px_150px_140px] lg:items-center"
+                >
+                  <div className="flex min-w-0 items-center gap-3">
+                    <MemberAvatar member={member} />
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-black text-slate-950">
+                        {member.user?.fullName || "Người dùng"}
+                      </p>
+                      <p className="truncate text-xs font-semibold text-slate-500">
+                        {member.user?.email}
+                      </p>
+                    </div>
+                  </div>
+                  <span className="text-sm font-bold text-slate-600">
+                    {formatDate(member.joinedAt) || "Chưa gia nhập"}
+                  </span>
+                  <MemberRoleBadges member={member} />
+                  <span
+                    className={`inline-flex w-fit items-center gap-2 rounded-xl px-3 py-1.5 text-xs font-black ${
+                      member.user?.isOnline
+                        ? "bg-emerald-50 text-emerald-700"
+                        : "bg-slate-100 text-slate-500"
+                    }`}
+                  >
+                    <span
+                      className={`size-2 rounded-full ${
+                        member.user?.isOnline ? "bg-emerald-500" : "bg-slate-300"
+                      }`}
+                    />
+                    {activityLabel(member)}
+                  </span>
+                  <div className="flex justify-start lg:justify-end">
+                    {canManageMembers && !member.isOwner && member.canManage !== false ? (
+                      <select
+                        value=""
+                        onChange={(event) => {
+                          const nextRoleId = event.target.value;
+                          if (nextRoleId) onChangeRole(member, nextRoleId);
+                        }}
+                        disabled={!assignableRoles.length}
+                        className="h-10 rounded-xl border border-slate-200 bg-white px-3 text-xs font-black outline-none transition focus:border-blue-300 focus:ring-4 focus:ring-blue-100 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        <option value="">Thêm vai trò</option>
+                        {assignableRoles.map((role) => (
+                          <option key={role.id} value={role.id}>
+                            {role.name}
+                          </option>
+                        ))}
+                      </select>
+                    ) : (
+                      <span className="text-xs font-black text-slate-400">
+                        Chỉ xem
+                      </span>
+                    )}
                   </div>
                 </div>
-                <span className="text-sm font-bold text-slate-600">
-                  {formatDate(member.joinedAt) || "Chưa gia nhập"}
-                </span>
-                <span
-                  className="inline-flex w-fit items-center rounded-xl px-3 py-1.5 text-xs font-black"
-                  style={{
-                    backgroundColor: `${member.roleColor || "#2563eb"}18`,
-                    color: member.roleColor || "#2563eb",
-                  }}
-                >
-                  {member.roleLabel || "Thành viên"}
-                </span>
-                <span
-                  className={`inline-flex w-fit items-center gap-2 rounded-xl px-3 py-1.5 text-xs font-black ${
-                    member.user?.isOnline
-                      ? "bg-emerald-50 text-emerald-700"
-                      : "bg-slate-100 text-slate-500"
-                  }`}
-                >
-                  <span
-                    className={`size-2 rounded-full ${
-                      member.user?.isOnline ? "bg-emerald-500" : "bg-slate-300"
-                    }`}
-                  />
-                  {activityLabel(member)}
-                </span>
-                <div className="flex justify-start lg:justify-end">
-                  {canManageMembers && !member.isOwner && member.canManage !== false ? (
-                    <select
-                      value={member.roleId || ""}
-                      onChange={(event) => onChangeRole(member, event.target.value)}
-                      className="h-10 rounded-xl border border-slate-200 bg-white px-3 text-xs font-black outline-none transition focus:border-blue-300 focus:ring-4 focus:ring-blue-100"
-                    >
-                      {manageableRoles.map((role) => (
-                        <option key={role.id} value={role.id}>
-                          {role.name}
-                        </option>
-                      ))}
-                    </select>
-                  ) : (
-                    <span className="text-xs font-black text-slate-400">
-                      Chỉ xem
-                    </span>
-                  )}
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         ) : (
           <div className="grid place-items-center gap-2 px-4 py-12 text-center">

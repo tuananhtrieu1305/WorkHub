@@ -34,6 +34,7 @@ const memberMatchesSearch = (member, search) => {
     member?.user?.email,
     member?.user?.position,
     member?.roleLabel,
+    ...(member?.roles || []).map((role) => role.name || role.key),
   ].some((value) => String(value || "").toLowerCase().includes(needle));
 };
 
@@ -119,8 +120,9 @@ const OrganizationRoleModal = ({
   const [selectedMemberIds, setSelectedMemberIds] = useState([]);
 
   const open = Boolean(mode);
-  const isEdit = mode === "edit" && Boolean(form?.id);
-  const canManageRole = form?.canManage !== false;
+  const isView = mode === "view";
+  const isEdit = ["edit", "view"].includes(mode) && Boolean(form?.id);
+  const canManageRole = !isView && form?.canManage !== false;
   const isManagerRole = Boolean(form?.permissions?.manageOrganization);
 
   const filteredPermissionSections = useMemo(
@@ -151,7 +153,7 @@ const OrganizationRoleModal = ({
   );
 
   const loadRoleMembers = useCallback(async () => {
-    if (!organizationId || !form?.id || !canManageRole) return;
+    if (!organizationId || !form?.id) return;
 
     setIsLoadingMembers(true);
     try {
@@ -170,7 +172,7 @@ const OrganizationRoleModal = ({
     } finally {
       setIsLoadingMembers(false);
     }
-  }, [canManageRole, form?.id, message, organizationId]);
+  }, [form?.id, message, organizationId]);
 
   useEffect(() => {
     if (!open) return;
@@ -217,7 +219,9 @@ const OrganizationRoleModal = ({
   };
 
   const removeMember = async (member) => {
-    if (!organizationId || !form?.id || !member?.id || isSavingMembers) return;
+    if (!canManageRole || !organizationId || !form?.id || !member?.id || isSavingMembers) {
+      return;
+    }
 
     setIsSavingMembers(true);
     try {
@@ -230,7 +234,7 @@ const OrganizationRoleModal = ({
       });
       onMembersChanged?.();
       message.success("Đã gỡ thành viên khỏi vai trò", {
-        description: `${getMemberName(member)} đã được chuyển về vai trò mặc định.`,
+        description: `${getMemberName(member)} không còn mang vai trò ${form.name}.`,
       });
     } catch (error) {
       console.error("Failed to remove role member:", error);
@@ -248,6 +252,7 @@ const OrganizationRoleModal = ({
       !organizationId ||
       !form?.id ||
       !selectedMemberIds.length ||
+      !canManageRole ||
       isSavingMembers
     ) {
       return;
@@ -283,17 +288,19 @@ const OrganizationRoleModal = ({
   return (
     <div className="organization-modal-backdrop fixed inset-0 z-50 grid place-items-center bg-slate-950/45 px-4 py-6 backdrop-blur-sm">
       <form
-        onSubmit={onSubmit}
+        onSubmit={isView ? (event) => event.preventDefault() : onSubmit}
         className="organization-modal-card relative z-10 flex max-h-[92vh] w-full max-w-5xl flex-col overflow-hidden rounded-[2rem] bg-white shadow-2xl ring-1 ring-slate-200"
       >
         <div className="border-b border-slate-100 p-6">
           <div className="flex items-start justify-between gap-4">
             <div>
               <h3 className="text-xl font-black text-slate-950">
-                {isEdit ? "Cập nhật vai trò" : "Tạo vai trò"}
+                {isView ? "Xem vai trò" : isEdit ? "Cập nhật vai trò" : "Tạo vai trò"}
               </h3>
               <p className="mt-1 text-sm font-semibold text-slate-500">
-                Thiết lập hiển thị, quyền hạn và thành viên đang mang vai trò.
+                {isView
+                  ? "Thông tin hiển thị, quyền hạn và thành viên đang mang vai trò."
+                  : "Thiết lập hiển thị, quyền hạn và thành viên đang mang vai trò."}
               </p>
             </div>
             <button
@@ -465,17 +472,6 @@ const OrganizationRoleModal = ({
                     </p>
                   </div>
                 </div>
-              ) : !canManageRole ? (
-                <div className="grid place-items-center gap-3 rounded-3xl bg-amber-50 px-4 py-14 text-center ring-1 ring-amber-100">
-                  <Icon
-                    name="lock"
-                    className="text-4xl leading-none text-amber-500"
-                  />
-                  <p className="text-sm font-black text-amber-800">
-                    Bạn chỉ có thể quản lý thành viên của role nằm bên dưới role
-                    cao nhất của mình.
-                  </p>
-                </div>
               ) : (
                 <>
                   <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -491,20 +487,22 @@ const OrganizationRoleModal = ({
                         className="h-12 w-full rounded-2xl border border-slate-200 bg-slate-50 pl-10 pr-3 text-sm font-bold outline-none transition focus:border-blue-300 focus:bg-white focus:ring-4 focus:ring-blue-100"
                       />
                     </label>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setSelectedMemberIds([]);
-                        setCandidateSearch("");
-                        setAddModalOpen(true);
-                        loadRoleMembers();
-                      }}
-                      disabled={isSavingMembers}
-                      className="inline-flex h-12 items-center justify-center gap-2 rounded-2xl bg-blue-600 px-4 text-sm font-black text-white shadow-lg shadow-blue-200/60 transition hover:-translate-y-0.5 hover:bg-blue-700 active:translate-y-0 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50"
-                    >
-                      <Icon name="person_add" />
-                      Thêm thành viên
-                    </button>
+                    {canManageRole && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSelectedMemberIds([]);
+                          setCandidateSearch("");
+                          setAddModalOpen(true);
+                          loadRoleMembers();
+                        }}
+                        disabled={isSavingMembers}
+                        className="inline-flex h-12 items-center justify-center gap-2 rounded-2xl bg-blue-600 px-4 text-sm font-black text-white shadow-lg shadow-blue-200/60 transition hover:-translate-y-0.5 hover:bg-blue-700 active:translate-y-0 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        <Icon name="person_add" />
+                        Thêm thành viên
+                      </button>
+                    )}
                   </div>
 
                   <div className="rounded-3xl bg-slate-50 p-3 ring-1 ring-slate-200">
@@ -522,27 +520,39 @@ const OrganizationRoleModal = ({
                         {roleMembers.map((member) => (
                           <MemberLine
                             key={member.id}
-                            disabled={form.isDefault || !member.canManage}
+                            disabled={
+                              !canManageRole || form.isDefault || !member.canManage
+                            }
                             member={member}
                             action={
-                              <button
-                                type="button"
-                                onClick={() => removeMember(member)}
-                                disabled={
-                                  form.isDefault ||
-                                  !member.canManage ||
-                                  isSavingMembers
-                                }
-                                className="grid size-10 place-items-center rounded-2xl bg-rose-50 text-rose-700 transition hover:bg-rose-100 active:scale-95 disabled:cursor-not-allowed disabled:opacity-45"
-                                title={
-                                  form.isDefault
-                                    ? "Không thể gỡ vai trò mặc định"
-                                    : "Gỡ khỏi vai trò"
-                                }
-                                aria-label="Gỡ khỏi vai trò"
-                              >
-                                <Icon name="close" />
-                              </button>
+                              canManageRole ? (
+                                <button
+                                  type="button"
+                                  onClick={() => removeMember(member)}
+                                  disabled={
+                                    form.isDefault ||
+                                    !member.canManage ||
+                                    isSavingMembers
+                                  }
+                                  className="grid size-10 place-items-center rounded-2xl bg-rose-50 text-rose-700 transition hover:bg-rose-100 active:scale-95 disabled:cursor-not-allowed disabled:opacity-45"
+                                  title={
+                                    form.isDefault
+                                      ? "Không thể gỡ vai trò mặc định"
+                                      : "Gỡ khỏi vai trò"
+                                  }
+                                  aria-label="Gỡ khỏi vai trò"
+                                >
+                                  <Icon name="close" />
+                                </button>
+                              ) : (
+                                <span
+                                  className="grid size-10 place-items-center rounded-2xl bg-slate-100 text-slate-500"
+                                  title="Chỉ xem"
+                                  aria-label="Chỉ xem"
+                                >
+                                  <Icon name="visibility" />
+                                </span>
+                              )
                             }
                           />
                         ))}
@@ -571,20 +581,22 @@ const OrganizationRoleModal = ({
             onClick={onClose}
             className="rounded-2xl bg-slate-100 px-5 py-3 text-sm font-black text-slate-700 transition hover:bg-slate-200"
           >
-            Hủy
+            {isView ? "Đóng" : "Hủy"}
           </button>
-          <button
-            type="submit"
-            disabled={!canManageRole}
-            className="inline-flex items-center gap-2 rounded-2xl bg-blue-600 px-5 py-3 text-sm font-black text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            <Icon name="save" />
-            {isEdit ? "Lưu vai trò" : "Tạo vai trò"}
-          </button>
+          {!isView && (
+            <button
+              type="submit"
+              disabled={!canManageRole}
+              className="inline-flex items-center gap-2 rounded-2xl bg-blue-600 px-5 py-3 text-sm font-black text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <Icon name="save" />
+              {isEdit ? "Lưu vai trò" : "Tạo vai trò"}
+            </button>
+          )}
         </div>
       </form>
 
-      {addModalOpen && (
+      {addModalOpen && canManageRole && (
         <div className="fixed inset-0 z-[60] grid place-items-center bg-slate-950/45 px-4 py-6 backdrop-blur-sm">
           <section className="organization-modal-card flex max-h-[82vh] w-full max-w-2xl flex-col overflow-hidden rounded-[1.75rem] bg-white shadow-2xl ring-1 ring-slate-200">
             <div className="flex items-start justify-between gap-4 border-b border-slate-100 p-5">

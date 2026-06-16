@@ -4,6 +4,10 @@ import OrganizationMember from "../models/OrganizationMember.js";
 import User from "../models/User.js";
 import { getPresenceFields } from "../services/presenceService.js";
 import {
+  getOrganizationRoles,
+  getRolesFromMap,
+} from "../services/organizationService.js";
+import {
   getOrganizationUserRoomName,
   getConversationParticipantUserRoomName,
   getConversationRealtimeRoomNames,
@@ -359,6 +363,22 @@ const toComparableId = (value) => {
   return String(value._id || value.id || value);
 };
 
+const roleMapKey = (organizationId, roleKey) =>
+  `${toComparableId(organizationId)}:${String(roleKey || "").trim().toLowerCase()}`;
+
+const roleIdMapKey = (roleId) => `id:${toComparableId(roleId)}`;
+
+const buildRoleMap = (roles = []) => {
+  const roleMap = new Map();
+  roles.forEach((role) => {
+    const doc = role?.toObject?.() || role;
+    if (!doc) return;
+    roleMap.set(roleIdMapKey(doc._id || doc.id), role);
+    roleMap.set(roleMapKey(doc.organizationId, doc.key), role);
+  });
+  return roleMap;
+};
+
 const getContactPayloadUserId = ({ contact, contactUserId, metadata } = {}) =>
   toComparableId(
     contactUserId ||
@@ -397,7 +417,7 @@ const normalizeContactCardPayload = async ({
     throw new Error("Contact cards require an organization conversation");
   }
 
-  const [targetUser, membership] = await Promise.all([
+  const [targetUser, membership, organizationRoles] = await Promise.all([
     User.findById(targetUserId).select(
       "_id fullName email avatar position status",
     ),
@@ -405,7 +425,8 @@ const normalizeContactCardPayload = async ({
       organizationId,
       userId: targetUserId,
       status: "active",
-    }).populate("roleId", "_id key name color"),
+    }),
+    getOrganizationRoles(organizationId),
   ]);
 
   if (!targetUser) {
@@ -416,8 +437,9 @@ const normalizeContactCardPayload = async ({
     throw new Error("Contact user must be an active organization member");
   }
 
-  const role = membership.roleId?.key || membership.role || "";
-  const roleLabel = membership.roleId?.name || membership.role || "Thành viên";
+  const rolePayload = getRolesFromMap(membership, buildRoleMap(organizationRoles))[0];
+  const role = rolePayload?.key || membership.role || "";
+  const roleLabel = rolePayload?.name || membership.role || "Thành viên";
 
   return {
     userId: targetUser._id,
@@ -427,6 +449,7 @@ const normalizeContactCardPayload = async ({
     position: targetUser.position || "",
     role,
     roleLabel,
+    roleColor: rolePayload?.color || "#64748b",
   };
 };
 

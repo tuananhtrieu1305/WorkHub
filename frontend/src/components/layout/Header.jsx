@@ -6,6 +6,7 @@ import { updateMyActivityStatus } from "../../api/userApi";
 import {
   deleteNotification,
   getNotifications,
+  getUnreadCount,
   markAllAsRead,
   markAsRead,
 } from "../../api/notificationApi";
@@ -75,6 +76,88 @@ const toComparableId = (value) => {
   return String(value._id || value.id || value);
 };
 
+const getUnreadCountFromPayload = (payload, fallback = 0) => {
+  const nextCount = Number(payload?.unreadCount);
+  return Number.isFinite(nextCount)
+    ? Math.max(Math.trunc(nextCount), 0)
+    : fallback;
+};
+
+const roleLabelFallbacks = {
+  owner: "Chủ sở hữu",
+  "chu-so-huu": "Chủ sở hữu",
+  admin: "Quản trị viên",
+  manager: "Quản lý",
+  "quan-ly": "Quản lý",
+  member: "Thành viên",
+  "thanh-vien": "Thành viên",
+  thanhvien: "Thành viên",
+};
+
+const formatOrganizationRoleLabel = (value) => {
+  if (!value) return "";
+
+  const normalizedValue = String(value).trim();
+  if (!normalizedValue) return "";
+
+  const normalizedKey = normalizedValue
+    .toLowerCase()
+    .replace(/_/g, "-")
+    .replace(/\s+/g, "-");
+
+  return roleLabelFallbacks[normalizedKey] || normalizedValue;
+};
+
+const getOrganizationRoleLabel = (organization = {}) => {
+  const roleNames = (Array.isArray(organization.roles)
+    ? organization.roles
+    : []
+  )
+    .map((role) =>
+      formatOrganizationRoleLabel(
+        role?.name || role?.displayName || role?.label || role?.key,
+      ),
+    )
+    .filter(Boolean);
+
+  if (roleNames.length) return roleNames.join(", ");
+
+  const candidates = [
+    organization.roleLabel,
+    organization.roleName,
+    organization.roleDisplayName,
+    organization.activeRole?.name,
+    organization.membership?.roleLabel,
+    organization.membership?.roleName,
+    organization.role,
+  ];
+
+  return (
+    candidates.map(formatOrganizationRoleLabel).find(Boolean) || "Thành viên"
+  );
+};
+
+const isMeaningfulOrganizationValue = (value) => {
+  if (Array.isArray(value)) return value.length > 0;
+  return value !== undefined && value !== null && value !== "";
+};
+
+const mergeOrganizationForDisplay = (...sources) => {
+  const merged = sources.reduce((result, source) => {
+    if (!source) return result;
+
+    Object.entries(source).forEach(([key, value]) => {
+      if (isMeaningfulOrganizationValue(value)) {
+        result[key] = value;
+      }
+    });
+
+    return result;
+  }, {});
+
+  return Object.keys(merged).length ? merged : null;
+};
+
 const OrganizationLogoMark = ({
   organization,
   className = "size-8 rounded-full",
@@ -89,14 +172,14 @@ const OrganizationLogoMark = ({
         src={logoUrl}
         alt={organization?.name || "Tổ chức"}
         referrerPolicy={getAvatarReferrerPolicy(logoUrl)}
-        className={`${className} shrink-0 object-cover ring-1 ring-slate-200`}
+        className={`${className} header-organization-logo-image shrink-0 object-cover`}
       />
     );
   }
 
   return (
     <span
-      className={`${className} ${textClassName} flex shrink-0 items-center justify-center bg-slate-900 font-black text-white ring-1 ring-slate-200`}
+      className={`${className} ${textClassName} header-organization-logo-mark flex shrink-0 items-center justify-center font-black`}
     >
       {initial}
     </span>
@@ -124,10 +207,21 @@ const Header = ({ overlay = false }) => {
   const notificationRef = useRef(null);
   const mobileMenuRef = useRef(null);
   const organizationRef = useRef(null);
+  const organizationMenuRef = useRef(null);
   const organizations = user?.organizations || [];
-  const activeOrganization = user?.activeOrganization || null;
+  const activeOrganizationPayload = user?.activeOrganization || null;
   const activeOrganizationId = toComparableId(
-    activeOrganization?.id || activeOrganization?._id || user?.activeOrganizationId,
+    activeOrganizationPayload?.id ||
+      activeOrganizationPayload?._id ||
+      user?.activeOrganizationId,
+  );
+  const activeOrganizationFromList = organizations.find(
+    (organization) =>
+      toComparableId(organization?.id || organization?._id) === activeOrganizationId,
+  );
+  const activeOrganization = mergeOrganizationForDisplay(
+    activeOrganizationFromList,
+    activeOrganizationPayload,
   );
 
   const isActiveNavItem = (path) => {
@@ -150,8 +244,10 @@ const Header = ({ overlay = false }) => {
           : payload.content || [];
         setNotifications(sortNotificationsByRecentActivity(nextNotifications));
         setUnreadCount(
-          Number(payload.unreadCount) ||
+          getUnreadCountFromPayload(
+            payload,
             nextNotifications.filter(isNotificationUnread).length,
+          ),
         );
       }
 
@@ -163,6 +259,17 @@ const Header = ({ overlay = false }) => {
       console.error("Failed to load notification panel data:", error);
     } finally {
       setIsLoadingPanelData(false);
+    }
+  }, []);
+
+  const refreshUnreadCount = useCallback(async () => {
+    try {
+      const payload = await getUnreadCount();
+      setUnreadCount((currentCount) =>
+        getUnreadCountFromPayload(payload, currentCount),
+      );
+    } catch (error) {
+      console.error("Failed to refresh notification unread count:", error);
     }
   }, []);
 
@@ -183,7 +290,8 @@ const Header = ({ overlay = false }) => {
       }
       if (
         organizationRef.current &&
-        !organizationRef.current.contains(e.target)
+        !organizationRef.current.contains(e.target) &&
+        !organizationMenuRef.current?.contains(e.target)
       ) {
         setShowOrganizationMenu(false);
       }
@@ -218,6 +326,7 @@ const Header = ({ overlay = false }) => {
     const handleNotificationCreated = (notification) => {
       if (!isActiveNotification(notification)) return;
 
+      const nextUnreadCount = getUnreadCountFromPayload(notification, null);
       setNotifications((currentNotifications) => {
         const notificationId = getNotificationId(notification);
         const existingNotification = currentNotifications.find(
@@ -227,28 +336,38 @@ const Header = ({ overlay = false }) => {
           existingNotification && isNotificationUnread(existingNotification);
         const isUnread = isNotificationUnread(notification);
 
-        setUnreadCount((currentCount) =>
-          Math.max(
-            currentCount +
-              (isUnread ? 1 : 0) -
-              (wasUnread ? 1 : 0),
-            0,
-          ),
-        );
+        if (nextUnreadCount === null) {
+          setUnreadCount((currentCount) =>
+            Math.max(
+              currentCount +
+                (isUnread ? 1 : 0) -
+                (wasUnread ? 1 : 0),
+              0,
+            ),
+          );
+        }
 
         return upsertNotification(currentNotifications, notification);
       });
+      if (nextUnreadCount !== null) {
+        setUnreadCount(nextUnreadCount);
+      }
     };
 
     const handleNotificationRead = (notification) => {
       if (!isActiveNotification(notification)) return;
 
+      const nextUnreadCount = getUnreadCountFromPayload(notification, null);
       setNotifications((currentNotifications) => {
         const notificationId = getNotificationId(notification);
         const existingNotification = currentNotifications.find(
           (item) => getNotificationId(item) === notificationId,
         );
-        if (existingNotification && isNotificationUnread(existingNotification)) {
+        if (
+          nextUnreadCount === null &&
+          existingNotification &&
+          isNotificationUnread(existingNotification)
+        ) {
           setUnreadCount((currentCount) => Math.max(currentCount - 1, 0));
         }
         return markNotificationReadLocally(
@@ -257,6 +376,9 @@ const Header = ({ overlay = false }) => {
           notification?.readAt,
         );
       });
+      if (nextUnreadCount !== null) {
+        setUnreadCount(nextUnreadCount);
+      }
     };
 
     const handleNotificationsReadAll = (event) => {
@@ -298,6 +420,11 @@ const Header = ({ overlay = false }) => {
     socket.on("notifications_read_all", handleNotificationsReadAll);
     socket.on("meeting_created", handleMeetingCreated);
     socket.on("meeting_ended", handleMeetingEnded);
+    socket.on("connect", refreshUnreadCount);
+
+    if (socket.connected) {
+      refreshUnreadCount();
+    }
 
     return () => {
       socket.off("notification_created", handleNotificationCreated);
@@ -305,8 +432,9 @@ const Header = ({ overlay = false }) => {
       socket.off("notifications_read_all", handleNotificationsReadAll);
       socket.off("meeting_created", handleMeetingCreated);
       socket.off("meeting_ended", handleMeetingEnded);
+      socket.off("connect", refreshUnreadCount);
     };
-  }, [activeOrganizationId, socket]);
+  }, [activeOrganizationId, refreshUnreadCount, socket]);
 
   useEffect(() => {
     if (!user?.activityStatusExpiresAt) return undefined;
@@ -365,6 +493,14 @@ const Header = ({ overlay = false }) => {
     "--header-profile-accent": profileTheme.accentColor,
     "--header-profile-bg": profileTheme.backgroundColor,
     "--header-profile-text": profileTheme.textColor,
+  };
+  const activeOrganizationRoleLabel = activeOrganization
+    ? getOrganizationRoleLabel(activeOrganization)
+    : "Chưa tham gia";
+  const organizationThemeVars = {
+    "--header-organization-accent": profileTheme.accentColor,
+    "--header-organization-bg": profileTheme.backgroundColor,
+    "--header-organization-text": profileTheme.textColor,
   };
 
   const avatarUrl = getAvatarUrl(user?.avatar);
@@ -497,14 +633,129 @@ const Header = ({ overlay = false }) => {
     setShowNotificationPanel(false);
   };
 
-  return (
-    <header
-      className={`top-0 z-50 flex min-h-16 shrink-0 items-center justify-between gap-2 whitespace-nowrap px-3 py-2.5 sm:px-4 lg:px-6 ${
-        overlay
-          ? "absolute left-0 right-0 border-b border-transparent bg-transparent"
-          : "sticky border-b border-solid border-slate-200/50 bg-white/80 backdrop-blur-md"
-      }`}
+  const organizationMenu = showOrganizationMenu ? (
+    <div
+      ref={organizationMenuRef}
+      className="header-organization-menu"
+      style={organizationThemeVars}
+      role="menu"
     >
+      <div className="header-organization-menu-header">
+        <div className="flex items-start justify-between gap-3">
+          <span className="min-w-0">
+            <span className="header-organization-eyebrow">
+              <span className="material-symbols-outlined text-base leading-none">
+                domain
+              </span>
+              Không gian tổ chức
+            </span>
+            <span className="header-organization-description mt-2 block text-xs font-semibold leading-5">
+              Bảng tin, tin nhắn, tài liệu và công việc sẽ đổi theo tổ chức
+              đang chọn.
+            </span>
+          </span>
+          <span className="header-organization-count">
+            {organizations.length || 0}
+          </span>
+        </div>
+      </div>
+
+      <div className="header-organization-list">
+        {organizations.length === 0 ? (
+          <div className="header-organization-empty rounded-xl border border-dashed px-4 py-6 text-center">
+            <span className="material-symbols-outlined text-3xl leading-none">
+              domain_add
+            </span>
+            <p className="mt-2 text-sm font-bold">Bạn chưa có tổ chức nào</p>
+          </div>
+        ) : (
+          organizations.map((organization) => {
+            const organizationId = toComparableId(
+              organization.id || organization._id,
+            );
+            const isActive = organizationId === activeOrganizationId;
+
+            return (
+              <button
+                key={organizationId}
+                type="button"
+                className={`header-organization-option ${
+                  isActive ? "is-active" : ""
+                }`}
+                aria-current={isActive ? "true" : undefined}
+                onClick={() => {
+                  if (isActive) {
+                    setShowOrganizationMenu(false);
+                    return;
+                  }
+                  handleSwitchOrganization(organizationId);
+                }}
+                role="menuitem"
+              >
+                <OrganizationLogoMark
+                  organization={organization}
+                  className="size-9 rounded-xl"
+                  textClassName="text-sm"
+                />
+                <span className="min-w-0 flex-1">
+                  <span className="header-organization-option-name">
+                    {organization.name}
+                  </span>
+                  <span className="header-organization-option-role">
+                    {getOrganizationRoleLabel(organization)}
+                  </span>
+                </span>
+                <span
+                  className={`header-organization-option-status ${
+                    isActive ? "is-active" : ""
+                  }`}
+                >
+                  {isActive ? (
+                    <>
+                      <span className="material-symbols-outlined text-base leading-none">
+                        check
+                      </span>
+                      <span className="hidden sm:inline">Đang chọn</span>
+                    </>
+                  ) : (
+                    <span className="material-symbols-outlined text-xl leading-none">
+                      sync_alt
+                    </span>
+                  )}
+                </span>
+              </button>
+            );
+          })
+        )}
+      </div>
+
+      <div className="header-organization-menu-footer">
+        <button
+          type="button"
+          className="header-organization-manage-button"
+          onClick={() => {
+            navigate("/organization");
+            setShowOrganizationMenu(false);
+          }}
+        >
+          <span className="material-symbols-outlined text-xl leading-none">
+            settings
+          </span>
+          Quản lý tổ chức
+        </button>
+      </div>
+    </div>
+  ) : null;
+
+  return (
+    <>
+      <header
+        className={`top-0 z-50 flex min-h-16 shrink-0 items-center justify-between gap-2 whitespace-nowrap px-3 py-2.5 sm:px-4 lg:px-6 ${
+          overlay
+            ? "absolute left-0 right-0 border-b border-transparent bg-transparent"
+            : "sticky border-b border-solid border-slate-200/50 bg-white/80 backdrop-blur-md"
+        }`}
+      >
       <div className="flex min-w-0 shrink-0 items-center gap-2 sm:gap-3 lg:min-w-[22rem] lg:flex-1">
         <NavLink
           to="/"
@@ -514,32 +765,30 @@ const Header = ({ overlay = false }) => {
           <img
             src={workHubLogo}
             alt="WorkHub"
-            className="w-9 h-9 rounded-lg object-cover shadow-sm"
+            className="h-10 w-10 rounded-lg object-cover shadow-sm"
           />
         </NavLink>
 
-        <button
-          type="button"
-          className="flex size-10 shrink-0 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-600 shadow-sm transition-colors duration-200 hover:border-blue-200 hover:bg-blue-50 hover:text-blue-600 lg:hidden"
-          title="Tìm kiếm"
-          aria-label="Tìm kiếm"
-        >
-          <span className="material-symbols-outlined text-[21px] leading-none">
-            search
+        <div className="hidden min-w-0 select-none items-center lg:flex">
+          <span className="relative inline-flex items-end drop-shadow-[0_4px_14px_rgba(37,99,235,0.16)]">
+            <span className="relative inline-flex pb-1.5">
+              <span className="bg-gradient-to-r from-blue-600 via-indigo-600 to-violet-600 bg-clip-text text-[1.35rem] font-black leading-none text-transparent">
+                Work
+              </span>
+              <span
+                className="absolute bottom-0 left-0 h-1.5 w-[calc(100%+0.18rem)] rounded-l-full rounded-r-[2px] bg-gradient-to-r from-cyan-400 via-blue-500 to-violet-500"
+                aria-hidden="true"
+              />
+            </span>
+            <span className="ml-0.5 bg-gradient-to-r from-indigo-600 via-violet-600 to-fuchsia-600 bg-clip-text text-[1.62rem] font-black leading-[0.88] text-transparent">
+              Hub
+            </span>
+            <span
+              className="absolute -right-3 top-0 size-2 rounded-full bg-amber-400 shadow-[0_0_14px_rgba(251,191,36,0.8)]"
+              aria-hidden="true"
+            />
           </span>
-        </button>
-
-        <label className="hidden h-10 w-[min(18rem,32vw)] min-w-0 items-center gap-2 rounded-full border border-slate-200 bg-white/85 px-3 text-slate-500 shadow-sm transition-colors duration-200 focus-within:border-blue-300 focus-within:bg-white focus-within:text-blue-600 lg:flex">
-          <span className="material-symbols-outlined text-[20px] leading-none">
-            search
-          </span>
-          <input
-            type="search"
-            className="min-w-0 flex-1 bg-transparent text-sm font-semibold text-slate-700 outline-none placeholder:text-slate-400"
-            placeholder="Tìm kiếm trong WorkHub"
-            aria-label="Tìm kiếm trong WorkHub"
-          />
-        </label>
+        </div>
       </div>
 
       <nav className="absolute left-1/2 top-1/2 hidden w-[min(28rem,48vw)] -translate-x-1/2 -translate-y-1/2 items-center justify-between rounded-2xl border border-slate-200/70 bg-slate-50/80 px-2.5 py-1.5 shadow-sm md:flex lg:hidden">
@@ -641,17 +890,24 @@ const Header = ({ overlay = false }) => {
         </div>
 
         <div className="flex items-center gap-2 sm:gap-3">
-          <div className="relative hidden sm:block" ref={organizationRef}>
+          <div
+            className="relative"
+            ref={organizationRef}
+            style={organizationThemeVars}
+          >
             <button
               type="button"
-              className={`flex h-10 max-w-[13rem] items-center gap-2 rounded-full border px-2.5 pr-3 text-left transition-colors duration-200 ${
-                showOrganizationMenu
-                  ? "border-indigo-200 bg-indigo-50 text-indigo-700 shadow-sm"
-                  : "border-slate-200 bg-white text-slate-700 shadow-sm hover:border-indigo-200 hover:bg-indigo-50 hover:text-indigo-700"
+              className={`header-organization-trigger ${
+                showOrganizationMenu ? "is-open" : ""
               }`}
               aria-haspopup="menu"
               aria-expanded={showOrganizationMenu}
-              title={activeOrganization?.name || "Quản lý tổ chức"}
+              title={
+                activeOrganization
+                  ? `${activeOrganization.name || "Tổ chức"} - ${activeOrganizationRoleLabel}`
+                  : "Chọn không gian tổ chức"
+              }
+              aria-label="Chọn không gian tổ chức"
               onClick={toggleOrganizationMenu}
             >
               <OrganizationLogoMark
@@ -659,101 +915,19 @@ const Header = ({ overlay = false }) => {
                 className="size-7 rounded-full"
                 textClassName="text-[11px]"
               />
-              <span className="hidden min-w-0 flex-1 sm:block">
-                <span className="block truncate text-xs font-black leading-4">
+              <span className="header-organization-copy">
+                <span className="header-organization-name">
                   {activeOrganization?.name || "Tổ chức"}
                 </span>
-                <span className="block truncate text-[10px] font-bold uppercase leading-3 text-slate-400">
-                  {activeOrganization?.role || "Chưa tham gia"}
+                <span className="header-organization-role">
+                  {activeOrganizationRoleLabel}
                 </span>
               </span>
-              <span className="material-symbols-outlined text-lg leading-none">
+              <span className="material-symbols-outlined header-organization-chevron">
                 expand_more
               </span>
             </button>
 
-            {showOrganizationMenu && (
-              <div
-                className="absolute right-0 top-full z-50 mt-2 w-[min(22rem,calc(100vw-2rem))] overflow-hidden rounded-2xl border border-slate-200 bg-white text-slate-900 shadow-[0_22px_70px_rgba(15,23,42,0.18)]"
-                role="menu"
-              >
-                <div className="border-b border-slate-100 px-4 py-3">
-                  <p className="text-sm font-black text-slate-950">
-                    Không gian tổ chức
-                  </p>
-                  <p className="mt-1 text-xs font-medium leading-5 text-slate-500">
-                    Dữ liệu bảng tin, tin nhắn, tài liệu và công việc sẽ đổi theo
-                    tổ chức đang chọn.
-                  </p>
-                </div>
-
-                <div className="max-h-72 overflow-y-auto p-2">
-                  {organizations.length === 0 ? (
-                    <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 px-4 py-6 text-center">
-                      <span className="material-symbols-outlined text-3xl leading-none text-slate-300">
-                        domain_add
-                      </span>
-                      <p className="mt-2 text-sm font-bold text-slate-500">
-                        Bạn chưa có tổ chức nào
-                      </p>
-                    </div>
-                  ) : (
-                    organizations.map((organization) => {
-                      const organizationId = organization.id || organization._id;
-                      const isActive = organizationId === activeOrganizationId;
-
-                      return (
-                        <button
-                          key={organizationId}
-                          type="button"
-                          className={`flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left transition-colors duration-200 ${
-                            isActive
-                              ? "bg-indigo-50 text-indigo-700"
-                              : "hover:bg-slate-50"
-                          }`}
-                          disabled={isActive}
-                          onClick={() => handleSwitchOrganization(organizationId)}
-                          role="menuitem"
-                        >
-                          <OrganizationLogoMark
-                            organization={organization}
-                            className="size-9 rounded-xl"
-                            textClassName="text-sm"
-                          />
-                          <span className="min-w-0 flex-1">
-                            <span className="block truncate text-sm font-black">
-                              {organization.name}
-                            </span>
-                            <span className="block truncate text-xs font-semibold text-slate-500">
-                              {organization.role || "member"}
-                            </span>
-                          </span>
-                          <span className="material-symbols-outlined text-xl leading-none">
-                            {isActive ? "check_circle" : "sync_alt"}
-                          </span>
-                        </button>
-                      );
-                    })
-                  )}
-                </div>
-
-                <div className="border-t border-slate-100 p-2">
-                  <button
-                    type="button"
-                    className="flex w-full items-center justify-center gap-2 rounded-xl bg-slate-950 px-4 py-2.5 text-sm font-extrabold text-white transition hover:bg-slate-800"
-                    onClick={() => {
-                      navigate("/organization");
-                      setShowOrganizationMenu(false);
-                    }}
-                  >
-                    <span className="material-symbols-outlined text-xl leading-none">
-                      settings
-                    </span>
-                    Quản lý tổ chức
-                  </button>
-                </div>
-              </div>
-            )}
           </div>
 
           <div className="relative" ref={notificationRef}>
@@ -779,13 +953,13 @@ const Header = ({ overlay = false }) => {
             </button>
 
             {showNotificationPanel && (
-              <div className="workhub-notification-panel fixed right-3 top-[4.25rem] z-50 flex max-h-[calc(100dvh-5rem)] w-[calc(100vw-1.5rem)] flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white text-slate-900 shadow-[0_22px_70px_rgba(15,23,42,0.18)] sm:right-6 sm:top-[4.75rem] sm:max-h-[calc(100dvh-5.5rem)] sm:w-[25rem] xl:w-[26rem]">
-                <div className="flex items-center justify-between gap-3 border-b border-slate-100 px-4 py-3">
+              <div className="workhub-notification-panel">
+                <div className="workhub-notification-header">
                   <div className="min-w-0">
-                    <h2 className="text-base font-extrabold uppercase tracking-wide text-slate-900">
+                    <h2 className="text-base font-black text-slate-950">
                       Thông báo
                     </h2>
-                    <span className="mt-0.5 block text-xs font-medium text-slate-500">
+                    <span className="mt-0.5 block text-xs font-semibold text-slate-500">
                       {notificationUnreadCount > 0
                         ? `${notificationUnreadCount} mục chưa đọc`
                         : "Bạn đã xem hết thông báo"}
@@ -794,7 +968,7 @@ const Header = ({ overlay = false }) => {
                   <div className="group relative shrink-0">
                     <button
                       type="button"
-                      className={`flex size-10 cursor-pointer items-center justify-center rounded-full border border-slate-200 bg-white text-slate-600 transition-colors duration-200 hover:border-blue-200 hover:bg-blue-50 hover:text-blue-700 ${
+                      className={`workhub-notification-mark-all ${
                         isMarkingAllRead ? "opacity-70" : ""
                       }`}
                       onClick={handleMarkAllAsRead}
@@ -815,11 +989,11 @@ const Header = ({ overlay = false }) => {
                   </div>
                 </div>
 
-                <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4">
+                <div className="workhub-notification-body">
                   <section>
                     <div className="mb-3 flex items-center justify-between gap-3">
-                      <h3 className="flex items-center gap-2 text-sm font-extrabold uppercase tracking-wide text-slate-900">
-                        <span className="material-symbols-outlined rounded-lg bg-blue-100 p-1 text-xl leading-none text-blue-600">
+                      <h3 className="flex items-center gap-2 text-sm font-black text-slate-950">
+                        <span className="material-symbols-outlined rounded-xl bg-blue-100 p-1.5 text-xl leading-none text-blue-600">
                           mail
                         </span>
                         Hộp thư đến
@@ -866,23 +1040,70 @@ const Header = ({ overlay = false }) => {
                         filteredNotifications.map((notification, idx) => {
                           const senderAvatar = getAvatarUrl(notification.sender?.avatar);
                           const isUnread = isNotificationUnread(notification);
+                          const notificationTitle =
+                            notification.title ||
+                            notification.message ||
+                            "Thông báo mới";
+                          const notificationBody = [
+                            notification.message,
+                            notification.content,
+                          ].find(
+                            (item) =>
+                              item &&
+                              String(item).trim() &&
+                              item !== notificationTitle,
+                          );
 
                           return (
                             <article
                               key={getNotificationId(notification) || idx}
-                              className={`group/notification relative flex w-full items-start gap-3 rounded-xl border p-3 pr-20 text-left transition-colors duration-200 ${
-                                isUnread
-                                  ? "border-blue-100 bg-blue-50/70 hover:bg-blue-50"
-                                  : "border-transparent bg-white hover:border-slate-200 hover:bg-slate-50"
+                              className={`workhub-notification-item ${
+                                isUnread ? "is-unread" : ""
                               }`}
                             >
-                              <div className="absolute right-2 top-2 flex items-center gap-1">
-                                <div className="group/action relative">
+                              {senderAvatar ? (
+                                <img
+                                  src={senderAvatar}
+                                  alt=""
+                                  referrerPolicy={getAvatarReferrerPolicy(senderAvatar)}
+                                  className="workhub-notification-avatar object-cover"
+                                />
+                              ) : (
+                                <span className="workhub-notification-avatar bg-white text-blue-600 ring-1 ring-slate-200">
+                                  <span className="material-symbols-outlined text-[18px] leading-none">
+                                    {getNotificationIcon(notification)}
+                                  </span>
+                                </span>
+                              )}
+                              <span className="workhub-notification-content">
+                                <span className="flex items-start gap-2">
+                                  <span className="workhub-notification-title">
+                                    {notificationTitle}
+                                  </span>
+                                  {isUnread && (
+                                    <span className="mt-1.5 size-2 shrink-0 rounded-full bg-blue-600" />
+                                  )}
+                                </span>
+                                {notificationBody && (
+                                  <span className="workhub-notification-copy">
+                                    {notificationBody}
+                                  </span>
+                                )}
+                                <span className="workhub-notification-meta">
+                                  <span className="material-symbols-outlined text-sm leading-none">
+                                    schedule
+                                  </span>
+                                  {formatTime(notification.createdAt)}
+                                </span>
+                              </span>
+                              <span className="workhub-notification-actions">
+                                <span className="group/action relative">
                                   <button
                                     type="button"
-                                    className="flex size-7 cursor-pointer items-center justify-center rounded-full border border-blue-100 bg-white text-blue-600 transition-colors duration-200 hover:border-blue-200 hover:bg-blue-50"
+                                    className="workhub-notification-action workhub-notification-action--read"
                                     onClick={() => handleNotificationClick(notification)}
                                     aria-label="Đánh dấu đã đọc"
+                                    disabled={!isUnread}
                                   >
                                     <span className="material-symbols-outlined text-[16px] leading-none">
                                       done
@@ -891,11 +1112,11 @@ const Header = ({ overlay = false }) => {
                                   <span className="pointer-events-none absolute right-0 top-[calc(100%+0.35rem)] z-[80] whitespace-nowrap rounded-md bg-slate-950 px-2.5 py-1.5 text-[11px] font-bold text-white opacity-0 shadow-lg transition-opacity duration-200 group-hover/action:opacity-100 group-focus-within/action:opacity-100">
                                     Đánh dấu đã đọc
                                   </span>
-                                </div>
-                                <div className="group/action relative">
+                                </span>
+                                <span className="group/action relative">
                                   <button
                                     type="button"
-                                    className="flex size-7 cursor-pointer items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 transition-colors duration-200 hover:border-red-200 hover:bg-red-50 hover:text-red-600"
+                                    className="workhub-notification-action workhub-notification-action--delete"
                                     onClick={() => handleDeleteNotification(notification)}
                                     aria-label="Xóa thông báo"
                                   >
@@ -906,38 +1127,6 @@ const Header = ({ overlay = false }) => {
                                   <span className="pointer-events-none absolute right-0 top-[calc(100%+0.35rem)] z-[80] whitespace-nowrap rounded-md bg-slate-950 px-2.5 py-1.5 text-[11px] font-bold text-white opacity-0 shadow-lg transition-opacity duration-200 group-hover/action:opacity-100 group-focus-within/action:opacity-100">
                                     Xóa thông báo
                                   </span>
-                                </div>
-                              </div>
-                              {senderAvatar ? (
-                                <img
-                                  src={senderAvatar}
-                                  alt=""
-                                  referrerPolicy={getAvatarReferrerPolicy(senderAvatar)}
-                                  className="size-9 shrink-0 rounded-full object-cover ring-2 ring-white shadow-sm"
-                                />
-                              ) : (
-                                <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-white text-blue-600 ring-1 ring-slate-200">
-                                  <span className="material-symbols-outlined text-[18px] leading-none">
-                                    {getNotificationIcon(notification)}
-                                  </span>
-                                </span>
-                              )}
-                              <span className="min-w-0 flex-1">
-                                <span className="flex items-start gap-2">
-                                  <span className="line-clamp-2 flex-1 text-sm font-bold leading-5 text-slate-900">
-                                    {notification.message ||
-                                      notification.title ||
-                                      "Thông báo mới"}
-                                  </span>
-                                  {isUnread && (
-                                    <span className="mt-1.5 size-2 shrink-0 rounded-full bg-blue-600" />
-                                  )}
-                                </span>
-                                <span className="mt-1 flex items-center gap-1.5 text-xs font-medium text-slate-500">
-                                  <span className="material-symbols-outlined text-sm leading-none">
-                                    schedule
-                                  </span>
-                                  {formatTime(notification.createdAt)}
                                 </span>
                               </span>
                             </article>
@@ -950,8 +1139,8 @@ const Header = ({ overlay = false }) => {
                   <hr className="my-4 border-slate-200/80" />
 
                   <section>
-                    <h3 className="mb-3 flex items-center gap-2 text-sm font-extrabold uppercase tracking-wide text-slate-900">
-                      <span className="material-symbols-outlined rounded-lg bg-purple-100 p-1 text-xl leading-none text-purple-600">
+                    <h3 className="mb-3 flex items-center gap-2 text-sm font-black text-slate-950">
+                      <span className="material-symbols-outlined rounded-xl bg-purple-100 p-1.5 text-xl leading-none text-purple-600">
                         video_camera_front
                       </span>
                       Cuộc họp sắp tới
@@ -1178,7 +1367,9 @@ const Header = ({ overlay = false }) => {
           )}
         </div>
       </div>
-    </header>
+      </header>
+      {organizationMenu}
+    </>
   );
 };
 

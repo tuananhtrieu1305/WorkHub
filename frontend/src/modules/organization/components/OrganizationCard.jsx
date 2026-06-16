@@ -9,6 +9,13 @@ import Icon from "./Icon";
 import OrganizationLogo from "./OrganizationLogo";
 import StatTile from "./StatTile";
 
+const getOrganizationRoleLabel = (organization = {}) => {
+  const roleNames = (organization.roles || [])
+    .map((role) => role.name || role.key)
+    .filter(Boolean);
+  return roleNames.length ? roleNames.join(", ") : organization.roleLabel || "Thành viên";
+};
+
 const OrganizationCard = ({
   activeOrganizationId,
   handlers,
@@ -99,10 +106,7 @@ const OrganizationCard = ({
           />
           <StatTile
             icon="verified_user"
-            value={
-              organization.roleLabel ||
-              "Thành viên"
-            }
+            value={getOrganizationRoleLabel(organization)}
             label="Vai trò"
             tone="violet"
             valueClassName="text-base leading-tight sm:text-lg"

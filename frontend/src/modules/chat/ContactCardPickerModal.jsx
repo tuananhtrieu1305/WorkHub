@@ -15,11 +15,27 @@ const getMemberName = (member) =>
 
 const getMemberInitial = (member) => getMemberName(member).charAt(0).toUpperCase();
 
+const getMemberRoles = (member = {}) =>
+  Array.isArray(member.roles) && member.roles.length
+    ? member.roles
+    : [
+        {
+          id: member.roleId,
+          key: member.role,
+          name: member.roleLabel,
+          color: member.roleColor,
+        },
+      ];
+
 const getMemberSubtitle = (member) => {
   const user = getMemberUser(member);
+  const roleLabel = getMemberRoles(member)
+    .map((role) => role.name || role.key)
+    .filter(Boolean)
+    .join(", ");
   return (
     user?.position ||
-    member?.roleLabel ||
+    roleLabel ||
     member?.role ||
     user?.email ||
     "Thành viên"
@@ -134,10 +150,12 @@ const ContactCardPickerModal = ({
         selectedUser && typeof selectedUser === "object"
           ? selectedUser
           : { id: selectedUser };
+      const primaryRole = getMemberRoles(selectedMember)[0] || {};
       await onSendContact?.({
         ...selectedUserPayload,
-        role: selectedMember?.role,
-        roleLabel: selectedMember?.roleLabel,
+        role: primaryRole.key || selectedMember?.role,
+        roleLabel: primaryRole.name || selectedMember?.roleLabel,
+        roleColor: primaryRole.color || selectedMember?.roleColor,
         memberId: selectedMember?.id,
       });
       onClose?.();

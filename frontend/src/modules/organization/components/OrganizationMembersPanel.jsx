@@ -9,6 +9,18 @@ import { PanelListSkeleton } from "../../../components/common/Skeleton";
 const getMemberUserId = (member = {}) =>
   String(member.user?._id || member.user?.id || member.userId || "");
 
+const getMemberRoles = (member = {}) =>
+  Array.isArray(member.roles) && member.roles.length
+    ? member.roles
+    : [
+        {
+          id: member.roleId,
+          key: member.role,
+          name: member.roleLabel || "Thành viên",
+          color: member.roleColor || "#2563eb",
+        },
+      ];
+
 const MemberIdentityButton = ({ member, onOpenProfile }) => (
   <button
     type="button"
@@ -50,9 +62,19 @@ const MemberRow = ({ member, onOpenProfile }) => (
           {member.user.position}
         </span>
       )}
-      <span className="rounded-lg bg-blue-50 px-2.5 py-1 text-xs font-black text-blue-700 ring-1 ring-blue-100">
-        {member.roleLabel || "Thành viên"}
-      </span>
+      {getMemberRoles(member).map((role) => (
+        <span
+          key={role.id || role.key || role.name}
+          className="rounded-lg px-2.5 py-1 text-xs font-black ring-1"
+          style={{
+            backgroundColor: `${role.color || "#2563eb"}18`,
+            borderColor: `${role.color || "#2563eb"}2e`,
+            color: role.color || "#2563eb",
+          }}
+        >
+          {role.name || "Thành viên"}
+        </span>
+      ))}
     </div>
   </div>
 );

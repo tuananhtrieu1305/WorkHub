@@ -52,6 +52,15 @@ const organizationMemberSchema = new mongoose.Schema(
       ref: "OrganizationRole",
       default: null,
     },
+    roleIds: {
+      type: [
+        {
+          type: mongoose.Schema.Types.ObjectId,
+          ref: "OrganizationRole",
+        },
+      ],
+      default: [],
+    },
     status: {
       type: String,
       enum: ["active", "invited", "pending", "removed"],
@@ -101,6 +110,7 @@ organizationMemberSchema.index(
 organizationMemberSchema.index({ userId: 1, status: 1, updatedAt: -1 });
 organizationMemberSchema.index({ userId: 1, isFavorite: 1, updatedAt: -1 });
 organizationMemberSchema.index({ organizationId: 1, status: 1, role: 1 });
+organizationMemberSchema.index({ organizationId: 1, status: 1, roleIds: 1 });
 
 const OrganizationMember = mongoose.model(
   "OrganizationMember",

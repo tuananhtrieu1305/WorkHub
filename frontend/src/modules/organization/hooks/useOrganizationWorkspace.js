@@ -341,8 +341,9 @@ export const useOrganizationWorkspace = () => {
     }
   }, [activeOrganization, message, organizationId]);
 
-  const openRoleModal = useCallback((role = null) => {
-    setRoleModal(role ? "edit" : "create");
+  const openRoleModal = useCallback((role = null, options = {}) => {
+    const viewOnly = Boolean(role && (options.viewOnly || role.canManage === false));
+    setRoleModal(role ? (viewOnly ? "view" : "edit") : "create");
     setRoleForm(role ? toRoleForm(role) : defaultRoleForm);
   }, []);
 
@@ -372,6 +373,7 @@ export const useOrganizationWorkspace = () => {
     async (event) => {
       event.preventDefault();
       if (!organizationId || !roleForm.name.trim()) return;
+      if (roleModal === "view") return;
 
       try {
         if (roleModal === "edit" && roleForm.id) {
@@ -426,7 +428,7 @@ export const useOrganizationWorkspace = () => {
         console.error("Failed to delete organization role:", error);
         message.error(getErrorMessage(error, "Không thể xóa vai trò"), {
           description:
-            "Vai trò vẫn còn trong tổ chức. Hãy kiểm tra thành viên đang dùng vai trò này.",
+            "Vai trò chưa được xóa. Hãy kiểm tra quyền quản trị role của bạn.",
         });
       }
     },
@@ -469,12 +471,22 @@ export const useOrganizationWorkspace = () => {
 
       try {
         const role = roles.find((item) => item.id === roleId);
-        await updateOrganizationMember(organizationId, member.id, { roleId });
+        const currentRoleIds = [
+          ...(member.roleIds || []),
+          ...(member.roles || []).map((item) => item.id),
+        ]
+          .filter(Boolean)
+          .map((item) => String(item));
+        const nextRoleIds = [...new Set([...currentRoleIds, String(roleId)])];
+        await updateOrganizationMember(organizationId, member.id, {
+          roleIds: nextRoleIds,
+        });
         message.success("Đã cập nhật vai trò thành viên", {
-          description: `${getMemberName(member)} đã được gán vai trò ${
+          description: `${getMemberName(member)} đã được thêm vai trò ${
             role?.name || "mới"
           }.`,
         });
+        loadRoles();
         loadMembers();
       } catch (error) {
         console.error("Failed to update member role:", error);
@@ -484,7 +496,7 @@ export const useOrganizationWorkspace = () => {
         });
       }
     },
-    [loadMembers, message, organizationId, roles],
+    [loadMembers, loadRoles, message, organizationId, roles],
   );
 
   const roleMembersChanged = useCallback(() => {

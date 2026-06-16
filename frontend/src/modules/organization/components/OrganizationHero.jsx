@@ -5,6 +5,13 @@ import OrganizationHeroActions from "./OrganizationHeroActions";
 import OrganizationHeroStats from "./OrganizationHeroStats";
 import OrganizationLogo from "./OrganizationLogo";
 
+const getOrganizationRoleLabel = (organization = {}) => {
+  const roleNames = (organization.roles || [])
+    .map((role) => role.name || role.key)
+    .filter(Boolean);
+  return roleNames.length ? roleNames.join(", ") : organization.roleLabel || "Thành viên";
+};
+
 const OrganizationHero = ({
   activeOrganization,
   onOpenInvite,
@@ -12,9 +19,7 @@ const OrganizationHero = ({
 }) => {
   const heroBannerUrl = getAvatarUrl(activeOrganization?.bannerUrl);
   const heroStyle = getOrganizationThemeStyle(activeOrganization, heroBannerUrl);
-  const roleLabel =
-    activeOrganization?.roleLabel ||
-    "Thành viên";
+  const roleLabel = getOrganizationRoleLabel(activeOrganization);
 
   return (
     <section

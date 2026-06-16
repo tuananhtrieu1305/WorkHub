@@ -2,6 +2,13 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import Icon from "./Icon";
 import MemberAvatar from "./MemberAvatar";
 
+const getMemberRoleLabel = (member = {}) => {
+  const roleNames = (member.roles || [])
+    .map((role) => role.name || role.key)
+    .filter(Boolean);
+  return roleNames.length ? roleNames.join(", ") : member.roleLabel || "Thành viên";
+};
+
 const OrganizationTransferOwnerModal = ({
   isSubmitting = false,
   members = [],
@@ -115,7 +122,7 @@ const OrganizationTransferOwnerModal = ({
                       </p>
                     </div>
                     <span className="rounded-2xl bg-white px-3 py-1.5 text-xs font-black text-slate-600 ring-1 ring-slate-200">
-                      {member.roleLabel || "Thành viên"}
+                      {getMemberRoleLabel(member)}
                     </span>
                     <span
                       className={`grid size-9 place-items-center rounded-2xl ${

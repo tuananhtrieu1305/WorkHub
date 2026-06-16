@@ -6,6 +6,13 @@ import OrganizationHeroStats from "./OrganizationHeroStats";
 import OrganizationLogo from "./OrganizationLogo";
 import OrganizationBannerUploader from "./banner/OrganizationBannerUploader";
 
+const getOrganizationRoleLabel = (organization = {}) => {
+  const roleNames = (organization.roles || [])
+    .map((role) => role.name || role.key)
+    .filter(Boolean);
+  return roleNames.length ? roleNames.join(", ") : organization.roleLabel || "Thành viên";
+};
+
 const OrganizationWorkspaceHeader = ({
   isUpdatingBanner = false,
   onUpdateBanner,
@@ -14,9 +21,7 @@ const OrganizationWorkspaceHeader = ({
   const navigate = useNavigate();
   const bannerUrl = getAvatarUrl(organization?.bannerUrl);
   const headerStyle = getOrganizationThemeStyle(organization, bannerUrl);
-  const roleLabel =
-    organization?.roleLabel ||
-    "Thành viên";
+  const roleLabel = getOrganizationRoleLabel(organization);
 
   return (
     <section

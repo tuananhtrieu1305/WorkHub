@@ -21,7 +21,6 @@ import {
   hasOrganizationPermission,
   normalizeInviteCode,
   normalizeRoleKey,
-  normalizeRolePermissions,
 } from "../utils/organizationPolicy.js";
 import {
   buildOrganizationDashboard,
@@ -34,8 +33,11 @@ import {
   ensureOrganizationJoinRequest,
   ensureDefaultOrganizationRoles,
   findInviteTarget,
+  getMembershipPermissions,
+  getMembershipRoleIds,
   getMissingRequiredJoinAnswers,
   getOrganizationRoles,
+  getRolesFromMap,
   normalizeOrganizationJoinAnswers,
   normalizeOrganizationInvitePayload,
   normalizeOrganizationJoinQuestions,
@@ -46,6 +48,7 @@ import {
   serializeOrganization,
   serializeOrganizationInvite,
   serializeOrganizationRole,
+  syncMembershipPrimaryRole,
   isOrganizationOwnerMembership,
 } from "../services/organizationService.js";
 import { getPresenceFields } from "../services/presenceService.js";
@@ -90,11 +93,7 @@ const buildRoleMap = (roles = []) => {
 
 const getRoleForMembership = (membership, roleMap = new Map()) => {
   if (!membership) return null;
-  return (
-    roleMap.get(roleIdMapKey(membership.roleId)) ||
-    roleMap.get(roleMapKey(membership.organizationId, membership.role)) ||
-    null
-  );
+  return getRolesFromMap(membership, roleMap)[0] || null;
 };
 
 const getRoleOrderIndex = (roles = [], role) => {
@@ -259,9 +258,7 @@ const getMembershipWithPermissions = async (organizationId, userId) => {
   membership.isOwner = isOwner;
   membership.permissions = isOwner
     ? { ...OWNER_ORGANIZATION_PERMISSIONS }
-    : role
-      ? serializeOrganizationRole(role).permissions
-      : normalizeRolePermissions(membership.role || DEFAULT_MEMBER_ROLE_KEY);
+    : getMembershipPermissions(membership, roleMap);
   return { membership, role, roles, organization };
 };
 
@@ -393,6 +390,7 @@ const serializeOrganizationWithStats = async (organization, membership, req) => 
     baseUrl: getBaseUrl(req),
     stats: statsMap.get(organizationId),
     role,
+    roles: getRolesFromMap(membership, buildRoleMap(roles)),
     invite: personalInvite,
   });
 };
@@ -406,20 +404,24 @@ const serializeJoinAnswer = (answer) => ({
 
 const serializeMember = (membership, roleMap = new Map(), organization = null) => {
   const user = membership.userId;
-  const role = getRoleForMembership(membership, roleMap);
-  const rolePayload = role ? serializeOrganizationRole(role) : null;
+  const rolePayloads = getRolesFromMap(membership, roleMap).map((role) =>
+    serializeOrganizationRole(role),
+  );
+  const rolePayload = rolePayloads[0] || null;
   const isOwner = isOrganizationOwnerMembership(membership, organization);
   return {
     id: String(membership._id),
     organizationId: String(membership.organizationId),
     roleId: rolePayload?.id || toId(membership.roleId) || null,
+    roleIds: rolePayloads.map((role) => role.id).filter(Boolean),
     role: rolePayload?.key || membership.role || DEFAULT_MEMBER_ROLE_KEY,
     roleLabel: rolePayload?.name || membership.role || "Thành viên",
     roleColor: rolePayload?.color || "#64748b",
+    roles: rolePayloads,
     isOwner,
     permissions: isOwner
       ? { ...OWNER_ORGANIZATION_PERMISSIONS }
-      : rolePayload?.permissions || {},
+      : getMembershipPermissions(membership, roleMap),
     status: membership.status,
     createdAt: membership.createdAt,
     updatedAt: membership.updatedAt,
@@ -668,11 +670,20 @@ export const getOrganizationMembers = async (req, res) => {
     organizationId: req.params.id,
     status: { $in: statuses },
   };
+  let roles = permissionContext.roles || null;
   if (roleFilterValue) {
     if (isObjectIdLike(roleFilterValue)) {
-      query.roleId = roleFilterValue;
+      query.$or = [{ roleIds: roleFilterValue }, { roleId: roleFilterValue }];
     } else if (roleFilter) {
-      query.role = roleFilter;
+      if (!roles) roles = await getOrganizationRoles(req.params.id);
+      const matchedRole = roles.find((role) => normalizeRoleKey(role.key) === roleFilter);
+      query.$or = matchedRole
+        ? [
+            { roleIds: matchedRole._id },
+            { roleId: matchedRole._id },
+            { role: roleFilter },
+          ]
+        : [{ role: roleFilter }];
     }
   }
 
@@ -682,17 +693,26 @@ export const getOrganizationMembers = async (req, res) => {
       "_id fullName email avatar position status activityStatus activityStatusExpiresAt",
     )
     .sort({ status: 1, roleId: 1, role: 1, joinedAt: 1, updatedAt: 1 });
+  if (!roles) roles = await getOrganizationRoles(req.params.id);
+  const roleMap = buildRoleMap(roles);
   if (search) {
     const needle = search.toLowerCase();
     members = members.filter((member) => {
       const user = member.userId;
-      return [user?.fullName, user?.email, user?.position, member.role].some(
-        (value) => String(value || "").toLowerCase().includes(needle),
-      );
+      const roleValues = getRolesFromMap(member, roleMap).flatMap((role) => [
+        role.name,
+        role.key,
+        role.description,
+      ]);
+      return [
+        user?.fullName,
+        user?.email,
+        user?.position,
+        member.role,
+        ...roleValues,
+      ].some((value) => String(value || "").toLowerCase().includes(needle));
     });
   }
-  const roles = permissionContext.roles || (await getOrganizationRoles(req.params.id));
-  const roleMap = buildRoleMap(roles);
 
   res.json({
     content: members.map((member) => ({
@@ -764,11 +784,33 @@ const buildOrganizationRoleListPayload = async (
             $match: {
               organizationId,
               status: "active",
-              roleId: { $in: roleIds },
               userId: { $ne: organization?.ownerId || null },
             },
           },
-          { $group: { _id: "$roleId", count: { $sum: 1 } } },
+          {
+            $project: {
+              roleIdsForCount: {
+                $filter: {
+                  input: {
+                    $cond: [
+                      { $gt: [{ $size: { $ifNull: ["$roleIds", []] } }, 0] },
+                      "$roleIds",
+                      ["$roleId"],
+                    ],
+                  },
+                  as: "roleId",
+                  cond: {
+                    $and: [
+                      { $ne: ["$$roleId", null] },
+                      { $in: ["$$roleId", roleIds] },
+                    ],
+                  },
+                },
+              },
+            },
+          },
+          { $unwind: "$roleIdsForCount" },
+          { $group: { _id: "$roleIdsForCount", count: { $sum: 1 } } },
         ])
       : [];
   const memberCountMap = new Map(
@@ -937,18 +979,35 @@ export const deleteOrganizationRole = async (req, res) => {
     throw new ApiError(400, "Default role cannot be deleted");
   }
 
-  const membersUsingRole = await OrganizationMember.countDocuments({
-    organizationId: req.params.id,
-    $or: [{ roleId: role._id }, { role: role.key }],
-    status: { $in: ["active", "pending"] },
-  });
-  if (membersUsingRole > 0) {
-    throw new ApiError(400, "Move members to another role before deleting it");
-  }
-
   role.archivedAt = new Date();
   role.updatedBy = req.user._id;
   await role.save();
+
+  const [defaultRole, membershipsUsingRole] = await Promise.all([
+    getDefaultMembershipRole(organization),
+    OrganizationMember.find({
+      organizationId: req.params.id,
+      status: { $in: ["active", "pending"] },
+      $or: [
+        { roleIds: role._id },
+        { roleId: role._id },
+        { role: role.key },
+      ],
+    }),
+  ]);
+  const remainingRoles = await getOrganizationRoles(req.params.id);
+  const roleMap = buildRoleMap(remainingRoles);
+
+  await Promise.all(
+    membershipsUsingRole.map(async (membership) => {
+      const remainingRoleIds = getMembershipRoleIds(membership).filter(
+        (roleId) => roleId !== toId(role._id),
+      );
+      membership.roleIds = remainingRoleIds;
+      syncMembershipPrimaryRole(membership, roleMap, defaultRole);
+      await membership.save();
+    }),
+  );
 
   res.status(204).send();
 };
@@ -1042,9 +1101,12 @@ const getOrganizationRoleById = async (organizationId, roleId) => {
 };
 
 const memberCarriesRole = (membership, role, roleMap) => {
-  const memberRole = getRoleForMembership(membership, roleMap);
+  const targetRoleId = toId(role?._id || role?.id);
   return (
-    toId(memberRole?._id || memberRole?.id) === toId(role._id || role.id) ||
+    getMembershipRoleIds(membership).includes(targetRoleId) ||
+    getRolesFromMap(membership, roleMap).some(
+      (memberRole) => toId(memberRole?._id || memberRole?.id) === targetRoleId,
+    ) ||
     normalizeRoleKey(membership.role) === normalizeRoleKey(role.key)
   );
 };
@@ -1076,7 +1138,7 @@ const buildOrganizationRoleMembersPayload = async (context, role) => {
       return;
     }
 
-    if (canManage) candidates.push(row);
+    if (canManageRoleInHierarchy(context, role) && canManage) candidates.push(row);
   });
 
   const canManage = canManageRoleInHierarchy(context, role);
@@ -1092,18 +1154,21 @@ const buildOrganizationRoleMembersPayload = async (context, role) => {
 };
 
 export const getOrganizationRoleMembers = async (req, res) => {
-  const context = await requireOrganizationPermission(
+  const context = await getMembershipWithPermissions(
     req.params.id,
     req.user._id,
-    "manageRoles",
-    "Only authorized members can manage role members",
   );
+  const membership = context?.membership;
+  if (!membership) {
+    throw new ApiError(403, "You are not a member of this organization");
+  }
+  if (
+    !hasOrganizationPermission(membership, "viewMembers") &&
+    !hasOrganizationPermission(membership, "manageRoles")
+  ) {
+    throw new ApiError(403, "You cannot view role members");
+  }
   const role = await getOrganizationRoleById(req.params.id, req.params.roleId);
-  assertCanManageRoleInHierarchy(
-    context,
-    role,
-    "You can only manage members for roles below your highest role",
-  );
 
   res.json(await buildOrganizationRoleMembersPayload(context, role));
 };
@@ -1168,18 +1233,23 @@ export const updateOrganizationRoleMembers = async (req, res) => {
       }
 
       const membershipId = toId(membership._id);
+      let nextRoleIds = getMembershipRoleIds(membership);
       if (addMemberIds.includes(membershipId)) {
-        membership.role = role.key;
-        membership.roleId = role._id;
+        const targetRoleId = toId(role._id);
+        if (!nextRoleIds.includes(targetRoleId)) {
+          nextRoleIds = [...nextRoleIds, targetRoleId];
+        }
       }
 
       if (
         removeMemberIds.includes(membershipId) &&
         memberCarriesRole(membership, role, roleMap)
       ) {
-        membership.role = defaultRole?.key || DEFAULT_MEMBER_ROLE_KEY;
-        membership.roleId = defaultRole?._id || null;
+        nextRoleIds = nextRoleIds.filter((roleId) => roleId !== toId(role._id));
       }
+
+      membership.roleIds = nextRoleIds;
+      syncMembershipPrimaryRole(membership, roleMap, defaultRole);
 
       await membership.save();
     }),
@@ -1215,9 +1285,39 @@ export const updateOrganizationMember = async (req, res) => {
     throw new ApiError(403, "You can only update members below your highest role");
   }
 
+  const requestedRoleIds = Array.isArray(req.body?.roleIds)
+    ? [...new Set(req.body.roleIds.map((roleId) => String(roleId || "").trim()).filter(Boolean))]
+    : null;
   const roleId = String(req.body?.roleId || "").trim();
   const roleKey = normalizeRoleKey(req.body?.role || "");
-  if (roleId || roleKey) {
+
+  if (requestedRoleIds) {
+    if (requestedRoleIds.some((item) => !isObjectIdLike(item))) {
+      throw new ApiError(400, "Role ids are invalid");
+    }
+
+    const selectedRoles = requestedRoleIds.length
+      ? await OrganizationRole.find({
+          _id: { $in: requestedRoleIds },
+          organizationId: req.params.id,
+          archivedAt: null,
+        })
+      : [];
+    if (selectedRoles.length !== requestedRoleIds.length) {
+      throw new ApiError(400, "Some roles are invalid");
+    }
+    selectedRoles.forEach((role) => {
+      if (!canManageRoleInHierarchy(context, role)) {
+        throw new ApiError(403, "You can only assign roles below your highest role");
+      }
+    });
+
+    const defaultRole = requestedRoleIds.length
+      ? null
+      : await getDefaultMembershipRole(organization);
+    membership.roleIds = selectedRoles.map((role) => role._id);
+    syncMembershipPrimaryRole(membership, buildRoleMap(context.roles), defaultRole);
+  } else if (roleId || roleKey) {
     const role = await OrganizationRole.findOne({
       organizationId: req.params.id,
       ...(roleId && isObjectIdLike(roleId) ? { _id: roleId } : { key: roleKey }),
@@ -1229,8 +1329,8 @@ export const updateOrganizationMember = async (req, res) => {
     if (!canManageRoleInHierarchy(context, role)) {
       throw new ApiError(403, "You can only assign roles below your highest role");
     }
-    membership.role = role.key;
-    membership.roleId = role._id;
+    membership.roleIds = [role._id];
+    syncMembershipPrimaryRole(membership, buildRoleMap(context.roles), role);
   }
 
   await membership.save();
@@ -1860,8 +1960,10 @@ export const transferOrganizationOwnership = async (req, res) => {
 
   membership.role = defaultRole?.key || DEFAULT_MEMBER_ROLE_KEY;
   membership.roleId = defaultRole?._id || null;
+  membership.roleIds = defaultRole?._id ? [defaultRole._id] : [];
   targetMembership.role = targetMembership.role || defaultRole?.key || DEFAULT_MEMBER_ROLE_KEY;
   targetMembership.roleId = targetMembership.roleId || defaultRole?._id || null;
+  targetMembership.roleIds = getMembershipRoleIds(targetMembership);
 
   const organization = await Organization.findByIdAndUpdate(
     req.params.id,

@@ -113,16 +113,30 @@ const emitNotificationCreated = async (notification) => {
       ? notification
       : await hydrateNotification(notification);
   if (!payload?.userId) return;
+  const nextUnreadCount = await unreadCount(
+    payload.userId,
+    payload.organizationId || null,
+  );
   notificationIoInstance
     .to(`user:${toComparableId(payload.userId)}`)
-    .emit("notification_created", payload);
+    .emit("notification_created", {
+      ...payload,
+      unreadCount: nextUnreadCount,
+    });
 };
 
-const emitNotificationRead = (userId, notification) => {
+const emitNotificationRead = async (userId, notification) => {
   if (!notificationIoInstance || !notification) return;
+  const nextUnreadCount = await unreadCount(
+    userId,
+    notification.organizationId || null,
+  );
   notificationIoInstance
     .to(`user:${toComparableId(userId)}`)
-    .emit("notification_read", notification);
+    .emit("notification_read", {
+      ...notification,
+      unreadCount: nextUnreadCount,
+    });
 };
 
 const emitNotificationsReadAll = (userId, organizationId) => {
@@ -393,7 +407,7 @@ export const markRead = async (userId, notificationId, organizationId = undefine
     .populate("actorId", ACTOR_SELECT)
     .populate("actorIds", ACTOR_SELECT);
   const serialized = serializeNotification(notification);
-  emitNotificationRead(userId, serialized);
+  await emitNotificationRead(userId, serialized);
   return serialized;
 };
 

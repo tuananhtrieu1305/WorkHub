@@ -229,11 +229,115 @@ const buildRoleMap = (roles = []) => {
   return roleMap;
 };
 
+export const getMembershipRoleIds = (membership) => {
+  if (!membership) return [];
+  const roleIds = Array.isArray(membership.roleIds) ? membership.roleIds : [];
+  if (roleIds.length) {
+    return [
+      ...new Set(roleIds.map((roleId) => toId(roleId)).filter(Boolean)),
+    ];
+  }
+  return [
+    ...new Set(
+      [membership.roleId].map((roleId) => toId(roleId)).filter(Boolean),
+    ),
+  ];
+};
+
+const compareRolesByOrder = (left, right) => {
+  const leftDoc = left?.toObject?.() || left || {};
+  const rightDoc = right?.toObject?.() || right || {};
+  const leftOrder = Number(leftDoc.sortOrder ?? 100);
+  const rightOrder = Number(rightDoc.sortOrder ?? 100);
+  if (leftOrder !== rightOrder) return leftOrder - rightOrder;
+  const leftCreatedAt = new Date(leftDoc.createdAt || 0).getTime();
+  const rightCreatedAt = new Date(rightDoc.createdAt || 0).getTime();
+  if (leftCreatedAt !== rightCreatedAt) return leftCreatedAt - rightCreatedAt;
+  return String(leftDoc.name || leftDoc.key || "").localeCompare(
+    String(rightDoc.name || rightDoc.key || ""),
+  );
+};
+
+export const getRolesFromMap = (membership, roleMap = new Map()) => {
+  if (!membership) return [];
+  const roles = [];
+  const seen = new Set();
+
+  getMembershipRoleIds(membership).forEach((roleId) => {
+    const role = roleMap.get(roleIdMapKey(roleId));
+    const normalizedId = toId(role?._id || role?.id);
+    if (role && normalizedId && !seen.has(normalizedId)) {
+      seen.add(normalizedId);
+      roles.push(role);
+    }
+  });
+
+  const hasExplicitRoleIds =
+    Array.isArray(membership.roleIds) && membership.roleIds.length > 0;
+  if (!hasExplicitRoleIds) {
+    const legacyRole = roleMap.get(roleMapKey(membership.organizationId, membership.role));
+    const legacyRoleId = toId(legacyRole?._id || legacyRole?.id);
+    if (legacyRole && legacyRoleId && !seen.has(legacyRoleId)) {
+      seen.add(legacyRoleId);
+      roles.push(legacyRole);
+    }
+  }
+
+  return roles.sort(compareRolesByOrder);
+};
+
 const getRoleFromMap = (membership, roleMap = new Map()) => {
+  const roles = getRolesFromMap(membership, roleMap);
+  return roles[0] || null;
+};
+
+const mergeRolePermissions = (roleDefinitions = []) => {
+  if (!roleDefinitions.length) {
+    return normalizeRolePermissions(DEFAULT_MEMBER_ROLE_KEY);
+  }
+
+  return roleDefinitions.reduce((merged, roleDefinition) => {
+    const rolePermissions = normalizeRolePermissions(
+      roleDefinition.key,
+      roleDefinition.permissions,
+    );
+    ORGANIZATION_PERMISSION_KEYS.forEach((permissionKey) => {
+      merged[permissionKey] =
+        Boolean(merged[permissionKey]) || Boolean(rolePermissions[permissionKey]);
+    });
+    return merged;
+  }, {});
+};
+
+export const syncMembershipPrimaryRole = (
+  membership,
+  roleMap = new Map(),
+  fallbackRole = null,
+) => {
   if (!membership) return null;
-  const byId = roleMap.get(roleIdMapKey(membership.roleId));
-  if (byId) return byId;
-  return roleMap.get(roleMapKey(membership.organizationId, membership.role));
+
+  let roles = getRolesFromMap(membership, roleMap);
+  if (!roles.length && fallbackRole) {
+    const fallbackId = toId(fallbackRole._id || fallbackRole.id);
+    if (fallbackId) {
+      membership.roleIds = [fallbackRole._id || fallbackRole.id];
+      roles = [fallbackRole];
+    }
+  }
+
+  const uniqueRoleIds = [
+    ...new Set(roles.map((role) => toId(role?._id || role?.id)).filter(Boolean)),
+  ];
+  membership.roleIds = uniqueRoleIds;
+
+  const primaryRole = roles[0] || fallbackRole || null;
+  membership.roleId = primaryRole?._id || primaryRole?.id || null;
+  membership.role =
+    normalizeRoleKey(primaryRole?.key) ||
+    normalizeRoleKey(membership.role) ||
+    DEFAULT_MEMBER_ROLE_KEY;
+
+  return primaryRole;
 };
 
 export const getRoleDefinition = (roleOrKey = DEFAULT_MEMBER_ROLE_KEY, role = null) => {
@@ -263,8 +367,11 @@ export const getMembershipPermissions = (membership, roleMap = new Map()) => {
   if (membership.isOwner || membership.isOrganizationOwner) {
     return { ...OWNER_ORGANIZATION_PERMISSIONS };
   }
-  const role = getRoleFromMap(membership, roleMap);
-  return getRoleDefinition(role || membership.role).permissions;
+  const roles = getRolesFromMap(membership, roleMap);
+  const roleDefinitions = roles.length
+    ? roles.map((role) => getRoleDefinition(role))
+    : [getRoleDefinition(membership.role)];
+  return mergeRolePermissions(roleDefinitions);
 };
 
 export const attachMembershipPermissions = (membership, roleMap = new Map()) => {
@@ -276,7 +383,7 @@ export const attachMembershipPermissions = (membership, roleMap = new Map()) => 
 export const serializeOrganization = (
   organization,
   membership = null,
-  { baseUrl = "", stats = {}, role = null, invite = null } = {},
+  { baseUrl = "", stats = {}, role = null, roles = null, invite = null } = {},
 ) => {
   const org = organization?.toObject?.() || organization;
   if (!org) return null;
@@ -285,11 +392,15 @@ export const serializeOrganization = (
   const onlineCount = Number(stats.onlineCount || 0);
   const pendingCount = Number(stats.pendingCount || 0);
   const isOwner = Boolean(membership && isOrganizationOwnerMembership(membership, org));
-  const roleDefinition = getRoleDefinition(role || membership?.role);
+  const roleDefinitions =
+    Array.isArray(roles) && roles.length
+      ? roles.map((item) => getRoleDefinition(item))
+      : [getRoleDefinition(role || membership?.role)];
+  const roleDefinition = roleDefinitions[0];
   const permissions = isOwner
     ? { ...OWNER_ORGANIZATION_PERMISSIONS }
     : membership
-      ? roleDefinition.permissions
+      ? mergeRolePermissions(roleDefinitions)
       : normalizeRolePermissions(DEFAULT_MEMBER_ROLE_KEY);
 
   return {
@@ -304,6 +415,18 @@ export const serializeOrganization = (
     role: membership ? roleDefinition.key || membership.role || null : null,
     roleLabel: membership ? roleDefinition.name : null,
     roleColor: membership ? roleDefinition.color : null,
+    roles: membership
+      ? roleDefinitions.map((definition) => ({
+          id: definition.id || null,
+          key: definition.key,
+          name: definition.name,
+          description: definition.description,
+          color: definition.color,
+          isSystem: definition.isSystem,
+          isDefault: definition.isDefault,
+          permissions: definition.permissions,
+        }))
+      : [],
     isOwner,
     permissions,
     canManage: Boolean(permissions.manageOrganization),
@@ -439,6 +562,9 @@ export const ensureDefaultOrganizationRoles = async (
           $set: {
             role: defaultRole.key,
             roleId: defaultRole._id,
+          },
+          $addToSet: {
+            roleIds: defaultRole._id,
           },
         },
       ),
@@ -638,6 +764,7 @@ export const buildUserOrganizationContext = async (
       baseUrl,
       stats: statsMap.get(toId(activeOrganization)),
       role: getRoleFromMap(activeMembership, roleMap),
+      roles: getRolesFromMap(activeMembership, roleMap),
       invite: inviteMap.get(toId(activeOrganization)),
     }),
     organizations: memberships
@@ -647,6 +774,7 @@ export const buildUserOrganizationContext = async (
           baseUrl,
           stats: statsMap.get(toId(membership.organizationId)),
           role: getRoleFromMap(membership, roleMap),
+          roles: getRolesFromMap(membership, roleMap),
           invite: inviteMap.get(toId(membership.organizationId)),
         }),
       ),
@@ -657,6 +785,7 @@ export const buildUserOrganizationContext = async (
           baseUrl,
           stats: statsMap.get(toId(membership.organizationId)),
           role: getRoleFromMap(membership, roleMap),
+          roles: getRolesFromMap(membership, roleMap),
           invite: inviteMap.get(toId(membership.organizationId)),
         }),
       ),
@@ -762,6 +891,11 @@ export const ensureOrganizationMember = async (
     existing.invitedBy = existing.invitedBy || invitedBy;
     if (!existing.role) existing.role = role;
     if (!existing.roleId && roleId) existing.roleId = roleId;
+    const roleIds = getMembershipRoleIds(existing);
+    if (roleId && !roleIds.includes(toId(roleId))) {
+      roleIds.push(toId(roleId));
+    }
+    existing.roleIds = roleIds;
     await existing.save();
     return existing;
   }
@@ -772,6 +906,7 @@ export const ensureOrganizationMember = async (
       $set: {
         role,
         roleId,
+        roleIds: roleId ? [roleId] : [],
         status: "active",
         removedAt: null,
         joinedAt: new Date(),
@@ -799,16 +934,26 @@ export const ensureOrganizationJoinRequest = async (
   const nextStatus = requireApproval ? "pending" : "active";
   if (existing) {
     if (existing.status === "active" || existing.status === "pending") {
+      const roleIds = getMembershipRoleIds(existing);
+      if (roleId && !roleIds.includes(toId(roleId))) {
+        roleIds.push(toId(roleId));
+      }
+      existing.roleIds = roleIds;
       if (existing.status === "pending" && joinAnswers.length) {
         existing.joinAnswers = joinAnswers;
-        await existing.save();
       }
+      await existing.save();
       return existing;
     }
 
     existing.status = nextStatus;
     existing.role = existing.role || role;
     existing.roleId = existing.roleId || roleId;
+    const roleIds = getMembershipRoleIds(existing);
+    if (roleId && !roleIds.includes(toId(roleId))) {
+      roleIds.push(toId(roleId));
+    }
+    existing.roleIds = roleIds;
     existing.invitedBy = existing.invitedBy || invitedBy;
     const previousInviteId = toId(existing.inviteId);
     if (inviteId) existing.inviteId = inviteId;
@@ -829,6 +974,7 @@ export const ensureOrganizationJoinRequest = async (
       $set: {
         role,
         roleId,
+        roleIds: roleId ? [roleId] : [],
         status: nextStatus,
         removedAt: null,
         joinedAt: nextStatus === "active" ? new Date() : null,
@@ -1179,10 +1325,27 @@ export const buildOrganizationDashboard = async (organizationId) => {
         $match: {
           organizationId: organizationObjectId,
           status: "active",
-          roleId: { $ne: null },
         },
       },
-      { $group: { _id: "$roleId", count: { $sum: 1 } } },
+      {
+        $project: {
+          roleIdsForCount: {
+            $filter: {
+              input: {
+                $cond: [
+                  { $gt: [{ $size: { $ifNull: ["$roleIds", []] } }, 0] },
+                  "$roleIds",
+                  ["$roleId"],
+                ],
+              },
+              as: "roleId",
+              cond: { $ne: ["$$roleId", null] },
+            },
+          },
+        },
+      },
+      { $unwind: "$roleIdsForCount" },
+      { $group: { _id: "$roleIdsForCount", count: { $sum: 1 } } },
     ]),
     OrganizationMember.aggregate([
       {
@@ -1485,8 +1648,10 @@ export default {
   findInviteTarget,
   findOrganizationByInvite,
   getMembershipPermissions,
+  getMembershipRoleIds,
   getOrganizationRoles,
   getPendingOrganizationMemberships,
+  getRolesFromMap,
   getUserOrganizationMemberships,
   getMissingRequiredJoinAnswers,
   normalizeOrganizationJoinAnswers,
@@ -1499,4 +1664,5 @@ export default {
   serializeOrganizationInvite,
   serializeOrganization,
   serializeOrganizationRole,
+  syncMembershipPrimaryRole,
 };
