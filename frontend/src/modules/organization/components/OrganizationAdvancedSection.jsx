@@ -1,10 +1,6 @@
-import { useMemo, useState } from "react";
-import {
-  buildRulesDescription,
-  defaultServerRules,
-  getEditableRuleLines,
-  getRuleLines,
-} from "../joinQuestionRules";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
+import { buildRulesDescription, getRuleLines } from "../joinQuestionRules";
 import { hasPermission } from "../organizationUtils";
 import Icon from "./Icon";
 import OrganizationAccentPicker from "./OrganizationAccentPicker";
@@ -13,30 +9,30 @@ import ToggleSwitch from "./ToggleSwitch";
 const questionTypes = [
   {
     type: "short_text",
-    label: "Câu Trả Lời Ngắn",
-    shortLabel: "Trả lời ngắn",
+    label: "Câu trả lời ngắn",
+    shortLabel: "Câu trả lời ngắn",
     description: "Một dòng trả lời súc tích.",
     icon: "short_text",
   },
   {
     type: "paragraph",
-    label: "Đoạn Văn",
+    label: "Đoạn",
     shortLabel: "Đoạn",
     description: "Câu trả lời dài hơn theo đoạn văn.",
     icon: "notes",
   },
   {
     type: "multiple_choice",
-    label: "Nhiều Lựa Chọn",
+    label: "Nhiều lựa chọn",
     shortLabel: "Nhiều lựa chọn",
     description: "Chọn một đáp án trong danh sách.",
     icon: "format_list_bulleted",
   },
   {
     type: "rules",
-    label: "Quy Định Máy Chủ",
-    shortLabel: "Quy định",
-    description: "Checkbox xác nhận đã đọc quy định.",
+    label: "Quy định tổ chức",
+    shortLabel: "Quy định tổ chức",
+    description: "Checkbox xác nhận đã đọc quy định tổ chức.",
     icon: "rule",
   },
 ];
@@ -48,10 +44,22 @@ const exampleQuestions = [
 ];
 
 const ruleExamples = [
-  "Lịch sự và văn minh",
-  "Không spam hoặc tự quảng bá bản thân",
-  "Không có giới hạn độ tuổi hoặc nội dung phản cảm",
-  "Giúp đảm bảo môi trường lành mạnh",
+  {
+    title: "Lịch sự và văn minh",
+    text: "Tôn trọng tất cả mọi người. Tuyệt đối không được có hành vi quấy rối, tấn công tập thể, phân biệt giới tính, phân biệt chủng tộc hoặc phát ngôn gây thù hận. Tất cả những hành vi đó sẽ bị trừng trị nghiêm khắc.",
+  },
+  {
+    title: "Không spam hoặc tự quảng bá bản thân",
+    text: "Không spam hoặc tự quảng bá bản thân (mời tham gia máy chủ, quảng cáo, v.v) khi chưa được sự cho phép của ban quản trị máy chủ. Bao gồm cả hành vi nhắn tin trực tiếp cho các thành viên trong máy chủ.",
+  },
+  {
+    title: "Không có giới hạn độ tuổi hoặc nội dung phản cảm",
+    text: "Không có giới hạn độ tuổi hoặc nội dung phản cảm. Bao gồm văn bản, hình ảnh hoặc liên kết có chứa nội dung khoả thân, tình dục, bạo lực mạnh hoặc các nội dung minh hoạ phản cảm khác.",
+  },
+  {
+    title: "Giúp bảo đảm môi trường lành mạnh",
+    text: "Nếu bạn phát hiện có bất kỳ hành động nào trái với các quy định hoặc khiến bạn cảm thấy không an tâm, hãy thông báo ngay cho quản trị viên. Chúng tôi sẽ không để cho những hành động đó ảnh hưởng đến sự lành mạnh của máy chủ này!",
+  },
 ];
 
 const createId = (prefix) =>
@@ -59,6 +67,25 @@ const createId = (prefix) =>
 
 const getQuestionType = (type) =>
   questionTypes.find((item) => item.type === type) || questionTypes[0];
+
+const getDropPlacement = (event, element) => {
+  const rect = element.getBoundingClientRect();
+  return event.clientY > rect.top + rect.height / 2 ? "after" : "before";
+};
+
+const toRuleDraftItems = (rules = []) =>
+  rules.map((rule) => ({ id: createId("rule"), text: rule }));
+
+const getRuleTextareaRows = (value = "") => {
+  const lines = String(value || "").split(/\r?\n/);
+  return Math.max(
+    3,
+    lines.reduce(
+      (total, line) => total + Math.max(1, Math.ceil(line.length / 68)),
+      0,
+    ),
+  );
+};
 
 const buildQuestion = (type = "short_text", label = "") => {
   const isRules = type === "rules";
@@ -71,7 +98,7 @@ const buildQuestion = (type = "short_text", label = "") => {
       (isRules
         ? "Đọc và đồng ý với các Quy Định Máy Chủ"
         : "Tại sao bạn muốn tham gia tổ chức của chúng tôi?"),
-    description: isRules ? buildRulesDescription(defaultServerRules) : "",
+    description: "",
     required: true,
     options:
       type === "multiple_choice"
@@ -98,9 +125,14 @@ const OrganizationAdvancedSection = ({
 }) => {
   const [draggingQuestionId, setDraggingQuestionId] = useState("");
   const [expandedQuestionId, setExpandedQuestionId] = useState("");
+  const [isQuestionTypePickerOpen, setIsQuestionTypePickerOpen] =
+    useState(false);
+  const [questionTypePickerStyle, setQuestionTypePickerStyle] = useState({});
   const [rulesEditorQuestionId, setRulesEditorQuestionId] = useState("");
-  const [rulesDraft, setRulesDraft] = useState(defaultServerRules);
-  const [draggingRuleIndex, setDraggingRuleIndex] = useState(null);
+  const [rulesDraft, setRulesDraft] = useState([]);
+  const [draggingRuleId, setDraggingRuleId] = useState("");
+  const questionTypeButtonRef = useRef(null);
+  const questionTypePickerRef = useRef(null);
   const canManageSettings = hasPermission(organization, "manageSettings");
   const canManageAppearance = hasPermission(organization, "manageOrganization");
   const canLeave = organization?.role !== "owner";
@@ -120,9 +152,115 @@ const OrganizationAdvancedSection = ({
     () => questions.find((question) => question.id === rulesEditorQuestionId),
     [questions, rulesEditorQuestionId],
   );
-  const rulesDraftHasContent = rulesDraft.some((rule) =>
-    String(rule || "").trim(),
+  const hasRulesQuestion = useMemo(
+    () => questions.some((question) => question.type === "rules"),
+    [questions],
   );
+  const availableQuestionTypes = useMemo(
+    () =>
+      questionTypes.filter(
+        (questionType) => questionType.type !== "rules" || !hasRulesQuestion,
+      ),
+    [hasRulesQuestion],
+  );
+  const rulesDraftHasContent = rulesDraft.some((rule) =>
+    String(rule.text || "").trim(),
+  );
+
+  const updateQuestionTypePickerPosition = useCallback(() => {
+    if (typeof window === "undefined") return;
+    const trigger = questionTypeButtonRef.current;
+    if (!trigger) return;
+
+    const rect = trigger.getBoundingClientRect();
+    const viewportWidth = window.innerWidth;
+    const viewportHeight = window.innerHeight;
+    const isSmallScreen = viewportWidth < 640;
+    const margin = isSmallScreen ? 12 : 16;
+    const gap = 10;
+
+    if (isSmallScreen) {
+      setQuestionTypePickerStyle({
+        bottom: `${margin}px`,
+        left: `${margin}px`,
+        maxHeight: `calc(100dvh - ${margin * 2}px)`,
+        right: `${margin}px`,
+        top: "auto",
+        transform: "none",
+        width: "auto",
+      });
+      return;
+    }
+
+    const maxViewportWidth = Math.max(280, viewportWidth - margin * 2);
+    const desiredWidth = Math.min(448, Math.max(360, rect.width * 0.42));
+    const width = Math.min(desiredWidth, maxViewportWidth);
+    const left = Math.min(
+      Math.max(rect.left + rect.width / 2 - width / 2, margin),
+      viewportWidth - margin - width,
+    );
+    const spaceBelow = viewportHeight - rect.bottom - margin - gap;
+    const spaceAbove = rect.top - margin - gap;
+    const estimatedHeight = Math.min(
+      336,
+      availableQuestionTypes.length * 76 + 20,
+    );
+    const placeAbove = spaceBelow < estimatedHeight && spaceAbove > spaceBelow;
+    const availableHeight = Math.max(
+      160,
+      Math.floor(placeAbove ? spaceAbove : spaceBelow),
+    );
+
+    setQuestionTypePickerStyle({
+      bottom: "auto",
+      left: `${left}px`,
+      maxHeight: `${availableHeight}px`,
+      right: "auto",
+      top: `${placeAbove ? rect.top - gap : rect.bottom + gap}px`,
+      transform: placeAbove ? "translateY(-100%)" : "none",
+      width: `${width}px`,
+    });
+  }, [availableQuestionTypes.length]);
+
+  useEffect(() => {
+    if (!isQuestionTypePickerOpen) return undefined;
+
+    const handlePointerDown = (event) => {
+      const target = event.target;
+      if (
+        questionTypeButtonRef.current?.contains(target) ||
+        questionTypePickerRef.current?.contains(target)
+      ) {
+        return;
+      }
+      setIsQuestionTypePickerOpen(false);
+    };
+    const handleKeyDown = (event) => {
+      if (event.key === "Escape") setIsQuestionTypePickerOpen(false);
+    };
+
+    window.addEventListener("resize", updateQuestionTypePickerPosition);
+    window.addEventListener("scroll", updateQuestionTypePickerPosition, true);
+    document.addEventListener("pointerdown", handlePointerDown);
+    document.addEventListener("keydown", handleKeyDown);
+
+    return () => {
+      window.removeEventListener("resize", updateQuestionTypePickerPosition);
+      window.removeEventListener("scroll", updateQuestionTypePickerPosition, true);
+      document.removeEventListener("pointerdown", handlePointerDown);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [isQuestionTypePickerOpen, updateQuestionTypePickerPosition]);
+
+  const toggleQuestionTypePicker = () => {
+    if (isQuestionTypePickerOpen) {
+      setIsQuestionTypePickerOpen(false);
+      return;
+    }
+
+    updateQuestionTypePickerPosition();
+    setIsQuestionTypePickerOpen(true);
+  };
 
   const updateForm = (updates) => onChange({ ...(form || {}), ...updates });
   const updateQuestion = (questionId, updates) => {
@@ -133,13 +271,14 @@ const OrganizationAdvancedSection = ({
     });
   };
   const addQuestion = (type = "short_text", label = "") => {
-    if (questions.length >= 5) return;
+    if (questions.length >= 5 || (type === "rules" && hasRulesQuestion)) return;
     const nextQuestion = buildQuestion(type, label);
     updateForm({ joinQuestions: [...questions, nextQuestion] });
+    setIsQuestionTypePickerOpen(false);
 
     if (type === "rules") {
       setRulesEditorQuestionId(nextQuestion.id);
-      setRulesDraft(getEditableRuleLines(nextQuestion.description));
+      setRulesDraft([]);
       setExpandedQuestionId("");
       return;
     }
@@ -176,35 +315,11 @@ const OrganizationAdvancedSection = ({
       options: (question.options || []).filter((option) => option.id !== optionId),
     });
   };
-  const changeQuestionType = (question, nextType) => {
-    const nextRulesDescription =
-      question.description || buildRulesDescription(defaultServerRules);
-
-    updateQuestion(question.id, {
-      type: nextType,
-      label:
-        nextType === "rules" && question.type !== "rules"
-          ? "Đọc và đồng ý với các Quy Định Máy Chủ"
-          : question.label,
-      description: nextType === "rules" ? nextRulesDescription : question.description,
-      options:
-        nextType === "multiple_choice"
-          ? question.options?.length
-            ? question.options
-            : buildQuestion("multiple_choice").options
-          : [],
-    });
-
-    if (nextType === "rules") {
-      setExpandedQuestionId("");
-      setRulesEditorQuestionId(question.id);
-      setRulesDraft(getEditableRuleLines(nextRulesDescription));
-      return;
-    }
-
-    setExpandedQuestionId(question.id);
-  };
-  const moveQuestion = (sourceQuestionId, targetQuestionId) => {
+  const moveQuestion = (
+    sourceQuestionId,
+    targetQuestionId,
+    placement = "before",
+  ) => {
     if (
       !canManageSettings ||
       !sourceQuestionId ||
@@ -224,13 +339,27 @@ const OrganizationAdvancedSection = ({
 
     const nextQuestions = [...questions];
     const [movedQuestion] = nextQuestions.splice(sourceIndex, 1);
-    nextQuestions.splice(targetIndex, 0, movedQuestion);
+    const nextTargetIndex = nextQuestions.findIndex(
+      (question) => question.id === targetQuestionId,
+    );
+    const insertIndex =
+      placement === "after" ? nextTargetIndex + 1 : nextTargetIndex;
+    nextQuestions.splice(insertIndex, 0, movedQuestion);
+
+    if (
+      nextQuestions.every(
+        (question, index) => question.id === questions[index]?.id,
+      )
+    ) {
+      return;
+    }
+
     updateForm({ joinQuestions: nextQuestions });
   };
   const openQuestionEditor = (question) => {
     if (question.type === "rules") {
       setRulesEditorQuestionId(question.id);
-      setRulesDraft(getEditableRuleLines(question.description));
+      setRulesDraft(toRuleDraftItems(getRuleLines(question.description)));
       setExpandedQuestionId("");
       return;
     }
@@ -239,48 +368,69 @@ const OrganizationAdvancedSection = ({
       currentId === question.id ? "" : question.id,
     );
   };
-  const updateRuleDraft = (index, value) => {
+  const updateRuleDraft = (ruleId, value) => {
     setRulesDraft((currentRules) =>
-      currentRules.map((rule, ruleIndex) =>
-        ruleIndex === index ? value : rule,
+      currentRules.map((rule) =>
+        rule.id === ruleId ? { ...rule, text: value } : rule,
       ),
     );
   };
   const addRuleDraft = (value = "") => {
-    setRulesDraft((currentRules) => [...currentRules, value]);
+    setRulesDraft((currentRules) => [
+      ...currentRules,
+      { id: createId("rule"), text: value },
+    ]);
   };
-  const removeRuleDraft = (index) => {
+  const removeRuleDraft = (ruleId) => {
     setRulesDraft((currentRules) =>
-      currentRules.filter((_, ruleIndex) => ruleIndex !== index),
+      currentRules.filter((rule) => rule.id !== ruleId),
     );
   };
-  const moveRuleDraft = (sourceIndex, targetIndex) => {
+  const moveRuleDraft = (sourceRuleId, targetRuleId, placement = "before") => {
     if (
-      sourceIndex === null ||
-      targetIndex === null ||
-      sourceIndex === targetIndex ||
-      sourceIndex < 0 ||
-      targetIndex < 0
+      !sourceRuleId ||
+      !targetRuleId ||
+      sourceRuleId === targetRuleId
     ) {
       return;
     }
 
     setRulesDraft((currentRules) => {
+      const sourceIndex = currentRules.findIndex(
+        (rule) => rule.id === sourceRuleId,
+      );
+      const targetIndex = currentRules.findIndex(
+        (rule) => rule.id === targetRuleId,
+      );
+      if (sourceIndex < 0 || targetIndex < 0) return currentRules;
+
       const nextRules = [...currentRules];
       const [movedRule] = nextRules.splice(sourceIndex, 1);
-      nextRules.splice(targetIndex, 0, movedRule);
+      const nextTargetIndex = nextRules.findIndex(
+        (rule) => rule.id === targetRuleId,
+      );
+      const insertIndex =
+        placement === "after" ? nextTargetIndex + 1 : nextTargetIndex;
+      nextRules.splice(insertIndex, 0, movedRule);
+
+      if (
+        nextRules.every((rule, index) => rule.id === currentRules[index]?.id)
+      ) {
+        return currentRules;
+      }
+
       return nextRules;
     });
   };
   const closeRulesEditor = () => {
     setRulesEditorQuestionId("");
-    setRulesDraft(defaultServerRules);
-    setDraggingRuleIndex(null);
+    setRulesDraft([]);
+    setDraggingRuleId("");
   };
   const saveRulesEditor = () => {
     if (!activeRulesQuestion || !rulesDraftHasContent) return;
     updateQuestion(activeRulesQuestion.id, {
-      description: buildRulesDescription(rulesDraft),
+      description: buildRulesDescription(rulesDraft.map((rule) => rule.text)),
       label:
         activeRulesQuestion.label?.trim() ||
         "Đọc và đồng ý với các Quy Định Máy Chủ",
@@ -457,7 +607,6 @@ const OrganizationAdvancedSection = ({
               {questions.map((question, index) => {
                 const typeMeta = getQuestionType(question.type);
                 const isExpanded = expandedQuestionId === question.id;
-                const ruleCount = getRuleLines(question.description).length;
 
                 return (
                   <article
@@ -465,6 +614,12 @@ const OrganizationAdvancedSection = ({
                     onDragOver={(event) => {
                       if (draggingQuestionId && draggingQuestionId !== question.id) {
                         event.preventDefault();
+                        event.dataTransfer.dropEffect = "move";
+                        moveQuestion(
+                          draggingQuestionId,
+                          question.id,
+                          getDropPlacement(event, event.currentTarget),
+                        );
                       }
                     }}
                     onDrop={(event) => {
@@ -473,16 +628,20 @@ const OrganizationAdvancedSection = ({
                         event.dataTransfer.getData("application/x-question-id") ||
                         event.dataTransfer.getData("text/plain") ||
                         draggingQuestionId;
-                      moveQuestion(sourceQuestionId, question.id);
+                      moveQuestion(
+                        sourceQuestionId,
+                        question.id,
+                        getDropPlacement(event, event.currentTarget),
+                      );
                       setDraggingQuestionId("");
                     }}
-                    className={`rounded-[1.35rem] border border-slate-200 bg-slate-50/80 p-3 transition ${
+                    className={`rounded-[1.35rem] border border-slate-200 bg-slate-50/80 p-3 transition duration-150 ease-out ${
                       draggingQuestionId === question.id
-                        ? "scale-[0.99] opacity-60"
+                        ? "scale-[0.99] border-blue-300 bg-white opacity-60 shadow-lg shadow-blue-950/10 ring-2 ring-blue-100"
                         : "hover:border-blue-200 hover:bg-blue-50/40"
                     }`}
                   >
-                    <div className="grid gap-3 xl:grid-cols-[28px_minmax(280px,1fr)_220px_auto] xl:items-center">
+                    <div className="grid gap-3 xl:grid-cols-[28px_minmax(280px,1fr)_190px_auto] xl:items-center">
                       <span
                         draggable={canManageSettings}
                         onDragStart={(event) => {
@@ -517,29 +676,12 @@ const OrganizationAdvancedSection = ({
                         />
                       </label>
 
-                      <label className="relative min-w-0">
-                        <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">
+                      <div className="flex h-12 min-w-0 items-center gap-3 rounded-2xl border border-slate-200 bg-white px-3 text-sm font-black text-slate-700">
+                        <span className="grid size-8 shrink-0 place-items-center rounded-xl bg-slate-100 text-slate-500">
                           <Icon name={typeMeta.icon} />
                         </span>
-                        <select
-                          value={question.type}
-                          disabled={!canManageSettings}
-                          onChange={(event) =>
-                            changeQuestionType(question, event.target.value)
-                          }
-                          className="h-12 w-full rounded-2xl border border-slate-200 bg-white pl-11 pr-3 text-sm font-black text-slate-700 outline-none transition focus:border-blue-300 focus:bg-white focus:ring-4 focus:ring-blue-100 disabled:bg-slate-100 disabled:text-slate-400"
-                        >
-                          {questionTypes.map((item) => (
-                            <option
-                              key={item.type}
-                              value={item.type}
-                              className="bg-white text-slate-900"
-                            >
-                              {item.label}
-                            </option>
-                          ))}
-                        </select>
-                      </label>
+                        <span className="min-w-0 truncate">{typeMeta.shortLabel}</span>
+                      </div>
 
                       <div className="flex items-center gap-2 xl:justify-end">
                         <button
@@ -572,25 +714,6 @@ const OrganizationAdvancedSection = ({
                         </button>
                       </div>
                     </div>
-
-                    {question.type === "rules" && (
-                      <div className="mt-3 flex flex-col gap-3 rounded-2xl border border-emerald-100 bg-emerald-50/80 px-4 py-3 text-sm font-bold text-emerald-800 sm:flex-row sm:items-center sm:justify-between">
-                        <span className="inline-flex items-center gap-2">
-                          <Icon name="rule" />
-                          {ruleCount || defaultServerRules.length} nội quy đang được
-                          hiển thị trong preview
-                        </span>
-                        <button
-                          type="button"
-                          onClick={() => openQuestionEditor(question)}
-                          disabled={!canManageSettings}
-                          className="inline-flex items-center justify-center gap-2 rounded-2xl bg-emerald-600 px-4 py-2 text-xs font-black text-white transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50"
-                        >
-                          <Icon name="edit" className="text-base leading-none" />
-                          Tạo nội quy
-                        </button>
-                      </div>
-                    )}
 
                     {question.type !== "rules" && isExpanded && (
                       <div className="mt-3 grid gap-3 rounded-2xl border border-slate-200 bg-white p-3">
@@ -694,15 +817,19 @@ const OrganizationAdvancedSection = ({
                 );
               })}
 
-              <button
-                type="button"
-                onClick={() => addQuestion("short_text")}
-                disabled={!canManageSettings || questions.length >= 5}
-                className="inline-flex min-h-20 items-center justify-center gap-3 rounded-[1.35rem] border border-dashed border-slate-300 bg-white px-4 py-4 text-lg font-black text-slate-600 transition hover:border-blue-200 hover:bg-blue-50 hover:text-blue-700 active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-45"
-              >
-                <Icon name="add" className="text-3xl leading-none" />
-                Thêm câu hỏi
-              </button>
+              <div className="relative">
+                <button
+                  ref={questionTypeButtonRef}
+                  type="button"
+                  onClick={toggleQuestionTypePicker}
+                  disabled={!canManageSettings || questions.length >= 5}
+                  aria-expanded={isQuestionTypePickerOpen}
+                  className="inline-flex min-h-20 w-full items-center justify-center gap-3 rounded-[1.35rem] border border-dashed border-slate-300 bg-white px-4 py-4 text-lg font-black text-slate-600 transition hover:border-blue-200 hover:bg-blue-50 hover:text-blue-700 active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-45"
+                >
+                  <Icon name="add" className="text-3xl leading-none" />
+                  Thêm câu hỏi
+                </button>
+              </div>
             </div>
 
             <div className="mt-6">
@@ -721,14 +848,6 @@ const OrganizationAdvancedSection = ({
                     {question}
                   </button>
                 ))}
-                <button
-                  type="button"
-                  onClick={() => addQuestion("rules")}
-                  disabled={!canManageSettings || questions.length >= 5}
-                  className="rounded-full bg-emerald-50 px-4 py-2 text-sm font-bold text-emerald-700 ring-1 ring-emerald-100 transition hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  Đọc và đồng ý với các Quy Định Máy Chủ
-                </button>
               </div>
             </div>
           </div>
@@ -744,7 +863,7 @@ const OrganizationAdvancedSection = ({
               className="inline-flex items-center justify-center gap-2 rounded-2xl bg-emerald-600 px-5 py-3 text-sm font-black text-white shadow-sm shadow-emerald-950/20 transition hover:bg-emerald-500 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50"
             >
               <Icon name={isSaving ? "progress_activity" : "save"} />
-              Lưu form duyệt
+              Lưu
             </button>
           </div>
         </form>
@@ -798,83 +917,150 @@ const OrganizationAdvancedSection = ({
         </div>
       </section>
 
-      {activeRulesQuestion && (
-        <div className="organization-modal-backdrop fixed inset-0 z-50 flex items-center justify-center bg-slate-950/55 px-4 py-6 backdrop-blur-sm">
+      {isQuestionTypePickerOpen &&
+        typeof document !== "undefined" &&
+        createPortal(
           <div
-            className="absolute inset-0"
-            onClick={closeRulesEditor}
-            aria-hidden="true"
-          />
-          <section className="organization-modal-card relative z-10 max-h-[92vh] w-full max-w-3xl overflow-hidden rounded-[1.35rem] bg-white text-slate-950 shadow-2xl shadow-slate-900/18 ring-1 ring-slate-200">
-            <div className="flex items-start justify-between gap-4 px-6 py-6">
-              <h2 className="text-3xl font-black leading-tight">
-                Quy Định Máy Chủ
-              </h2>
-              <button
-                type="button"
-                onClick={closeRulesEditor}
-                className="grid size-11 shrink-0 place-items-center rounded-2xl text-slate-500 transition hover:bg-slate-100 hover:text-slate-900 active:scale-95"
-                aria-label="Đóng"
-              >
-                <Icon name="close" className="text-4xl leading-none" />
-              </button>
+            ref={questionTypePickerRef}
+            style={questionTypePickerStyle}
+            className="fixed z-[60] overflow-y-auto rounded-[1.15rem] border border-slate-200 bg-white p-2 shadow-2xl shadow-slate-900/15 ring-1 ring-white"
+          >
+            <div className="grid gap-1">
+              {availableQuestionTypes.map((questionType) => (
+                <button
+                  key={questionType.type}
+                  type="button"
+                  onClick={() => addQuestion(questionType.type)}
+                  className="flex min-h-16 items-center gap-3 rounded-[0.9rem] px-3 py-3 text-left transition hover:bg-blue-50 active:scale-[0.99]"
+                >
+                  <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-blue-50 text-blue-700">
+                    <Icon name={questionType.icon} />
+                  </span>
+                  <span className="min-w-0">
+                    <span className="block text-sm font-black text-slate-900">
+                      {questionType.label}
+                    </span>
+                    <span className="mt-0.5 block text-xs font-semibold leading-5 text-slate-500">
+                      {questionType.description}
+                    </span>
+                  </span>
+                </button>
+              ))}
             </div>
+          </div>,
+          document.body,
+        )}
 
-            <div className="max-h-[54vh] overflow-y-auto px-6 pb-5">
-              <div className="grid gap-4">
+      {activeRulesQuestion &&
+        typeof document !== "undefined" &&
+        createPortal(
+          <div className="organization-modal-backdrop fixed inset-0 z-50 grid place-items-center bg-slate-950/40 px-4 py-6 backdrop-blur-sm">
+            <div
+              className="absolute inset-0"
+              onClick={closeRulesEditor}
+              aria-hidden="true"
+            />
+            <section className="organization-modal-card relative z-10 flex max-h-[92vh] w-full max-w-4xl flex-col overflow-hidden rounded-[2rem] bg-white text-slate-950 shadow-2xl ring-1 ring-slate-200">
+              <div className="flex shrink-0 items-start justify-between gap-4 border-b border-slate-100 px-5 py-5 sm:px-6">
+                <div>
+                  <h2 className="text-2xl font-black leading-tight sm:text-3xl">
+                    Quy định tổ chức
+                  </h2>
+                  <p className="mt-1 text-sm font-semibold text-slate-500">
+                    Tạo các nội quy người tham gia cần đọc trước khi gửi yêu cầu.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={closeRulesEditor}
+                  className="grid size-11 shrink-0 place-items-center rounded-2xl text-slate-500 transition hover:bg-slate-100 hover:text-slate-900 active:scale-95"
+                  aria-label="Đóng"
+                >
+                  <Icon name="close" className="text-4xl leading-none" />
+                </button>
+              </div>
+
+              <div className="min-h-0 flex-1 overflow-y-auto px-5 py-5 sm:px-6">
+                <div className="grid gap-4">
+                  {rulesDraft.length === 0 && (
+                    <div className="rounded-[1.25rem] border border-dashed border-slate-300 bg-slate-50 px-5 py-8 text-center">
+                      <Icon
+                        name="rule"
+                        className="mx-auto text-4xl leading-none text-slate-400"
+                      />
+                      <p className="mt-3 text-sm font-black text-slate-700">
+                        Chưa có quy định nào
+                      </p>
+                    </div>
+                  )}
+
                 {rulesDraft.map((rule, index) => (
                   <div
-                    key={`${index}-${rule.slice(0, 16)}`}
+                    key={rule.id}
                     onDragOver={(event) => {
-                      if (draggingRuleIndex !== null && draggingRuleIndex !== index) {
+                      if (draggingRuleId && draggingRuleId !== rule.id) {
                         event.preventDefault();
+                        event.dataTransfer.dropEffect = "move";
+                        moveRuleDraft(
+                          draggingRuleId,
+                          rule.id,
+                          getDropPlacement(event, event.currentTarget),
+                        );
                       }
                     }}
                     onDrop={(event) => {
                       event.preventDefault();
-                      const sourceIndexValue =
-                        event.dataTransfer.getData("application/x-rule-index") ||
-                        String(draggingRuleIndex ?? "");
-                      moveRuleDraft(Number(sourceIndexValue), index);
-                      setDraggingRuleIndex(null);
+                      const sourceRuleId =
+                        event.dataTransfer.getData("application/x-rule-id") ||
+                        event.dataTransfer.getData("text/plain") ||
+                        draggingRuleId;
+                      moveRuleDraft(
+                        sourceRuleId,
+                        rule.id,
+                        getDropPlacement(event, event.currentTarget),
+                      );
+                      setDraggingRuleId("");
                     }}
-                    className={`flex items-start gap-3 rounded-[0.85rem] border border-slate-200 bg-slate-50 p-3 transition ${
-                      draggingRuleIndex === index
-                        ? "opacity-60"
+                    className={`flex items-start gap-3 rounded-[1rem] border border-slate-200 bg-slate-50 p-3 transition duration-150 ease-out ${
+                      draggingRuleId === rule.id
+                        ? "scale-[0.99] border-emerald-300 bg-white opacity-60 shadow-lg shadow-emerald-950/10 ring-2 ring-emerald-100"
                         : "hover:border-emerald-200 hover:bg-emerald-50/60"
                     }`}
                   >
                     <span
                       draggable
                       onDragStart={(event) => {
-                        setDraggingRuleIndex(index);
+                        setDraggingRuleId(rule.id);
                         event.dataTransfer.effectAllowed = "move";
                         event.dataTransfer.setData(
-                          "application/x-rule-index",
-                          String(index),
+                          "application/x-rule-id",
+                          rule.id,
                         );
-                        event.dataTransfer.setData("text/plain", String(index));
+                        event.dataTransfer.setData("text/plain", rule.id);
                       }}
-                      onDragEnd={() => setDraggingRuleIndex(null)}
+                      onDragEnd={() => setDraggingRuleId("")}
                       className="mt-2 grid size-7 shrink-0 cursor-grab place-items-center rounded-lg text-slate-400 hover:bg-emerald-100 hover:text-emerald-700 active:cursor-grabbing"
                       title="Kéo để đổi thứ tự"
                     >
                       <Icon name="drag_indicator" className="text-2xl leading-none" />
                     </span>
-                    <textarea
-                      value={rule}
-                      onChange={(event) =>
-                        updateRuleDraft(index, event.target.value)
-                      }
-                      rows={3}
-                      className="min-h-24 flex-1 resize-none rounded-xl border border-slate-200 bg-white px-3 py-3 text-xl font-semibold leading-8 text-slate-800 outline-none transition placeholder:text-slate-400 focus:border-emerald-300 focus:ring-4 focus:ring-emerald-100"
-                      placeholder="Nhập nội quy"
-                    />
+                    <label className="min-w-0 flex-1">
+                      <span className="sr-only">Nội quy {index + 1}</span>
+                      <textarea
+                        value={rule.text}
+                        onChange={(event) =>
+                          updateRuleDraft(rule.id, event.target.value)
+                        }
+                        rows={getRuleTextareaRows(rule.text)}
+                        style={{ fieldSizing: "content" }}
+                        className="min-h-24 w-full resize-none overflow-hidden rounded-xl border border-slate-200 bg-white px-3 py-3 text-xl font-semibold leading-8 text-slate-800 outline-none transition placeholder:text-slate-400 focus:border-emerald-300 focus:ring-4 focus:ring-emerald-100"
+                        placeholder="Nhập nội quy"
+                      />
+                    </label>
                     <button
                       type="button"
-                      onClick={() => removeRuleDraft(index)}
-                      disabled={rulesDraft.length <= 1}
-                      className="mt-2 grid size-9 shrink-0 place-items-center rounded-xl text-rose-600 transition hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-35"
+                      onClick={() => removeRuleDraft(rule.id)}
+                      className="mt-2 grid size-9 shrink-0 place-items-center rounded-xl text-rose-600 transition hover:bg-rose-50 active:scale-95"
                       aria-label="Xóa nội quy"
                       title="Xóa nội quy"
                     >
@@ -882,37 +1068,37 @@ const OrganizationAdvancedSection = ({
                     </button>
                   </div>
                 ))}
-              </div>
 
-              <button
-                type="button"
-                onClick={() => addRuleDraft("")}
-                className="mt-4 inline-flex min-h-20 w-full items-center justify-center gap-3 rounded-[0.85rem] border border-dashed border-slate-300 bg-white text-xl font-black text-slate-600 transition hover:border-emerald-200 hover:bg-emerald-50 hover:text-emerald-700 active:scale-[0.99]"
-              >
-                <Icon name="add" className="text-3xl leading-none" />
-                Thêm quy định
-              </button>
+                <button
+                  type="button"
+                  onClick={() => addRuleDraft("")}
+                  className="inline-flex min-h-20 w-full items-center justify-center gap-3 rounded-[1rem] border border-dashed border-slate-300 bg-white text-xl font-black text-slate-600 transition hover:border-emerald-200 hover:bg-emerald-50 hover:text-emerald-700 active:scale-[0.99]"
+                >
+                  <Icon name="add" className="text-3xl leading-none" />
+                  Thêm quy định
+                </button>
 
-              <div className="mt-8">
-                <p className="text-xs font-black uppercase tracking-wide text-slate-500">
-                  Ví dụ về quy định
-                </p>
-                <div className="mt-3 flex flex-wrap gap-3">
-                  {ruleExamples.map((rule) => (
-                    <button
-                      key={rule}
-                      type="button"
-                      onClick={() => addRuleDraft(rule)}
-                      className="rounded-full bg-slate-50 px-4 py-2 text-sm font-black text-slate-600 ring-1 ring-slate-200 transition hover:bg-emerald-50 hover:text-emerald-700"
-                    >
-                      {rule}
-                    </button>
-                  ))}
+                <div className="pt-2">
+                  <p className="text-xs font-black uppercase tracking-wide text-slate-500">
+                    Ví dụ về quy định
+                  </p>
+                  <div className="mt-3 flex flex-wrap gap-3">
+                    {ruleExamples.map((rule) => (
+                      <button
+                        key={rule.title}
+                        type="button"
+                        onClick={() => addRuleDraft(rule.text)}
+                        className="rounded-full bg-slate-50 px-4 py-2 text-sm font-black text-slate-600 ring-1 ring-slate-200 transition hover:bg-emerald-50 hover:text-emerald-700"
+                      >
+                        {rule.title}
+                      </button>
+                    ))}
+                  </div>
                 </div>
               </div>
             </div>
 
-            <div className="grid gap-3 border-t border-slate-100 bg-slate-50/80 px-6 py-5 sm:grid-cols-2">
+            <div className="grid shrink-0 gap-3 border-t border-slate-100 bg-slate-50/80 px-5 py-4 sm:grid-cols-2 sm:px-6">
               <button
                 type="button"
                 onClick={closeRulesEditor}
@@ -930,8 +1116,9 @@ const OrganizationAdvancedSection = ({
               </button>
             </div>
           </section>
-        </div>
-      )}
+          </div>,
+          document.body,
+        )}
     </>
   );
 };
