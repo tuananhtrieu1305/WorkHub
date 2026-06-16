@@ -45,6 +45,14 @@ const notificationSettingsSchema = new Schema(
       type: Boolean,
       default: true,
     },
+    socialInteractions: {
+      type: Boolean,
+      default: true,
+    },
+    mentions: {
+      type: Boolean,
+      default: true,
+    },
   },
   {
     timestamps: true,

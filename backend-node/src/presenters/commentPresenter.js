@@ -15,12 +15,24 @@ import {
 import { getReactionDetailsForTarget } from "../services/reactionDetailsService.js";
 import { getRequestOrganizationId } from "../utils/organizationScope.js";
 import { getOrganizationRoomName } from "../utils/conversationRealtime.js";
+import {
+  notifyCommentReaction,
+  notifyCommentReply,
+} from "../services/feedNotificationService.js";
 
 const getUserReactionType = (like) => (like ? getLikeReactionType(like) : null);
 
 const isCommentInActiveOrganization = (req, comment) =>
   Boolean(comment) &&
   String(comment.organizationId || "") === String(getRequestOrganizationId(req));
+
+const runNotificationHook = async (promise, label) => {
+  try {
+    await promise;
+  } catch (error) {
+    console.error(`${label} notification hook failed:`, error.message);
+  }
+};
 
 let commentIoInstance = null;
 
@@ -41,6 +53,27 @@ const buildPublicReactionPayload = ({ comment, reactionDetails }) => ({
     reactedAt: reaction.reactedAt,
   })),
 });
+
+const emitPostCommentCountUpdated = ({
+  post,
+  commentId,
+  parentId = null,
+  delta,
+}) => {
+  const organizationRoom = getOrganizationRoomName(post?.organizationId);
+  if (!organizationRoom) return;
+
+  commentIoInstance
+    ?.to(organizationRoom)
+    ?.emit("post_comment_count_updated", {
+      postId: post._id,
+      organizationId: post.organizationId,
+      commentId,
+      parentId,
+      delta,
+      commentsCount: post.commentsCount,
+    });
+};
 
 // GET /comments/:id
 export const getCommentById = async (req, res) => {
@@ -183,8 +216,19 @@ export const deleteComment = async (req, res) => {
     await Comment.findByIdAndDelete(comment._id);
 
     // Decrement commentsCount on post
-    await Post.findByIdAndUpdate(comment.postId, {
-      $inc: { commentsCount: -totalToRemove },
+    const updatedPost = await Post.findByIdAndUpdate(
+      comment.postId,
+      {
+        $inc: { commentsCount: -totalToRemove },
+      },
+      { new: true },
+    ).select("_id organizationId commentsCount");
+
+    emitPostCommentCountUpdated({
+      post: updatedPost,
+      commentId: comment._id,
+      parentId: comment.parentId,
+      delta: -totalToRemove,
     });
 
     res.status(204).send();
@@ -302,13 +346,33 @@ export const addCommentReply = async (req, res) => {
     });
 
     // Increment commentsCount on post
-    await Post.findByIdAndUpdate(parentComment.postId, {
-      $inc: { commentsCount: 1 },
-    });
+    const updatedPost = await Post.findByIdAndUpdate(
+      parentComment.postId,
+      {
+        $inc: { commentsCount: 1 },
+      },
+      { new: true },
+    ).select("_id organizationId commentsCount");
 
     const author = await User.findById(req.user._id).select(
       "_id fullName email avatar",
     );
+
+    await runNotificationHook(
+      notifyCommentReply({
+        parentComment,
+        reply,
+        actor: req.user,
+      }),
+      "Comment reply",
+    );
+
+    emitPostCommentCountUpdated({
+      post: updatedPost,
+      commentId: reply._id,
+      parentId: reply.parentId,
+      delta: 1,
+    });
 
     res.status(201).json({
       id: reply._id,
@@ -386,6 +450,20 @@ export const toggleCommentLike = async (req, res) => {
       comment: updatedComment,
       reactionDetails,
     });
+    publicReactionPayload.actorId = req.user._id;
+    publicReactionPayload.liked = plan.liked;
+    publicReactionPayload.reactionType = plan.reactionType;
+
+    if (plan.action === "create") {
+      await runNotificationHook(
+        notifyCommentReaction({
+          comment: updatedComment,
+          actor: req.user,
+          reactionType: plan.reactionType,
+        }),
+        "Comment reaction",
+      );
+    }
 
     const organizationRoom = getOrganizationRoomName(comment.organizationId);
     if (organizationRoom) {

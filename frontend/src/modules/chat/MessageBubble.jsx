@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { Link } from "react-router-dom";
 import { EmojiPickerButton } from "../../components/emoji";
 import { downloadConversationAttachmentBlob } from "../../api/conversationApi";
+import { getPostById } from "../../api/postApi";
 import { useAuth } from "../../context/AuthContext";
 import {
   formatMessageTimestamp,
@@ -16,8 +18,13 @@ import {
 } from "./chatMessagePreview";
 import { parseInlineMarkdown, sanitizeHref } from "./chatComposerUtils";
 import { getAvatarUrl } from "../../utils/avatar";
+import { getAttachmentType, getAttachmentUrl } from "../feed/attachmentUtils";
 import PollMessage, { PollDetailModal } from "./PollMessage";
 import ReminderMessage, { ReminderDetailModal } from "./ReminderMessage";
+import {
+  getFirstFeedPostLink,
+  removeFeedPostLinks,
+} from "./feedPostLinkPreview";
 
 const API_URL = import.meta.env.VITE_NODE_API_URL || "http://localhost:5000";
 
@@ -748,6 +755,149 @@ const renderInlineNodes = (nodes, keyPrefix = "inline") =>
 
 const renderInlineMarkdown = (text) => renderInlineNodes(parseInlineMarkdown(text));
 
+const lowerFirstLetter = (value = "") =>
+  value ? `${value.charAt(0).toLocaleLowerCase("vi-VN")}${value.slice(1)}` : "";
+
+const getFeedPostActivityText = (activity) => {
+  if (!activity?.label) return "";
+  if (activity.type === "activity") return activity.label;
+  return `Đang cảm thấy ${lowerFirstLetter(activity.label)}`;
+};
+
+const getFeedPostPreviewAttachment = (post) => {
+  const attachments = Array.isArray(post?.attachments) ? post.attachments : [];
+  return (
+    attachments.find((attachment) => getAttachmentType(attachment) === "image") ||
+    attachments.find((attachment) => getAttachmentType(attachment) === "video") ||
+    attachments[0] ||
+    null
+  );
+};
+
+const formatFeedPostPreviewTime = (dateValue) => {
+  if (!dateValue) return "";
+
+  const date = new Date(dateValue);
+  if (Number.isNaN(date.getTime())) return "";
+
+  return new Intl.DateTimeFormat("vi-VN", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(date);
+};
+
+const FeedPostLinkCard = ({ link, isMine }) => {
+  const currentPostId = link?.postId || "";
+  const [previewState, setPreviewState] = useState({
+    postId: currentPostId,
+    post: null,
+    status: "loading",
+  });
+
+  useEffect(() => {
+    if (!currentPostId) return undefined;
+
+    let ignore = false;
+
+    getPostById(currentPostId)
+      .then((postData) => {
+        if (ignore) return;
+        setPreviewState({
+          postId: currentPostId,
+          post: postData,
+          status: "loaded",
+        });
+      })
+      .catch((error) => {
+        if (ignore) return;
+        console.error("Failed to load shared feed post:", error);
+        setPreviewState({
+          postId: currentPostId,
+          post: null,
+          status: "error",
+        });
+      });
+
+    return () => {
+      ignore = true;
+    };
+  }, [currentPostId]);
+
+  const isCurrentPreview = previewState.postId === currentPostId;
+  const post = isCurrentPreview ? previewState.post : null;
+  const status = isCurrentPreview ? previewState.status : "loading";
+
+  const attachment = getFeedPostPreviewAttachment(post);
+  const attachmentType = attachment ? getAttachmentType(attachment) : "";
+  const attachmentUrl = attachment ? getAttachmentUrl(attachment, API_URL) : "";
+  const authorName = post?.author?.fullName || "Bài viết trong bảng tin";
+  const activityText = getFeedPostActivityText(post?.activity);
+  const postTime = formatFeedPostPreviewTime(post?.createdAt);
+  const postMetaText = [
+    activityText
+      ? `${post?.activity?.emoji ? `${post.activity.emoji} ` : ""}${activityText}`
+      : "",
+    postTime,
+  ]
+    .filter(Boolean)
+    .join(" • ");
+  const postText = String(post?.content || "").trim();
+  const previewText =
+    postText ||
+    (status === "error"
+      ? "Không thể tải nội dung bài viết. Bấm để mở trên bảng tin."
+      : "Bấm để mở bài viết trong bảng tin.");
+  const cardToneClassName = isMine
+    ? "chat-feed-post-card-mine"
+    : "chat-feed-post-card-other";
+
+  return (
+    <Link
+      to={link.href}
+      className={`chat-feed-post-card ${cardToneClassName}`}
+      aria-label={`Mở ${authorName} trên bảng tin`}
+    >
+      <span className="chat-feed-post-card-thumb" aria-hidden="true">
+        {status === "loading" ? (
+          <span className="chat-feed-post-card-thumb-loader" />
+        ) : attachmentType === "image" && attachmentUrl ? (
+          <img src={attachmentUrl} alt="" loading="lazy" />
+        ) : attachmentType === "video" && attachmentUrl ? (
+          <>
+            <video src={attachmentUrl} muted playsInline preload="metadata" />
+            <span className="chat-feed-post-card-play material-symbols-outlined">
+              play_arrow
+            </span>
+          </>
+        ) : (
+          <span className="material-symbols-outlined">article</span>
+        )}
+      </span>
+      <span className="chat-feed-post-card-body">
+        <span className="chat-feed-post-card-kicker">
+          <span className="material-symbols-outlined" aria-hidden="true">
+            dynamic_feed
+          </span>
+          Bài viết trong bảng tin
+        </span>
+        <span className="chat-feed-post-card-title">
+          {status === "loading" ? "Đang tải bài viết..." : authorName}
+        </span>
+        {status === "loaded" && postMetaText ? (
+          <span className="chat-feed-post-card-meta">{postMetaText}</span>
+        ) : null}
+        <span className="chat-feed-post-card-text">{previewText}</span>
+      </span>
+      <span className="chat-feed-post-card-arrow material-symbols-outlined">
+        arrow_forward
+      </span>
+    </Link>
+  );
+};
+
 const MessageText = ({ content }) => {
   if (!content) return null;
 
@@ -1386,11 +1536,19 @@ const MessageBubble = ({
     !isDeleted && message.type === "reminder" && message.reminder;
   const isStructuredMessage = isPollMessage || isReminderMessage;
   const messageAttachments = isStructuredMessage ? [] : message.attachments || [];
-  const hasMessageContent = !isStructuredMessage && Boolean(message.content);
+  const feedPostLink = !isStructuredMessage
+    ? getFirstFeedPostLink(message.content)
+    : null;
+  const messageTextContent = feedPostLink
+    ? removeFeedPostLinks(message.content)
+    : message.content;
+  const hasFeedPostPreview = Boolean(feedPostLink);
+  const hasMessageContent = !isStructuredMessage && Boolean(messageTextContent);
   const hasMessageAttachments = messageAttachments.length > 0;
-  const hasMixedContent = hasMessageContent && hasMessageAttachments;
+  const hasRenderableMessageBody = hasMessageContent || hasFeedPostPreview;
+  const hasMixedContent = hasRenderableMessageBody && hasMessageAttachments;
   const isAttachmentOnlyMessage =
-    !isDeleted && !hasMessageContent && hasMessageAttachments;
+    !isDeleted && !hasRenderableMessageBody && hasMessageAttachments;
   const menuItems = getMenuItems({
     isMine,
     isDeleted,
@@ -1411,6 +1569,7 @@ const MessageBubble = ({
     isMine ? "chat-message-bubble-mine" : "chat-message-bubble-other",
     isDeleted ? "chat-message-bubble-deleted" : "",
     !isDeleted && hasMixedContent ? "chat-message-bubble-with-attachments" : "",
+    !isDeleted && hasFeedPostPreview ? "chat-message-bubble-with-feed-post" : "",
     !isDeleted && showAvatar ? "chat-message-bubble-avatar-anchor" : "",
     !isDeleted && isTightGroup && !message.isPinned
       ? "chat-message-bubble-linked-before"
@@ -1836,6 +1995,30 @@ const MessageBubble = ({
       </div>
     );
 
+  const renderStandardMessageBody = (mine) => (
+    <>
+      {hasMessageContent && (
+        <div className={hasFeedPostPreview ? "chat-feed-post-card-caption" : ""}>
+          <MessageText content={messageTextContent} />
+        </div>
+      )}
+      {hasFeedPostPreview && (
+        <FeedPostLinkCard link={feedPostLink} isMine={mine} />
+      )}
+      <MessageAttachments
+        attachments={messageAttachments}
+        isMine={mine}
+        hasContent={hasRenderableMessageBody}
+        standalone={isAttachmentOnlyMessage}
+      />
+      {message.editedAt && (
+        <span className={editedLabelClassName}>
+          Đã chỉnh sửa
+        </span>
+      )}
+    </>
+  );
+
   if (isPollMessage) {
     return (
       <>
@@ -1988,20 +2171,7 @@ const MessageBubble = ({
                   onClosePoll={onClosePoll}
                 />
               ) : (
-                <>
-                  <MessageText content={message.content} />
-                  <MessageAttachments
-                    attachments={messageAttachments}
-                    isMine
-                    hasContent={hasMessageContent}
-                    standalone={isAttachmentOnlyMessage}
-                  />
-                  {message.editedAt && (
-                    <span className={editedLabelClassName}>
-                      Đã chỉnh sửa
-                    </span>
-                  )}
-                </>
+                renderStandardMessageBody(true)
               )}
             </div>
             {!isDeleted && renderActions()}
@@ -2073,20 +2243,7 @@ const MessageBubble = ({
                 onClosePoll={onClosePoll}
               />
             ) : (
-              <>
-                <MessageText content={message.content} />
-                <MessageAttachments
-                  attachments={messageAttachments}
-                  isMine={false}
-                  hasContent={hasMessageContent}
-                  standalone={isAttachmentOnlyMessage}
-                />
-                {message.editedAt && (
-                  <span className={editedLabelClassName}>
-                    Đã chỉnh sửa
-                  </span>
-                )}
-              </>
+              renderStandardMessageBody(false)
             )}
           </div>
           {!isDeleted && renderActions()}

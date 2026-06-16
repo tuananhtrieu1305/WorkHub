@@ -26,21 +26,129 @@ import { useWorkHubToast } from "../../components/feedback/workHubToast";
 
 const API_URL = import.meta.env.VITE_NODE_API_URL || "http://localhost:5000";
 
-const PostCard = ({ post, onPostDeleted, onPostUpdated }) => {
+const toComparableId = (value) => {
+  if (value == null) return "";
+  return String(value._id || value.id || value);
+};
+
+const lowerFirstLetter = (value = "") =>
+  value ? `${value.charAt(0).toLocaleLowerCase("vi-VN")}${value.slice(1)}` : "";
+
+const getPostActivityText = (activity) => {
+  if (!activity?.label) return "";
+  if (activity.type === "activity") return activity.label;
+  return `Đang cảm thấy ${lowerFirstLetter(activity.label)}`;
+};
+
+const getMentionUsers = (post = {}) =>
+  (Array.isArray(post.mentions) ? post.mentions : []).filter(
+    (mention) => mention && typeof mention === "object" && mention.fullName
+  );
+
+const buildShareUrl = (postId) => {
+  const origin =
+    typeof window !== "undefined" && window.location?.origin
+      ? window.location.origin
+      : "";
+  return `${origin}/feed#post-${encodeURIComponent(postId)}`;
+};
+
+const TaggedUsersModal = ({ users = [], onClose, onOpenProfile }) => (
+  <div
+    className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/35 px-4 backdrop-blur-sm"
+    onMouseDown={(event) => {
+      if (event.target === event.currentTarget) onClose();
+    }}
+  >
+    <section
+      role="dialog"
+      aria-modal="true"
+      aria-label="Danh sách người được gắn thẻ"
+      className="w-full max-w-sm overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl shadow-slate-950/20"
+      onMouseDown={(event) => event.stopPropagation()}
+    >
+      <header className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
+        <div>
+          <h3 className="text-base font-bold text-slate-950">
+            Người được gắn thẻ
+          </h3>
+          <p className="text-xs font-medium text-slate-500">
+            {users.length} thành viên
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={onClose}
+          className="inline-flex size-8 items-center justify-center rounded-full text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-800"
+          aria-label="Đóng danh sách"
+        >
+          <span className="material-symbols-outlined text-[20px] leading-none">
+            close
+          </span>
+        </button>
+      </header>
+      <div className="max-h-[360px] overflow-y-auto">
+        {users.map((taggedUser) => {
+          const taggedUserId = toComparableId(taggedUser);
+          const taggedAvatar = getAvatarUrl(taggedUser.avatar);
+          const initial = taggedUser.fullName?.charAt(0)?.toUpperCase() || "?";
+
+          return (
+            <button
+              key={taggedUserId}
+              type="button"
+              onClick={() => onOpenProfile(taggedUser)}
+              className="grid w-full grid-cols-[2.25rem_1fr] items-center gap-3 border-b border-slate-100 px-5 py-3 text-left transition-colors last:border-b-0 hover:bg-slate-50"
+            >
+              {taggedAvatar ? (
+                <img
+                  src={taggedAvatar}
+                  alt={taggedUser.fullName}
+                  referrerPolicy={getAvatarReferrerPolicy(taggedAvatar)}
+                  className="size-9 rounded-full object-cover"
+                />
+              ) : (
+                <div className="flex size-9 items-center justify-center rounded-full bg-blue-100 text-sm font-bold text-blue-700">
+                  {initial}
+                </div>
+              )}
+              <div className="min-w-0">
+                <p className="truncate text-sm font-bold text-slate-900">
+                  {taggedUser.fullName}
+                </p>
+                <p className="truncate text-xs text-slate-500">
+                  {taggedUser.position || taggedUser.email || "Thành viên"}
+                </p>
+              </div>
+            </button>
+          );
+        })}
+      </div>
+    </section>
+  </div>
+);
+
+const PostCard = ({ post, isAnchorHighlighted = false, onPostDeleted, onPostUpdated }) => {
   const { user } = useAuth();
   const navigate = useNavigate();
   const message = useWorkHubToast();
   const [timeReference] = useState(() => Date.now());
   const [showComments, setShowComments] = useState(false);
-  const [commentsCount, setCommentsCount] = useState(post.commentsCount || 0);
   const [showMenu, setShowMenu] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [profileModalUser, setProfileModalUser] = useState(null);
+  const [showTaggedUsersModal, setShowTaggedUsersModal] = useState(false);
 
-  const currentUserId = String(user?._id || user?.id || "");
-  const authorId = String(post.author?._id || post.author?.id || "");
+  const currentUserId = toComparableId(user?._id || user?.id);
+  const authorId = toComparableId(post.author?._id || post.author?.id);
   const isAuthor = currentUserId && authorId && currentUserId === authorId;
   const reactionState = buildReactionStateFromPost(post);
+  const mentionedUsers = getMentionUsers(post);
+  const visibleMentionUsers = mentionedUsers.slice(0, 3);
+  const hiddenMentionUsers = mentionedUsers.slice(3);
+  const hiddenMentionCount = hiddenMentionUsers.length;
+  const activityText = getPostActivityText(post.activity);
+  const commentsCount = Number.isFinite(post.commentsCount) ? post.commentsCount : 0;
 
   const formatTime = (dateStr) => {
     if (!dateStr) return "";
@@ -133,16 +241,40 @@ const PostCard = ({ post, onPostDeleted, onPostUpdated }) => {
   };
 
   const handleCommentCountChange = useCallback((count) => {
-    setCommentsCount(count);
-  }, []);
+    const nextCount = Number.isFinite(count) ? count : 0;
+    onPostUpdated?.({
+      ...post,
+      commentsCount: nextCount,
+    });
+  }, [onPostUpdated, post]);
 
-  const handleOpenAuthorProfile = () => {
-    if (!authorId) return;
-    if (isAuthor) {
+  const handleOpenUserProfile = (targetUser) => {
+    const targetUserId = toComparableId(targetUser);
+    if (!targetUserId) return;
+    if (targetUserId === currentUserId) {
       navigate("/profile");
       return;
     }
-    setProfileModalUser(post.author);
+    setProfileModalUser(targetUser);
+  };
+
+  const handleOpenAuthorProfile = () => {
+    handleOpenUserProfile(post.author);
+  };
+
+  const handleSharePost = async () => {
+    const shareUrl = buildShareUrl(post.id);
+    try {
+      await navigator.clipboard.writeText(shareUrl);
+      message.success("Đã copy liên kết bài viết", {
+        description: "Dán vào chat để mọi người bấm và mở đúng bài viết này.",
+      });
+    } catch (err) {
+      console.error("Copy post link failed:", err);
+      message.error("Không thể copy liên kết", {
+        description: "Trình duyệt chưa cấp quyền clipboard. Hãy thử lại sau.",
+      });
+    }
   };
 
   const authorAvatar = getAvatarUrl(post.author?.avatar);
@@ -172,42 +304,142 @@ const PostCard = ({ post, onPostDeleted, onPostUpdated }) => {
     });
   };
 
+  const renderMentionSummary = () => {
+    if (mentionedUsers.length === 0) return null;
+
+    return (
+      <>
+        {visibleMentionUsers.map((mentionedUser, index) => (
+          <span
+            key={toComparableId(mentionedUser)}
+            className="inline"
+          >
+            <button
+              type="button"
+              onClick={() => handleOpenUserProfile(mentionedUser)}
+              className="inline align-baseline font-bold text-slate-800 transition-colors hover:text-blue-700 hover:underline focus:outline-none focus:ring-2 focus:ring-blue-300"
+            >
+              {mentionedUser.fullName}
+            </button>
+            {index < visibleMentionUsers.length - 1 && (
+              <span className="text-slate-500">, </span>
+            )}
+          </span>
+        ))}
+        {hiddenMentionCount > 0 && (
+          <>
+            <span className="text-slate-500"> và&nbsp;</span>
+            <button
+              type="button"
+              onClick={() => setShowTaggedUsersModal(true)}
+              className="inline whitespace-nowrap align-baseline font-bold text-blue-700 transition-colors hover:text-blue-800 hover:underline focus:outline-none focus:ring-2 focus:ring-blue-300"
+            >
+              +{hiddenMentionCount} người khác
+            </button>
+          </>
+        )}
+      </>
+    );
+  };
+
+  const renderHeaderMetaContent = () => {
+    if (!activityText && mentionedUsers.length === 0) return null;
+
+    const mentionPrefix = activityText ? "cùng với" : "đang cùng với";
+
+    return (
+      <span className="min-w-0 text-xs font-semibold leading-5 text-slate-600 break-words sm:text-sm">
+        {activityText && (
+          <span className="inline text-slate-700">
+            {post.activity?.emoji && (
+              <span className="workhub-reaction-emoji mr-1 inline-block align-[-0.1em] leading-none">
+                {post.activity.emoji}
+              </span>
+            )}
+            {activityText}
+          </span>
+        )}
+        {activityText && mentionedUsers.length > 0 ? " " : null}
+        {mentionedUsers.length > 0 && (
+          <>
+            <span>{mentionPrefix}</span>
+            &nbsp;
+            {renderMentionSummary()}
+          </>
+        )}
+      </span>
+    );
+  };
+
+  const headerMetaContent = renderHeaderMetaContent();
+
   return (
     <article
-      className={`max-w-full bg-white/90 rounded-2xl shadow-[0_2px_15px_-3px_rgba(0,0,0,0.07),0_10px_20px_-2px_rgba(0,0,0,0.04)] border border-slate-100 transition-opacity ${
+      id={`post-${post.id}`}
+      className={`max-w-full bg-white/90 rounded-2xl shadow-[0_2px_15px_-3px_rgba(0,0,0,0.07),0_10px_20px_-2px_rgba(0,0,0,0.04)] border transition-all ${
+        isAnchorHighlighted
+          ? "workhub-feed-post-highlight border-blue-600 ring-4 ring-blue-300/70"
+          : "border-slate-100"
+      } ${
         isDeleting ? "opacity-50 pointer-events-none" : ""
       }`}
     >
       <div className="p-4 sm:p-5">
         {/* Header */}
-        <div className="mb-4 flex items-center justify-between gap-3">
-          <button
-            type="button"
-            onClick={handleOpenAuthorProfile}
-            className="flex min-w-0 items-center gap-3 rounded-xl text-left transition hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-blue-300"
-          >
-            {authorAvatar ? (
-              <img
-                src={authorAvatar}
-                alt={post.author?.fullName}
-                referrerPolicy={getAvatarReferrerPolicy(authorAvatar)}
-                className="size-10 shrink-0 rounded-full object-cover shadow-sm sm:size-11"
-              />
-            ) : (
-              <div className="flex size-10 shrink-0 items-center justify-center rounded-full bg-blue-600 text-sm font-bold text-white shadow-sm sm:size-11">
-                {post.author?.fullName?.charAt(0) || "?"}
+        <div className="mb-4 flex items-start justify-between gap-3">
+          <div className="flex min-w-0 flex-1 items-start gap-3">
+            <button
+              type="button"
+              onClick={handleOpenAuthorProfile}
+              className="shrink-0 rounded-full focus:outline-none focus:ring-2 focus:ring-blue-300"
+              aria-label={`Xem hồ sơ ${post.author?.fullName || "người đăng"}`}
+            >
+              {authorAvatar ? (
+                <img
+                  src={authorAvatar}
+                  alt={post.author?.fullName}
+                  referrerPolicy={getAvatarReferrerPolicy(authorAvatar)}
+                  className="size-10 rounded-full object-cover shadow-sm sm:size-11"
+                />
+              ) : (
+                <div className="flex size-10 items-center justify-center rounded-full bg-blue-600 text-sm font-bold text-white shadow-sm sm:size-11">
+                  {post.author?.fullName?.charAt(0) || "?"}
+                </div>
+              )}
+            </button>
+            <div className="min-w-0 flex-1">
+              <div className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-y-1 sm:grid-cols-[minmax(0,max-content)_minmax(2rem,4.5rem)_minmax(0,1fr)] sm:items-start sm:gap-x-3 sm:gap-y-0">
+                <span className="min-w-0 max-w-full sm:col-start-1 sm:row-start-1 sm:max-w-[14rem]">
+                  <button
+                    type="button"
+                    onClick={handleOpenAuthorProfile}
+                    className="block max-w-full truncate text-sm font-bold text-slate-900 transition-colors hover:text-blue-700 hover:underline focus:outline-none focus:ring-2 focus:ring-blue-300"
+                  >
+                    {post.author?.fullName || "Ẩn danh"}
+                  </button>
+                  <span className="mt-0.5 block truncate text-xs font-medium text-slate-500">
+                    {authorPosition && `${authorPosition} • `}
+                    {formatTime(post.createdAt)}
+                  </span>
+                </span>
+                {headerMetaContent && (
+                  <>
+                    <span
+                      className="hidden h-px w-full bg-slate-300 sm:col-start-2 sm:row-start-1 sm:mt-[0.7em] sm:block"
+                      aria-hidden="true"
+                    />
+                    <span className="grid min-w-0 grid-cols-[2rem_minmax(0,1fr)] items-start gap-2 sm:col-start-3 sm:row-start-1 sm:block">
+                      <span
+                        className="mt-[0.7em] h-px w-full bg-slate-300 sm:hidden"
+                        aria-hidden="true"
+                      />
+                      {headerMetaContent}
+                    </span>
+                  </>
+                )}
               </div>
-            )}
-            <div className="min-w-0">
-              <p className="truncate text-sm font-bold text-slate-900">
-                {post.author?.fullName || "Ẩn danh"}
-              </p>
-              <p className="truncate text-xs font-medium text-slate-500">
-                {authorPosition && `${authorPosition} • `}
-                {formatTime(post.createdAt)}
-              </p>
             </div>
-          </button>
+          </div>
 
           <div className="relative">
             <button
@@ -383,7 +615,11 @@ const PostCard = ({ post, onPostDeleted, onPostUpdated }) => {
           </span>
         </button>
 
-        <button className="group flex items-center gap-1.5 text-sm font-bold text-slate-500 transition-colors hover:text-slate-800 sm:ml-auto">
+        <button
+          type="button"
+          onClick={handleSharePost}
+          className="group flex items-center gap-1.5 text-sm font-bold text-slate-500 transition-colors hover:text-slate-800 sm:ml-auto"
+        >
           <span className="inline-flex size-8 items-center justify-center rounded-full transition-colors group-hover:bg-slate-100">
             <span className="material-symbols-outlined text-[20px] leading-none">share</span>
           </span>
@@ -405,6 +641,16 @@ const PostCard = ({ post, onPostDeleted, onPostUpdated }) => {
         userPreview={profileModalUser}
         onClose={() => setProfileModalUser(null)}
       />
+      {showTaggedUsersModal && (
+        <TaggedUsersModal
+          users={hiddenMentionUsers}
+          onClose={() => setShowTaggedUsersModal(false)}
+          onOpenProfile={(targetUser) => {
+            setShowTaggedUsersModal(false);
+            handleOpenUserProfile(targetUser);
+          }}
+        />
+      )}
     </article>
   );
 };

@@ -18,6 +18,7 @@ import organizationRoutes from "./views/organizationView.js";
 import projectRoutes from "./views/projectView.js";
 import postRoutes from "./views/postView.js";
 import commentRoutes from "./views/commentView.js";
+import { setPostIo } from "./presenters/postPresenter.js";
 import { setCommentIo } from "./presenters/commentPresenter.js";
 import conversationRoutes from "./views/conversationView.js";
 import folderRoutes from "./views/folderView.js";
@@ -31,6 +32,7 @@ import meetingRoutes from "./views/meetingView.js";
 import { setMeetingIo, startMeetingReconciler } from "./presenters/meetingPresenter.js";
 import callRoutes from "./views/callView.js";
 import { setCallIo, startCallReconciler } from "./presenters/callPresenter.js";
+import { setNotificationIo } from "./services/notificationService.js";
 import errorMiddleware from "./utils/errorMiddleware.js";
 import { legacyUploadsDir, uploadsDir } from "./config/uploadPaths.js";
 
@@ -93,12 +95,14 @@ if (process.env.NODE_ENV !== "test") {
   setupSocket(io);
   setIo(io);
   startReminderScheduler();
+  setPostIo(io);
   setCommentIo(io);
   setUserIo(io);
   setMeetingIo(io);
   startMeetingReconciler();
   setCallIo(io);
   startCallReconciler();
+  setNotificationIo(io);
 
   const PORT = process.env.PORT || 5000;
   server.listen(PORT, () => {

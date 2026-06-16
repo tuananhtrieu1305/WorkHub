@@ -402,6 +402,18 @@ const ChatWindow = ({
   const latestMessageKey =
     latestMessage?.id || latestMessage?._id || latestMessage?.createdAt || "";
   const currentUserId = getComparableId(user?._id || user?.id);
+  const mentionableUsers = useMemo(
+    () =>
+      (conversation?.participants || [])
+        .map((participant) => participant.user)
+        .filter((participantUser) => {
+          const participantId = getComparableId(
+            participantUser?._id || participantUser?.id,
+          );
+          return participantId && participantId !== currentUserId;
+        }),
+    [conversation?.participants, currentUserId],
+  );
   const latestMessageSenderId = getMessageSenderId(latestMessage);
   const isLatestMessageFromCurrentUser =
     Boolean(currentUserId) &&
@@ -1121,6 +1133,8 @@ const ChatWindow = ({
           draftPreview={draftPreview}
           disabled={isComposerDisabled}
           placeholder={`Trả lời ${isPrivate ? displayName : `# ${displayName}`}...`}
+          mentionableUsers={mentionableUsers}
+          allowMentionEveryone={!isPrivate}
         />
       </div>
       <PinnedMessagesModal

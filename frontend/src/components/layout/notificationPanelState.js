@@ -19,6 +19,7 @@ export const filterNotificationsByTab = (notifications, tab) => {
 
   if (tab === "mentions") {
     return notifications.filter((notification) => {
+      if (notification?.isMention) return true;
       const haystack = [
         notification?.type,
         notification?.title,
@@ -70,6 +71,36 @@ export const removeNotificationById = (notifications, notificationId) => {
   return notifications.filter(
     (notification) => getNotificationId(notification) !== removedNotificationId,
   );
+};
+
+export const sortNotificationsByRecentActivity = (notifications = []) => {
+  return [...notifications].sort((left, right) => {
+    const leftTime = new Date(
+      left?.lastInteractedAt || left?.createdAt || 0,
+    ).getTime();
+    const rightTime = new Date(
+      right?.lastInteractedAt || right?.createdAt || 0,
+    ).getTime();
+    return rightTime - leftTime;
+  });
+};
+
+export const upsertNotification = (notifications, incoming) => {
+  const incomingId = getNotificationId(incoming);
+  if (!incomingId) return notifications;
+
+  const hasExisting = notifications.some(
+    (notification) => getNotificationId(notification) === incomingId,
+  );
+  const nextNotifications = hasExisting
+    ? notifications.map((notification) =>
+        getNotificationId(notification) === incomingId
+          ? { ...notification, ...incoming }
+          : notification,
+      )
+    : [incoming, ...notifications];
+
+  return sortNotificationsByRecentActivity(nextNotifications).slice(0, 40);
 };
 
 export const buildMeetingPath = (meeting) => {

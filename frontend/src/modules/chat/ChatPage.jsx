@@ -890,8 +890,14 @@ const ChatPage = () => {
           ? options.attachments
           : [];
         const messageType = options.type || "text";
-        const metadata = options.metadata || {};
+        const metadata = {
+          ...(options.metadata || {}),
+          ...(options.mentionEveryone ? { mentionEveryone: true } : {}),
+        };
         const poll = options.poll || null;
+        const mentions = Array.isArray(options.mentions)
+          ? options.mentions
+          : [];
         const message = editingMessage
           ? await updateConversationMessage(
               selectedConversationId,
@@ -904,6 +910,7 @@ const ChatPage = () => {
               attachments,
               metadata,
               poll,
+              mentions,
               replyTo: replyToMessage?.id || null,
             });
         upsertSelectedMessages(message);

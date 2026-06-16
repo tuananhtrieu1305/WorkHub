@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { EmojiPickerButton } from "../../components/emoji";
 import {
   markdownToComposerHtml,
@@ -7,6 +7,10 @@ import {
 import { formatAudioDuration } from "./chatMessagePreview";
 import PollCreateModal from "./PollCreateModal";
 import ReminderCreateModal from "./ReminderCreateModal";
+import {
+  getAvatarReferrerPolicy,
+  getAvatarUrl,
+} from "../../utils/avatar";
 
 const secondaryComposerActions = [
   { icon: "contact_page", title: "Gửi danh thiếp" },
@@ -22,6 +26,33 @@ const audioMimeTypeCandidates = [
 const recorderWaveformBars = [
   24, 48, 34, 72, 42, 88, 58, 36, 78, 96, 45, 68, 84, 52, 74, 40, 62, 30,
 ];
+const EVERYONE_MENTION_ID = "__workhub_everyone__";
+const mentionTriggerPattern = /(^|\s)@([^\s@]*)$/u;
+
+const normalizeSearchText = (value = "") =>
+  String(value)
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .trim();
+
+const getMentionUserId = (user) => {
+  if (!user) return "";
+  return String(user._id || user.id || user.userId || "");
+};
+
+const uniqueMentionUsers = (users = []) => {
+  const seen = new Set();
+  return users
+    .map((item) => item?.user || item)
+    .filter(Boolean)
+    .filter((user) => {
+      const userId = getMentionUserId(user);
+      if (!userId || seen.has(userId)) return false;
+      seen.add(userId);
+      return true;
+    });
+};
 
 const getSupportedAudioMimeType = () => {
   if (typeof MediaRecorder === "undefined") return "";
@@ -548,6 +579,8 @@ const ChatInput = ({
   draftPreview = null,
   placeholder = "Nhập tin nhắn...",
   disabled = false,
+  mentionableUsers = [],
+  allowMentionEveryone = false,
 }) => {
   const [content, setContent] = useState(initialContent);
   const [showFormattingToolbar, setShowFormattingToolbar] = useState(false);
@@ -565,6 +598,11 @@ const ChatInput = ({
     useState(draftPreview);
   const [isDraftExiting, setIsDraftExiting] = useState(false);
   const [activeFormats, setActiveFormats] = useState({});
+  const [mentionQuery, setMentionQuery] = useState("");
+  const [isMentionMenuOpen, setIsMentionMenuOpen] = useState(false);
+  const [activeMentionIndex, setActiveMentionIndex] = useState(0);
+  const [selectedMentionIds, setSelectedMentionIds] = useState([]);
+  const [mentionEveryone, setMentionEveryone] = useState(false);
   const editorRef = useRef(null);
   const hasHydratedEditorRef = useRef(false);
   const savedSelectionRef = useRef(null);
@@ -587,6 +625,65 @@ const ChatInput = ({
     setContent(nextContent);
     onTypingChange?.(Boolean(nextContent.trim()));
   }, [onTypingChange]);
+
+  const normalizedMentionableUsers = useMemo(
+    () => uniqueMentionUsers(mentionableUsers),
+    [mentionableUsers],
+  );
+
+  const mentionOptions = useMemo(() => {
+    const query = normalizeSearchText(mentionQuery);
+    const memberOptions = normalizedMentionableUsers
+      .filter((member) => {
+        if (!query) return true;
+        return normalizeSearchText(
+          `${member.fullName || ""} ${member.email || ""} ${member.position || ""}`,
+        ).includes(query);
+      })
+      .map((member) => ({
+        id: getMentionUserId(member),
+        label: member.fullName || member.email || "Người dùng",
+        subLabel: member.position || member.email || "Thành viên",
+        avatar: member.avatar,
+        user: member,
+      }));
+
+    const everyoneOption =
+      allowMentionEveryone && (!query || normalizeSearchText("mọi người everyone all").includes(query))
+        ? [
+            {
+              id: EVERYONE_MENTION_ID,
+              label: "mọi người",
+              subLabel: "Thông báo cho tất cả thành viên trong nhóm",
+              isEveryone: true,
+            },
+          ]
+        : [];
+
+    return [...everyoneOption, ...memberOptions].slice(0, 10);
+  }, [allowMentionEveryone, mentionQuery, normalizedMentionableUsers]);
+
+  const updateMentionMenuForContent = useCallback(
+    (nextContent) => {
+      if (mode !== "send" || disabled || normalizedMentionableUsers.length === 0) {
+        setIsMentionMenuOpen(false);
+        return;
+      }
+
+      const match = String(nextContent || "").match(mentionTriggerPattern);
+      if (!match) {
+        setIsMentionMenuOpen(false);
+        setMentionQuery("");
+        setActiveMentionIndex(0);
+        return;
+      }
+
+      setMentionQuery(match[2] || "");
+      setIsMentionMenuOpen(true);
+      setActiveMentionIndex(0);
+    },
+    [disabled, mode, normalizedMentionableUsers.length],
+  );
 
   const setEditorContentFromMarkdown = useCallback((nextContent) => {
     const editor = editorRef.current;
@@ -700,9 +797,15 @@ const ChatInput = ({
     }
 
     updateContent(nextContent);
+    updateMentionMenuForContent(nextContent);
     saveEditorSelection();
     updateActiveFormatState();
-  }, [saveEditorSelection, updateActiveFormatState, updateContent]);
+  }, [
+    saveEditorSelection,
+    updateActiveFormatState,
+    updateContent,
+    updateMentionMenuForContent,
+  ]);
 
   const setEditorSelectionRange = useCallback((range) => {
     const selection = window.getSelection?.();
@@ -1033,6 +1136,45 @@ const ChatInput = ({
     }
   };
 
+  const selectMentionOption = useCallback(
+    (option) => {
+      if (!option) return;
+
+      const currentContent = serializeComposerContent(editorRef.current);
+      const label = option.isEveryone ? "mọi người" : option.label;
+      const replacement = `**@${label}** `;
+      const nextContent = currentContent.match(mentionTriggerPattern)
+        ? currentContent.replace(mentionTriggerPattern, `$1${replacement}`)
+        : `${currentContent}${currentContent ? " " : ""}${replacement}`;
+
+      pendingInlineFormatsRef.current = null;
+      updateContent(nextContent);
+      setEditorContentFromMarkdown(nextContent);
+      setIsMentionMenuOpen(false);
+      setMentionQuery("");
+      setActiveMentionIndex(0);
+
+      if (option.isEveryone) {
+        setMentionEveryone(true);
+      } else if (option.id) {
+        setSelectedMentionIds((currentIds) =>
+          currentIds.includes(option.id) ? currentIds : [...currentIds, option.id],
+        );
+      }
+
+      window.requestAnimationFrame(() => {
+        focusEditorAtEnd();
+        updateActiveFormatState();
+      });
+    },
+    [
+      focusEditorAtEnd,
+      setEditorContentFromMarkdown,
+      updateActiveFormatState,
+      updateContent,
+    ],
+  );
+
   const handleSend = () => {
     const currentContent = serializeComposerContent(editorRef.current);
     const trimmed = currentContent.trim();
@@ -1047,18 +1189,62 @@ const ChatInput = ({
     ) {
       return;
     }
-    onSend?.(trimmed, { type: "text", attachments });
+    const selectedMentionsInContent = selectedMentionIds.filter((mentionId) => {
+      const user = normalizedMentionableUsers.find(
+        (member) => getMentionUserId(member) === mentionId,
+      );
+      if (!user?.fullName) return true;
+      return trimmed.includes(`@${user.fullName}`);
+    });
+    const mentionEveryoneInContent =
+      mentionEveryone && /@mọi người/i.test(trimmed);
+
+    onSend?.(trimmed, {
+      type: "text",
+      attachments,
+      mentions: selectedMentionsInContent,
+      mentionEveryone: mentionEveryoneInContent,
+    });
     pendingInlineFormatsRef.current = null;
     setContent("");
     setEditorContentFromMarkdown("");
     setAttachments([]);
     setAttachmentError("");
     setRecordingError("");
+    setSelectedMentionIds([]);
+    setMentionEveryone(false);
+    setIsMentionMenuOpen(false);
+    setMentionQuery("");
     onTypingChange?.(false);
     editorRef.current?.focus();
   };
 
   const handleKeyDown = (e) => {
+    if (isMentionMenuOpen && mentionOptions.length > 0) {
+      if (e.key === "ArrowDown") {
+        e.preventDefault();
+        setActiveMentionIndex((index) => (index + 1) % mentionOptions.length);
+        return;
+      }
+      if (e.key === "ArrowUp") {
+        e.preventDefault();
+        setActiveMentionIndex(
+          (index) => (index - 1 + mentionOptions.length) % mentionOptions.length,
+        );
+        return;
+      }
+      if (e.key === "Enter" || e.key === "Tab") {
+        e.preventDefault();
+        selectMentionOption(mentionOptions[activeMentionIndex]);
+        return;
+      }
+      if (e.key === "Escape") {
+        e.preventDefault();
+        setIsMentionMenuOpen(false);
+        return;
+      }
+    }
+
     if (e.ctrlKey && e.shiftKey && e.key.toLowerCase() === "x") {
       e.preventDefault();
       setShowFormattingToolbar((value) => !value);
@@ -1330,6 +1516,10 @@ const ChatInput = ({
       setAttachments([]);
       setAttachmentError("");
       setRecordingError("");
+      setSelectedMentionIds([]);
+      setMentionEveryone(false);
+      setIsMentionMenuOpen(false);
+      setMentionQuery("");
       recordingRequestCancelledRef.current = true;
       setIsPreparingRecording(false);
       const recorder = mediaRecorderRef.current;
@@ -1596,6 +1786,67 @@ const ChatInput = ({
         )}
 
         <div className="chat-composer-input-shell relative flex items-center">
+          {isMentionMenuOpen && mentionOptions.length > 0 && !isRecorderVisible && (
+            <div className="chat-mention-menu absolute bottom-[calc(100%+0.55rem)] left-3 right-3 z-40 max-h-72 overflow-y-auto rounded-2xl border border-slate-200 bg-white p-2 shadow-2xl shadow-slate-900/16">
+              <div className="mb-1 flex items-center gap-2 px-2 py-1 text-[11px] font-black uppercase tracking-wide text-slate-500">
+                <span className="material-symbols-outlined text-[15px]">
+                  alternate_email
+                </span>
+                Đề cập
+              </div>
+              {mentionOptions.map((option, index) => {
+                const avatarUrl = getAvatarUrl(option.avatar);
+                const isActive = index === activeMentionIndex;
+
+                return (
+                  <button
+                    key={option.id}
+                    type="button"
+                    onMouseDown={(event) => event.preventDefault()}
+                    onMouseEnter={() => setActiveMentionIndex(index)}
+                    onClick={() => selectMentionOption(option)}
+                    className={`flex w-full items-center gap-3 rounded-xl px-3 py-2 text-left transition-colors ${
+                      isActive
+                        ? "bg-blue-50 text-blue-700"
+                        : "text-slate-700 hover:bg-slate-50"
+                    }`}
+                  >
+                    {option.isEveryone ? (
+                      <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-blue-600 text-white">
+                        <span className="material-symbols-outlined text-[19px]">
+                          groups
+                        </span>
+                      </span>
+                    ) : avatarUrl ? (
+                      <img
+                        src={avatarUrl}
+                        alt={option.label}
+                        referrerPolicy={getAvatarReferrerPolicy(avatarUrl)}
+                        className="size-9 shrink-0 rounded-full object-cover ring-1 ring-slate-200"
+                      />
+                    ) : (
+                      <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-slate-100 text-sm font-black text-slate-600 ring-1 ring-slate-200">
+                        {option.label.charAt(0).toUpperCase()}
+                      </span>
+                    )}
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-sm font-extrabold">
+                        @{option.label}
+                      </span>
+                      <span className="block truncate text-xs font-semibold text-slate-500">
+                        {option.subLabel}
+                      </span>
+                    </span>
+                    {isActive && (
+                      <span className="material-symbols-outlined text-[18px]">
+                        keyboard_return
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          )}
           {isRecorderVisible ? (
             <div className="chat-voice-recorder flex w-full items-center gap-3 px-3 py-3">
               <button

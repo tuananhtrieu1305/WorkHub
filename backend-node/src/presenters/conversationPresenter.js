@@ -18,6 +18,10 @@ import {
   buildR2PublicUrl,
   getR2StorageService,
 } from "../services/r2StorageService.js";
+import {
+  normalizeMessageMentions,
+  notifyChatMentions,
+} from "../services/chatNotificationService.js";
 import { normalizePinnedState } from "../utils/messageActionPolicy.js";
 import {
   addPollOption,
@@ -48,6 +52,14 @@ import {
 let ioInstance = null;
 export const setIo = (io) => {
   ioInstance = io;
+};
+
+const runNotificationHook = async (promise, label) => {
+  try {
+    await promise;
+  } catch (error) {
+    console.error(`${label} notification hook failed:`, error.message);
+  }
 };
 
 const USER_MESSAGE_TYPES = new Set([
@@ -1896,6 +1908,17 @@ export const sendMessage = async (req, res) => {
       }
     }
 
+    const mentionState = normalizeMessageMentions({
+      mentions,
+      metadata,
+      conversation,
+      senderId: req.user._id,
+    });
+    const messageMetadata = {
+      ...(metadata || {}),
+      ...(mentionState.mentionEveryone ? { mentionEveryone: true } : {}),
+    };
+
     const message = await Message.create({
       conversationId: conversation._id,
       organizationId: conversation.organizationId,
@@ -1907,11 +1930,11 @@ export const sendMessage = async (req, res) => {
           : messageType === "reminder"
             ? normalizedReminder.title
             : normalizedContent,
-      metadata: metadata || {},
+      metadata: messageMetadata,
       poll: normalizedPoll,
       reminder: normalizedReminder,
       attachments: normalizedAttachments,
-      mentions: mentions || [],
+      mentions: mentionState.mentionIds,
       replyTo: replyTo || null,
       isPinned: messageType === "poll" && pinPollOnCreate,
       pinnedBy: messageType === "poll" && pinPollOnCreate ? req.user._id : null,
@@ -2020,6 +2043,17 @@ export const sendMessage = async (req, res) => {
           });
       }
     }
+
+    await runNotificationHook(
+      notifyChatMentions({
+        conversation,
+        message,
+        actor: req.user,
+        recipientIds: mentionState.recipientIds,
+        mentionEveryone: mentionState.mentionEveryone,
+      }),
+      "Chat mention",
+    );
 
     res.status(201).json(
       systemMessageData

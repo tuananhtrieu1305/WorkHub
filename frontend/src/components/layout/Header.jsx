@@ -37,13 +37,15 @@ import {
   markNotificationReadLocally,
   markNotificationsReadLocally,
   removeNotificationById,
+  sortNotificationsByRecentActivity,
+  upsertNotification,
 } from "./notificationPanelState";
 import { NotificationPanelSkeleton } from "../common/Skeleton";
 
 const inboxTabs = [
   { key: "all", label: "Tất cả" },
   { key: "unread", label: "Chưa đọc" },
-  { key: "mentions", label: "@Đề cập" },
+  { key: "mentions", label: "Đề cập" },
 ];
 
 const getNotificationIcon = (notification) => {
@@ -146,7 +148,7 @@ const Header = ({ overlay = false }) => {
         const nextNotifications = Array.isArray(payload)
           ? payload
           : payload.content || [];
-        setNotifications(nextNotifications);
+        setNotifications(sortNotificationsByRecentActivity(nextNotifications));
         setUnreadCount(
           Number(payload.unreadCount) ||
             nextNotifications.filter(isNotificationUnread).length,
@@ -205,6 +207,69 @@ const Header = ({ overlay = false }) => {
   useEffect(() => {
     if (!socket) return undefined;
 
+    const isActiveNotification = (notification) => {
+      const notificationOrganizationId = toComparableId(
+        notification?.organizationId || notification?.data?.organizationId,
+      );
+      if (!activeOrganizationId) return !notificationOrganizationId;
+      return notificationOrganizationId === activeOrganizationId;
+    };
+
+    const handleNotificationCreated = (notification) => {
+      if (!isActiveNotification(notification)) return;
+
+      setNotifications((currentNotifications) => {
+        const notificationId = getNotificationId(notification);
+        const existingNotification = currentNotifications.find(
+          (item) => getNotificationId(item) === notificationId,
+        );
+        const wasUnread =
+          existingNotification && isNotificationUnread(existingNotification);
+        const isUnread = isNotificationUnread(notification);
+
+        setUnreadCount((currentCount) =>
+          Math.max(
+            currentCount +
+              (isUnread ? 1 : 0) -
+              (wasUnread ? 1 : 0),
+            0,
+          ),
+        );
+
+        return upsertNotification(currentNotifications, notification);
+      });
+    };
+
+    const handleNotificationRead = (notification) => {
+      if (!isActiveNotification(notification)) return;
+
+      setNotifications((currentNotifications) => {
+        const notificationId = getNotificationId(notification);
+        const existingNotification = currentNotifications.find(
+          (item) => getNotificationId(item) === notificationId,
+        );
+        if (existingNotification && isNotificationUnread(existingNotification)) {
+          setUnreadCount((currentCount) => Math.max(currentCount - 1, 0));
+        }
+        return markNotificationReadLocally(
+          currentNotifications,
+          notificationId,
+          notification?.readAt,
+        );
+      });
+    };
+
+    const handleNotificationsReadAll = (event) => {
+      const eventOrganizationId = toComparableId(event?.organizationId);
+      if (activeOrganizationId && eventOrganizationId !== activeOrganizationId) {
+        return;
+      }
+      setNotifications((currentNotifications) =>
+        markNotificationsReadLocally(currentNotifications),
+      );
+      setUnreadCount(0);
+    };
+
     const handleMeetingCreated = ({ meeting }) => {
       if (
         activeOrganizationId &&
@@ -228,10 +293,16 @@ const Header = ({ overlay = false }) => {
       );
     };
 
+    socket.on("notification_created", handleNotificationCreated);
+    socket.on("notification_read", handleNotificationRead);
+    socket.on("notifications_read_all", handleNotificationsReadAll);
     socket.on("meeting_created", handleMeetingCreated);
     socket.on("meeting_ended", handleMeetingEnded);
 
     return () => {
+      socket.off("notification_created", handleNotificationCreated);
+      socket.off("notification_read", handleNotificationRead);
+      socket.off("notifications_read_all", handleNotificationsReadAll);
       socket.off("meeting_created", handleMeetingCreated);
       socket.off("meeting_ended", handleMeetingEnded);
     };

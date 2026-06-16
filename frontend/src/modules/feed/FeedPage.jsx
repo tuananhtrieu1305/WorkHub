@@ -1,32 +1,49 @@
 import { useState, useEffect, useRef, useCallback } from "react";
+import { useLocation } from "react-router-dom";
 import { useAuth } from "../../context/AuthContext";
 import { getPosts } from "../../api/postApi";
 import CreatePostBox from "./CreatePostBox";
 import PostCard from "./PostCard";
 import { FeedListSkeleton, FeedPostSkeleton } from "../../components/common/Skeleton";
+import { useSocket } from "../../context/SocketContext";
 
 const toComparableId = (value) => {
   if (value == null) return "";
   return String(value._id || value.id || value);
 };
 
+const getPostIdFromHash = (hash = "") => {
+  const normalizedHash = String(hash || "").trim();
+  if (!normalizedHash.startsWith("#post-")) return "";
+  return decodeURIComponent(normalizedHash.slice("#post-".length));
+};
+
 const FeedPage = () => {
   const { user } = useAuth();
+  const { socket } = useSocket();
+  const location = useLocation();
   const [posts, setPosts] = useState([]);
   const [page, setPage] = useState(1);
   const [hasMore, setHasMore] = useState(true);
   const [isLoading, setIsLoading] = useState(false);
   const [isInitialLoad, setIsInitialLoad] = useState(true);
+  const [highlightedPostId, setHighlightedPostId] = useState(() =>
+    getPostIdFromHash(location.hash),
+  );
+  const [activeHighlightId, setActiveHighlightId] = useState("");
   const observerRef = useRef(null);
   const sentinelRef = useRef(null);
   const isLoadingRef = useRef(false);
   const requestSequenceRef = useRef(0);
+  const highlightTimeoutRef = useRef(null);
+  const lastHighlightedPostIdRef = useRef("");
   const activeOrganizationId = toComparableId(
     user?.activeOrganization?.id || user?.activeOrganizationId,
   );
+  const currentUserId = toComparableId(user?._id || user?.id);
   const activeOrganizationIdRef = useRef(activeOrganizationId);
 
-  const fetchPosts = useCallback(async (pageNum, reset = false) => {
+  const fetchPosts = useCallback(async (pageNum, reset = false, options = {}) => {
     if (isLoadingRef.current) return;
     const requestOrganizationId = activeOrganizationId;
     const requestId = requestSequenceRef.current + 1;
@@ -34,7 +51,11 @@ const FeedPage = () => {
     isLoadingRef.current = true;
     setIsLoading(true);
     try {
-      const res = await getPosts({ page: pageNum, size: 10 });
+      const res = await getPosts({
+        page: pageNum,
+        size: 10,
+        ...(options.anchorId ? { anchorId: options.anchorId } : {}),
+      });
       const isCurrentRequest =
         requestId === requestSequenceRef.current &&
         requestOrganizationId === activeOrganizationIdRef.current;
@@ -52,8 +73,9 @@ const FeedPage = () => {
       }
 
       const totalPages = res.totalPages || 1;
-      setHasMore(pageNum < totalPages);
-      setPage(pageNum);
+      const responsePage = res.currentPage || pageNum;
+      setHasMore(responsePage < totalPages);
+      setPage(responsePage);
     } catch (err) {
       console.error("Failed to fetch posts:", err);
     } finally {
@@ -73,14 +95,112 @@ const FeedPage = () => {
   }, [activeOrganizationId]);
 
   useEffect(() => {
+    const anchorPostId = getPostIdFromHash(location.hash);
+    setHighlightedPostId(anchorPostId);
+    lastHighlightedPostIdRef.current = "";
     requestSequenceRef.current += 1;
     isLoadingRef.current = false;
     setPosts([]);
     setPage(1);
     setHasMore(true);
     setIsInitialLoad(true);
-    fetchPosts(1, true);
-  }, [activeOrganizationId, fetchPosts]);
+    fetchPosts(1, true, { anchorId: anchorPostId });
+  }, [activeOrganizationId, fetchPosts, location.hash]);
+
+  useEffect(() => {
+    if (!highlightedPostId || isInitialLoad || posts.length === 0) return undefined;
+    if (lastHighlightedPostIdRef.current === highlightedPostId) return undefined;
+
+    const target = document.getElementById(`post-${highlightedPostId}`);
+    if (!target) return undefined;
+
+    if (highlightTimeoutRef.current) {
+      window.clearTimeout(highlightTimeoutRef.current);
+    }
+
+    setActiveHighlightId(highlightedPostId);
+    lastHighlightedPostIdRef.current = highlightedPostId;
+    requestAnimationFrame(() => {
+      target.scrollIntoView({ behavior: "smooth", block: "center" });
+    });
+
+    highlightTimeoutRef.current = window.setTimeout(() => {
+      setActiveHighlightId("");
+      highlightTimeoutRef.current = null;
+    }, 3200);
+
+    return undefined;
+  }, [highlightedPostId, isInitialLoad, posts]);
+
+  useEffect(() => {
+    return () => {
+      if (highlightTimeoutRef.current) {
+        window.clearTimeout(highlightTimeoutRef.current);
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!socket) return undefined;
+
+    const isSameOrganization = (event = {}) => {
+      const eventOrganizationId = toComparableId(event.organizationId);
+      return !eventOrganizationId || eventOrganizationId === activeOrganizationId;
+    };
+
+    const handlePostReactionUpdated = (event = {}) => {
+      if (!isSameOrganization(event) || !event.postId) return;
+
+      setPosts((prev) =>
+        prev.map((post) => {
+          if (toComparableId(post.id) !== toComparableId(event.postId)) {
+            return post;
+          }
+
+          const isCurrentUserReaction =
+            toComparableId(event.actorId) === currentUserId;
+
+          return {
+            ...post,
+            likesCount: Number.isFinite(event.likesCount)
+              ? event.likesCount
+              : post.likesCount,
+            ...(isCurrentUserReaction
+              ? {
+                  isLiked: !!event.liked,
+                  reactionType: event.liked ? event.reactionType : null,
+                }
+              : {}),
+          };
+        }),
+      );
+    };
+
+    const handlePostCommentCountUpdated = (event = {}) => {
+      if (!isSameOrganization(event) || !event.postId) return;
+
+      setPosts((prev) =>
+        prev.map((post) =>
+          toComparableId(post.id) === toComparableId(event.postId)
+            ? {
+                ...post,
+                commentsCount: Number.isFinite(event.commentsCount)
+                  ? event.commentsCount
+                  : post.commentsCount,
+              }
+            : post,
+        ),
+      );
+    };
+
+    socket.on("post_reaction_updated", handlePostReactionUpdated);
+    socket.on("post_comment_count_updated", handlePostCommentCountUpdated);
+
+    return () => {
+      socket.off("post_reaction_updated", handlePostReactionUpdated);
+      socket.off("post_comment_count_updated", handlePostCommentCountUpdated);
+    };
+  }, [activeOrganizationId, currentUserId, socket]);
 
   useEffect(() => {
     if (isInitialLoad || !hasMore) return;
@@ -141,6 +261,7 @@ const FeedPage = () => {
             <PostCard
               key={post.id}
               post={post}
+              isAnchorHighlighted={activeHighlightId === toComparableId(post.id)}
               onPostDeleted={handlePostDeleted}
               onPostUpdated={handlePostUpdated}
             />

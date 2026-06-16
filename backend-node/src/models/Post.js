@@ -28,6 +28,21 @@ const postSchema = new mongoose.Schema(
         ref: "User",
       },
     ],
+    activity: {
+      type: {
+        type: String,
+        enum: ["feeling", "activity"],
+        default: null,
+      },
+      emoji: {
+        type: String,
+        default: "",
+      },
+      label: {
+        type: String,
+        default: "",
+      },
+    },
     tags: [String],
     targetAudience: {
       type: {

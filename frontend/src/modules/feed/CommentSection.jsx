@@ -56,7 +56,7 @@ const getComparableUserId = (user = {}) => {
 
 const toComparableId = (value) => {
   if (value == null) return "";
-  return String(value);
+  return String(value._id || value.id || value);
 };
 
 const getReactionEntryUserId = (reaction = {}) =>
@@ -436,6 +436,10 @@ const CommentSection = ({ postId, initialCommentsCount = 0, onCommentCountChange
     commentCountChangeRef.current = onCommentCountChange;
   }, [onCommentCountChange]);
 
+  useEffect(() => {
+    setTotalCount(initialCommentsCount);
+  }, [initialCommentsCount]);
+
   const adjustTotalCount = (delta) => {
     setTotalCount((prev) => {
       const next = Math.max(0, prev + delta);
@@ -456,6 +460,10 @@ const CommentSection = ({ postId, initialCommentsCount = 0, onCommentCountChange
       }
       setHasMore(pageNum < (res.totalPages || 1));
       setPage(pageNum);
+      if (Number.isFinite(res.totalCommentsCount)) {
+        setTotalCount(res.totalCommentsCount);
+        commentCountChangeRef.current?.(res.totalCommentsCount);
+      }
     } catch (err) {
       console.error("Failed to fetch comments:", err);
     } finally {
@@ -523,6 +531,12 @@ const CommentSection = ({ postId, initialCommentsCount = 0, onCommentCountChange
 
       updateCommentItem(event.commentId, (current) => ({
         ...current,
+        ...(toComparableId(event.actorId) === currentUserId
+          ? {
+              isLiked: !!event.liked,
+              reactionType: event.liked ? event.reactionType : null,
+            }
+          : {}),
         likesCount: Number.isFinite(event.likesCount)
           ? event.likesCount
           : current.likesCount,
@@ -545,7 +559,7 @@ const CommentSection = ({ postId, initialCommentsCount = 0, onCommentCountChange
     return () => {
       socket.off("comment_reaction_updated", handleCommentReactionUpdated);
     };
-  }, [activeOrganizationId, postId, socket, updateCommentItem]);
+  }, [activeOrganizationId, currentUserId, postId, socket, updateCommentItem]);
 
   const loadReplies = async (commentId) => {
     if (loadingReplies[commentId]) return;

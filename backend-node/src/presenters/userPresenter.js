@@ -640,7 +640,11 @@ export const getUsers = async (req, res) => {
 
 export const searchUsersForChat = async (req, res) => {
   try {
-    const { keyword = "", page = 1, size = 10 } = req.query;
+    const {
+      keyword = req.query.search || "",
+      page = 1,
+      size = 10,
+    } = req.query;
 
     const pageNum = parsePositiveInt(page, 1);
     const pageSize = Math.min(parsePositiveInt(size, 10), 20);

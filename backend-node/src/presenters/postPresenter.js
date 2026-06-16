@@ -2,6 +2,8 @@ import Post from "../models/Post.js";
 import Comment from "../models/Comment.js";
 import Like from "../models/Like.js";
 import User from "../models/User.js";
+import OrganizationMember from "../models/OrganizationMember.js";
+import mongoose from "mongoose";
 import fs from "fs";
 import path from "path";
 import { pipeline } from "stream/promises";
@@ -21,8 +23,22 @@ import {
   getR2StorageService,
 } from "../services/r2StorageService.js";
 import { emptyPage, getRequestOrganizationId } from "../utils/organizationScope.js";
+import { getOrganizationRoomName } from "../utils/conversationRealtime.js";
+import {
+  notifyCommentReply,
+  notifyPostComment,
+  notifyPostMention,
+  notifyPostReaction,
+} from "../services/feedNotificationService.js";
 
 const POST_ATTACHMENT_R2_PREFIX = "attachments/posts/";
+const POST_ACTIVITY_TYPES = new Set(["feeling", "activity"]);
+
+let postIoInstance = null;
+
+export const setPostIo = (io) => {
+  postIoInstance = io;
+};
 
 const getAttachmentType = (mimeType = "") => {
   if (mimeType.startsWith("image/")) return "image";
@@ -140,7 +156,8 @@ export const hasPostBody = (content, attachments = []) => {
 
 const TARGET_AUDIENCE_TYPES = new Set(["all", "project", "custom"]);
 
-const normalizeIdList = (ids) => (Array.isArray(ids) ? ids.filter(Boolean) : []);
+const normalizeAudienceIdList = (ids) =>
+  Array.isArray(ids) ? ids.filter(Boolean) : [];
 
 const normalizeTargetAudience = (targetAudience = { type: "all" }) => {
   const audience =
@@ -153,14 +170,135 @@ const normalizeTargetAudience = (targetAudience = { type: "all" }) => {
     : "all";
 
   if (type === "project") {
-    return { type, projectIds: normalizeIdList(audience.projectIds) };
+    return { type, projectIds: normalizeAudienceIdList(audience.projectIds) };
   }
 
   if (type === "custom") {
-    return { type, userIds: normalizeIdList(audience.userIds) };
+    return { type, userIds: normalizeAudienceIdList(audience.userIds) };
   }
 
   return { type: "all" };
+};
+
+const parseJsonBodyField = (value, fallback) => {
+  if (typeof value !== "string") return value ?? fallback;
+  try {
+    return JSON.parse(value);
+  } catch {
+    return fallback;
+  }
+};
+
+const toComparableId = (value) => {
+  if (value == null) return "";
+  return String(value._id || value.id || value);
+};
+
+const normalizeIdList = (ids) => {
+  const values = Array.isArray(ids) ? ids : [];
+  const uniqueIds = new Set();
+
+  values.forEach((value) => {
+    const id = toComparableId(value).trim();
+    if (mongoose.isValidObjectId(id)) uniqueIds.add(id);
+  });
+
+  return Array.from(uniqueIds);
+};
+
+const normalizeSingleLineText = (value = "", maxLength = 80) =>
+  String(value || "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, maxLength);
+
+export const normalizePostActivity = (activity) => {
+  if (!activity || typeof activity !== "object" || Array.isArray(activity)) {
+    return null;
+  }
+
+  const type = POST_ACTIVITY_TYPES.has(activity.type) ? activity.type : null;
+  const label = normalizeSingleLineText(activity.label, 80);
+  if (!type || !label) return null;
+
+  return {
+    type,
+    emoji: normalizeSingleLineText(activity.emoji, 8),
+    label,
+  };
+};
+
+export const serializePostActivity = (activity) => {
+  const normalized = normalizePostActivity(activity);
+  return normalized;
+};
+
+const resolveMentionIdsForOrganization = async (mentionIds, organizationId) => {
+  const normalizedIds = normalizeIdList(mentionIds);
+  if (!organizationId || normalizedIds.length === 0) return [];
+
+  const memberships = await OrganizationMember.find({
+    organizationId,
+    userId: { $in: normalizedIds },
+    status: "active",
+  }).select("userId");
+  const allowedIds = new Set(memberships.map((item) => toComparableId(item.userId)));
+
+  return normalizedIds.filter((id) => allowedIds.has(id));
+};
+
+const getMentionUsers = async (mentionIds = []) => {
+  const normalizedIds = normalizeIdList(mentionIds);
+  if (normalizedIds.length === 0) return [];
+
+  const users = await User.find({ _id: { $in: normalizedIds } }).select(
+    "_id fullName email avatar position",
+  );
+  const usersById = new Map(users.map((user) => [toComparableId(user._id), user]));
+
+  return normalizedIds.map((id) => usersById.get(id)).filter(Boolean);
+};
+
+const emitToPostOrganization = (organizationId, eventName, payload) => {
+  const organizationRoom = getOrganizationRoomName(organizationId);
+  if (!organizationRoom) return;
+
+  postIoInstance?.to(organizationRoom)?.emit(eventName, payload);
+};
+
+const emitPostReactionUpdated = ({ post, actorId, liked, reactionType }) => {
+  emitToPostOrganization(post.organizationId, "post_reaction_updated", {
+    postId: post._id,
+    organizationId: post.organizationId,
+    actorId,
+    liked,
+    likesCount: post.likesCount,
+    reactionType,
+  });
+};
+
+const emitPostCommentCountUpdated = ({
+  post,
+  commentId,
+  parentId = null,
+  delta,
+}) => {
+  emitToPostOrganization(post.organizationId, "post_comment_count_updated", {
+    postId: post._id,
+    organizationId: post.organizationId,
+    commentId,
+    parentId,
+    delta,
+    commentsCount: post.commentsCount,
+  });
+};
+
+const runNotificationHook = async (promise, label) => {
+  try {
+    await promise;
+  } catch (error) {
+    console.error(`${label} notification hook failed:`, error.message);
+  }
 };
 
 export const serializePostAttachments = (attachments = []) =>
@@ -208,7 +346,7 @@ const findPostAttachmentPath = (storedFileName) => {
 // GET /posts
 export const getPosts = async (req, res) => {
   try {
-    const { type, page = 1, size = 10 } = req.query;
+    const { type, page = 1, size = 10, anchorId } = req.query;
     const organizationId = getRequestOrganizationId(req);
     if (!organizationId) {
       return res.status(200).json(emptyPage(page, size));
@@ -226,8 +364,25 @@ export const getPosts = async (req, res) => {
       { authorId: userId },
     ];
 
-    const pageNum = Math.max(1, parseInt(page));
     const pageSize = Math.max(1, parseInt(size));
+    let pageNum = Math.max(1, parseInt(page));
+
+    const normalizedAnchorId = toComparableId(anchorId).trim();
+    if (mongoose.isValidObjectId(normalizedAnchorId)) {
+      const anchorPost = await Post.findOne({
+        ...filter,
+        _id: normalizedAnchorId,
+      }).select("_id createdAt");
+
+      if (anchorPost) {
+        const newerPostsCount = await Post.countDocuments({
+          ...filter,
+          createdAt: { $gt: anchorPost.createdAt },
+        });
+        pageNum = Math.floor(newerPostsCount / pageSize) + 1;
+      }
+    }
+
     const skip = (pageNum - 1) * pageSize;
 
     const [posts, totalElements] = await Promise.all([
@@ -240,18 +395,21 @@ export const getPosts = async (req, res) => {
     // Populate author info
     const content = await Promise.all(
       posts.map(async (post) => {
-        const [author, existingLike] = await Promise.all([
+        const [author, existingLike, mentionUsers] = await Promise.all([
           User.findById(post.authorId).select(
             "_id fullName email avatar position",
           ),
           Like.findOne({ targetType: "post", targetId: post._id, userId }),
+          getMentionUsers(post.mentions),
         ]);
         return {
           id: post._id,
           author,
           type: post.type,
           content: post.content,
-          mentions: post.mentions,
+          mentions: mentionUsers,
+          mentionIds: post.mentions,
+          activity: serializePostActivity(post.activity),
           tags: post.tags,
           targetAudience: normalizeTargetAudience(post.targetAudience),
           attachments: serializePostAttachments(post.attachments),
@@ -283,7 +441,7 @@ export const getPosts = async (req, res) => {
 // POST /posts
 export const createPost = async (req, res) => {
   try {
-    const { type, content, mentions, tags, targetAudience } = req.body;
+    const { type, content, mentions, tags, targetAudience, activity } = req.body;
     const organizationId = getRequestOrganizationId(req);
     if (!organizationId) {
       return res.status(409).json({
@@ -297,39 +455,25 @@ export const createPost = async (req, res) => {
     const postContent =
       typeof content === "string" && content.trim().length > 0 ? content : "";
 
-    if (!hasPostBody(postContent, attachments)) {
+    const parsedAudience = parseJsonBodyField(targetAudience, { type: "all" });
+    const parsedMentions = parseJsonBodyField(mentions, []);
+    const parsedTags = parseJsonBodyField(tags, []);
+    const normalizedActivity = normalizePostActivity(
+      parseJsonBodyField(activity, null),
+    );
+    const scopedMentionIds = await resolveMentionIdsForOrganization(
+      parsedMentions,
+      organizationId,
+    );
+
+    if (
+      !hasPostBody(postContent, attachments) &&
+      scopedMentionIds.length === 0 &&
+      !normalizedActivity
+    ) {
       return res
         .status(400)
-        .json({ message: "Post content or attachment is required" });
-    }
-
-    // Parse targetAudience if it's a string (from multipart form)
-    let parsedAudience = targetAudience;
-    if (typeof targetAudience === "string") {
-      try {
-        parsedAudience = JSON.parse(targetAudience);
-      } catch {
-        parsedAudience = { type: "all" };
-      }
-    }
-
-    // Parse mentions and tags if they are strings
-    let parsedMentions = mentions;
-    if (typeof mentions === "string") {
-      try {
-        parsedMentions = JSON.parse(mentions);
-      } catch {
-        parsedMentions = [];
-      }
-    }
-
-    let parsedTags = tags;
-    if (typeof tags === "string") {
-      try {
-        parsedTags = JSON.parse(tags);
-      } catch {
-        parsedTags = [];
-      }
+        .json({ message: "Post content, attachment, tag, or activity is required" });
     }
 
     const post = await Post.create({
@@ -337,14 +481,21 @@ export const createPost = async (req, res) => {
       authorId: req.user._id,
       type: type || "post",
       content: postContent,
-      mentions: parsedMentions || [],
+      mentions: scopedMentionIds,
+      activity: normalizedActivity,
       tags: parsedTags || [],
       targetAudience: normalizeTargetAudience(parsedAudience || { type: "all" }),
       attachments,
     });
 
     const author = await User.findById(req.user._id).select(
-      "_id fullName email avatar",
+      "_id fullName email avatar position",
+    );
+    const mentionUsers = await getMentionUsers(post.mentions);
+
+    await runNotificationHook(
+      notifyPostMention({ post, actor: req.user }),
+      "Post mention",
     );
 
     res.status(201).json({
@@ -352,7 +503,9 @@ export const createPost = async (req, res) => {
       author,
       type: post.type,
       content: post.content,
-      mentions: post.mentions,
+      mentions: mentionUsers,
+      mentionIds: post.mentions,
+      activity: serializePostActivity(post.activity),
       tags: post.tags,
       targetAudience: normalizeTargetAudience(post.targetAudience),
       attachments: serializePostAttachments(post.attachments),
@@ -378,13 +531,14 @@ export const getPostById = async (req, res) => {
       return res.status(404).json({ message: "Post not found" });
     }
 
-    const [author, existingLike] = await Promise.all([
+    const [author, existingLike, mentionUsers] = await Promise.all([
       User.findById(post.authorId).select("_id fullName email avatar position"),
       Like.findOne({
         targetType: "post",
         targetId: post._id,
         userId: req.user._id,
       }),
+      getMentionUsers(post.mentions),
     ]);
 
     res.status(200).json({
@@ -392,7 +546,9 @@ export const getPostById = async (req, res) => {
       author,
       type: post.type,
       content: post.content,
-      mentions: post.mentions,
+      mentions: mentionUsers,
+      mentionIds: post.mentions,
+      activity: serializePostActivity(post.activity),
       tags: post.tags,
       targetAudience: normalizeTargetAudience(post.targetAudience),
       attachments: serializePostAttachments(post.attachments),
@@ -433,27 +589,40 @@ export const updatePost = async (req, res) => {
         .json({ message: "Not authorized to update this post" });
     }
 
-    const { content, mentions, tags, targetAudience } = req.body;
+    const { content, mentions, tags, targetAudience, activity } = req.body;
 
     if (content !== undefined) post.content = content;
-    if (mentions !== undefined) post.mentions = mentions;
-    if (tags !== undefined) post.tags = tags;
+    if (mentions !== undefined) {
+      post.mentions = await resolveMentionIdsForOrganization(
+        parseJsonBodyField(mentions, []),
+        post.organizationId,
+      );
+    }
+    if (activity !== undefined) {
+      post.activity = normalizePostActivity(parseJsonBodyField(activity, null));
+    }
+    if (tags !== undefined) post.tags = parseJsonBodyField(tags, []);
     if (targetAudience !== undefined) {
-      post.targetAudience = normalizeTargetAudience(targetAudience);
+      post.targetAudience = normalizeTargetAudience(
+        parseJsonBodyField(targetAudience, { type: "all" }),
+      );
     }
 
     await post.save();
 
     const author = await User.findById(post.authorId).select(
-      "_id fullName email avatar",
+      "_id fullName email avatar position",
     );
+    const mentionUsers = await getMentionUsers(post.mentions);
 
     res.status(200).json({
       id: post._id,
       author,
       type: post.type,
       content: post.content,
-      mentions: post.mentions,
+      mentions: mentionUsers,
+      mentionIds: post.mentions,
+      activity: serializePostActivity(post.activity),
       tags: post.tags,
       targetAudience: normalizeTargetAudience(post.targetAudience),
       attachments: serializePostAttachments(post.attachments),
@@ -626,12 +795,23 @@ export const getPostComments = async (req, res) => {
       parentId: null,
     };
 
-    const [comments, totalElements] = await Promise.all([
+    const [comments, totalElements, totalCommentsCount] = await Promise.all([
       Comment.find(filter).skip(skip).limit(pageSize).sort({ createdAt: -1 }),
       Comment.countDocuments(filter),
+      Comment.countDocuments({
+        organizationId: getRequestOrganizationId(req),
+        postId: post._id,
+      }),
     ]);
 
     const totalPages = Math.ceil(totalElements / pageSize);
+    if (post.commentsCount !== totalCommentsCount) {
+      Post.findByIdAndUpdate(post._id, {
+        $set: { commentsCount: totalCommentsCount },
+      }).catch((error) => {
+        console.error("Sync post commentsCount error:", error.message);
+      });
+    }
 
     const content = await Promise.all(
       comments.map(async (comment) => {
@@ -670,6 +850,7 @@ export const getPostComments = async (req, res) => {
       .json({
         content,
         totalElements,
+        totalCommentsCount,
         totalPages,
         currentPage: pageNum,
         pageSize,
@@ -706,8 +887,9 @@ export const addPostComment = async (req, res) => {
     }
 
     // If parentId, verify parent comment exists and belongs to same post
+    let parentComment = null;
     if (parentId) {
-      const parentComment = await Comment.findById(parentId);
+      parentComment = await Comment.findById(parentId);
       if (!parentComment) {
         return res.status(404).json({ message: "Parent comment not found" });
       }
@@ -728,11 +910,34 @@ export const addPostComment = async (req, res) => {
     });
 
     // Increment comments count on post
-    await Post.findByIdAndUpdate(post._id, { $inc: { commentsCount: 1 } });
+    const updatedPost = await Post.findByIdAndUpdate(
+      post._id,
+      { $inc: { commentsCount: 1 } },
+      { new: true },
+    );
 
     const author = await User.findById(req.user._id).select(
       "_id fullName email avatar",
     );
+
+    await runNotificationHook(
+      parentComment
+        ? notifyCommentReply({
+            post,
+            parentComment,
+            reply: comment,
+            actor: req.user,
+          })
+        : notifyPostComment({ post, comment, actor: req.user }),
+      parentComment ? "Comment reply" : "Post comment",
+    );
+
+    emitPostCommentCountUpdated({
+      post: updatedPost,
+      commentId: comment._id,
+      parentId: comment.parentId,
+      delta: 1,
+    });
 
     res.status(201).json({
       id: comment._id,
@@ -863,6 +1068,24 @@ export const togglePostLike = async (req, res) => {
     }
 
     const updatedPost = await Post.findById(post._id);
+
+    if (plan.action === "create") {
+      await runNotificationHook(
+        notifyPostReaction({
+          post,
+          actor: req.user,
+          reactionType: plan.reactionType,
+        }),
+        "Post reaction",
+      );
+    }
+
+    emitPostReactionUpdated({
+      post: updatedPost,
+      actorId: req.user._id,
+      liked: plan.liked,
+      reactionType: plan.reactionType,
+    });
 
     res.status(200).json({
       liked: plan.liked,

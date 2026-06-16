@@ -41,6 +41,20 @@ const ACTIVITIES = [
   { emoji: "📖", label: "Đang đọc sách" },
 ];
 
+const toComparableId = (value) => {
+  if (value == null) return "";
+  return String(value._id || value.id || value);
+};
+
+const lowerFirstLetter = (value = "") =>
+  value ? `${value.charAt(0).toLocaleLowerCase("vi-VN")}${value.slice(1)}` : "";
+
+const getActivityDisplayText = (activity) => {
+  if (!activity?.label) return "";
+  if (activity.type === "activity") return activity.label;
+  return `Đang cảm thấy ${lowerFirstLetter(activity.label)}`;
+};
+
 const CreatePostBox = ({ onPostCreated }) => {
   const { user } = useAuth();
   const [content, setContent] = useState("");
@@ -52,6 +66,7 @@ const CreatePostBox = ({ onPostCreated }) => {
   const [mentionQuery, setMentionQuery] = useState("");
   const [mentionResults, setMentionResults] = useState([]);
   const [showMentionDropdown, setShowMentionDropdown] = useState(false);
+  const [showMentionPicker, setShowMentionPicker] = useState(false);
   const [selectedMentions, setSelectedMentions] = useState([]);
   const fileInputRef = useRef(null);
   const textareaRef = useRef(null);
@@ -74,38 +89,37 @@ const CreatePostBox = ({ onPostCreated }) => {
 
   const handleMentionSearch = async (query) => {
     setMentionQuery(query);
-    if (query.length < 2) {
-      setMentionResults([]);
-      setShowMentionDropdown(false);
-      return;
-    }
     try {
-      const res = await searchUsers({ search: query, size: 5 });
+      const res = await searchUsers({ search: query, size: 8 });
       const users = res?.content || res || [];
       setMentionResults(users);
-      setShowMentionDropdown(users.length > 0);
+      setShowMentionDropdown(true);
     } catch {
       setMentionResults([]);
-      setShowMentionDropdown(false);
+      setShowMentionDropdown(true);
     }
   };
 
   const addMention = (mentionUser) => {
-    if (selectedMentions.find((m) => m._id === mentionUser._id)) return;
+    const mentionUserId = toComparableId(mentionUser);
+    if (selectedMentions.find((m) => toComparableId(m) === mentionUserId)) return;
     setSelectedMentions((prev) => [...prev, mentionUser]);
-    const mentionText = `@${mentionUser.fullName} `;
-    setContent((prev) => prev + mentionText);
-    setShowMentionDropdown(false);
     setMentionQuery("");
-    textareaRef.current?.focus();
+    handleMentionSearch("");
+    mentionRef.current?.focus();
   };
 
   const removeMention = (userId) => {
-    setSelectedMentions((prev) => prev.filter((m) => m._id !== userId));
+    setSelectedMentions((prev) =>
+      prev.filter((m) => toComparableId(m) !== toComparableId(userId))
+    );
   };
 
   const selectFeeling = (feeling) => {
-    setSelectedFeeling(feeling);
+    setSelectedFeeling({
+      ...feeling,
+      type: feelingTab,
+    });
     setShowFeeling(false);
   };
 
@@ -115,21 +129,29 @@ const CreatePostBox = ({ onPostCreated }) => {
   };
 
   const handleSubmit = async () => {
-    if (!content.trim() && files.length === 0) return;
+    const hasMetadata = selectedFeeling || selectedMentions.length > 0;
+    if (!content.trim() && files.length === 0 && !hasMetadata) return;
     setIsSubmitting(true);
     try {
       const formData = new FormData();
 
-      let postContent = content;
+      formData.append("content", content.trim());
+
       if (selectedFeeling) {
-        postContent = `${selectedFeeling.emoji} Đang cảm thấy ${selectedFeeling.label} — ${content}`;
+        formData.append(
+          "activity",
+          JSON.stringify({
+            type: selectedFeeling.type,
+            emoji: selectedFeeling.emoji,
+            label: selectedFeeling.label,
+          })
+        );
       }
-      formData.append("content", postContent);
 
       if (selectedMentions.length > 0) {
         formData.append(
           "mentions",
-          JSON.stringify(selectedMentions.map((m) => m._id))
+          JSON.stringify(selectedMentions.map((m) => toComparableId(m)))
         );
       }
 
@@ -142,6 +164,10 @@ const CreatePostBox = ({ onPostCreated }) => {
       setFiles([]);
       setSelectedFeeling(null);
       setSelectedMentions([]);
+      setMentionQuery("");
+      setMentionResults([]);
+      setShowMentionPicker(false);
+      setShowMentionDropdown(false);
       onPostCreated?.(newPost);
     } catch (err) {
       console.error("Failed to create post:", err);
@@ -167,7 +193,12 @@ const CreatePostBox = ({ onPostCreated }) => {
       icon: "alternate_email",
       label: "Gắn thẻ người khác",
       color: "text-emerald-500 hover:bg-emerald-50",
-      onClick: () => mentionRef.current?.focus(),
+      onClick: () => {
+        setShowMentionPicker((current) => !current);
+        setShowMentionDropdown(true);
+        handleMentionSearch(mentionQuery);
+        requestAnimationFrame(() => mentionRef.current?.focus());
+      },
     },
     {
       icon: "mood",
@@ -176,6 +207,12 @@ const CreatePostBox = ({ onPostCreated }) => {
       onClick: () => setShowFeeling(!showFeeling),
     },
   ];
+
+  const canSubmit =
+    content.trim() ||
+    files.length > 0 ||
+    selectedFeeling ||
+    selectedMentions.length > 0;
 
   return (
     <div className="relative z-20 rounded-xl border border-slate-200/60 bg-white/80 p-4 shadow-sm backdrop-blur-sm sm:rounded-2xl sm:p-5">
@@ -212,7 +249,7 @@ const CreatePostBox = ({ onPostCreated }) => {
       {selectedFeeling && (
         <div className="mb-2 mt-2 flex items-center gap-2 sm:ml-16 sm:mt-1">
           <span className="text-sm bg-amber-50 text-amber-700 px-3 py-1 rounded-full font-medium flex items-center gap-1.5">
-            {selectedFeeling.emoji} {selectedFeeling.label}
+            {selectedFeeling.emoji} {getActivityDisplayText(selectedFeeling)}
             <button
               onClick={() => setSelectedFeeling(null)}
               className="ml-1 text-amber-400 hover:text-amber-600"
@@ -228,12 +265,12 @@ const CreatePostBox = ({ onPostCreated }) => {
         <div className="mb-2 mt-2 flex flex-wrap items-center gap-2 sm:ml-16 sm:mt-1">
           {selectedMentions.map((m) => (
             <span
-              key={m._id}
+              key={toComparableId(m)}
               className="text-sm bg-blue-50 text-blue-700 px-3 py-1 rounded-full font-medium flex items-center gap-1.5"
             >
-              @{m.fullName}
+              {m.fullName}
               <button
-                onClick={() => removeMention(m._id)}
+                onClick={() => removeMention(m)}
                 className="ml-1 text-blue-400 hover:text-blue-600"
               >
                 <span className="material-symbols-outlined text-sm">close</span>
@@ -367,35 +404,87 @@ const CreatePostBox = ({ onPostCreated }) => {
       )}
 
       {/* Mention search */}
-      {showMentionDropdown && (
-        <div className="relative z-10 mt-2 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-lg sm:ml-16">
-          {mentionResults.map((u) => {
-            const mAvatar = getAvatarUrl(u.avatar);
-            return (
-              <button
-                key={u._id}
-                onClick={() => addMention(u)}
-                className="flex items-center gap-3 w-full px-4 py-2.5 hover:bg-slate-50 transition-colors"
-              >
-                {mAvatar ? (
-                  <img
-                    src={mAvatar}
-                    alt=""
-                    referrerPolicy={getAvatarReferrerPolicy(mAvatar)}
-                    className="size-8 rounded-full object-cover"
-                  />
-                ) : (
-                  <div className="size-8 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center text-xs font-bold">
-                    {u.fullName?.charAt(0)}
-                  </div>
-                )}
-                <div className="text-left">
-                  <p className="text-sm font-bold text-slate-900">{u.fullName}</p>
-                  <p className="text-xs text-slate-500">{u.position || u.email}</p>
-                </div>
-              </button>
-            );
-          })}
+      {showMentionPicker && (
+        <div className="relative z-10 mt-3 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-lg sm:ml-16">
+          <div className="flex items-center gap-2 border-b border-slate-100 px-3 py-2.5">
+            <span className="material-symbols-outlined text-[19px] text-emerald-500">
+              alternate_email
+            </span>
+            <input
+              ref={mentionRef}
+              type="text"
+              value={mentionQuery}
+              onChange={(e) => handleMentionSearch(e.target.value)}
+              placeholder="Tìm người trong tổ chức..."
+              className="min-w-0 flex-1 border-none bg-transparent text-sm font-medium text-slate-900 placeholder:text-slate-400 focus:outline-none"
+              onFocus={() => {
+                setShowMentionDropdown(true);
+                if (mentionResults.length === 0) handleMentionSearch(mentionQuery);
+              }}
+            />
+            <button
+              type="button"
+              onClick={() => {
+                setShowMentionPicker(false);
+                setShowMentionDropdown(false);
+              }}
+              className="inline-flex size-8 items-center justify-center rounded-full text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-700"
+              aria-label="Đóng chọn người được gắn thẻ"
+            >
+              <span className="material-symbols-outlined text-lg">close</span>
+            </button>
+          </div>
+          {showMentionDropdown && (
+            <div className="max-h-72 overflow-y-auto">
+              {mentionResults.length > 0 ? (
+                mentionResults.map((u) => {
+                  const mAvatar = getAvatarUrl(u.avatar);
+                  const isSelected = selectedMentions.some(
+                    (mention) => toComparableId(mention) === toComparableId(u)
+                  );
+                  return (
+                    <button
+                      key={toComparableId(u)}
+                      type="button"
+                      onClick={() => addMention(u)}
+                      disabled={isSelected}
+                      className="flex w-full items-center gap-3 px-4 py-2.5 text-left transition-colors hover:bg-slate-50 disabled:bg-blue-50/60"
+                    >
+                      {mAvatar ? (
+                        <img
+                          src={mAvatar}
+                          alt=""
+                          referrerPolicy={getAvatarReferrerPolicy(mAvatar)}
+                          className="size-8 rounded-full object-cover"
+                        />
+                      ) : (
+                        <div className="flex size-8 items-center justify-center rounded-full bg-blue-100 text-xs font-bold text-blue-600">
+                          {u.fullName?.charAt(0)}
+                        </div>
+                      )}
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-sm font-bold text-slate-900">
+                          {u.fullName}
+                        </p>
+                        <p className="truncate text-xs text-slate-500">
+                          {u.position || u.email}
+                        </p>
+                      </div>
+                      {isSelected && (
+                        <span className="material-symbols-outlined text-[18px] text-blue-600">
+                          check_circle
+                        </span>
+                      )}
+                    </button>
+                  );
+                })
+              ) : (
+                <p className="px-4 py-4 text-center text-sm font-medium text-slate-400">
+                  Không tìm thấy thành viên phù hợp.
+                </p>
+              )}
+            </div>
+          )}
         </div>
       )}
 
@@ -415,25 +504,6 @@ const CreatePostBox = ({ onPostCreated }) => {
               </span>
             </button>
           ))}
-          {/* Hidden mention input */}
-          <input
-            ref={mentionRef}
-            type="text"
-            value={mentionQuery}
-            onChange={(e) => handleMentionSearch(e.target.value)}
-            placeholder="Tìm người để gắn thẻ..."
-            className={`text-sm border border-slate-200 rounded-full px-3 py-1.5 focus:outline-none focus:border-blue-400 transition-all ${
-              mentionQuery || showMentionDropdown
-                ? "ml-1 w-36 opacity-100 sm:ml-2 sm:w-48"
-                : "w-0 opacity-0 p-0 border-0"
-            }`}
-            onFocus={() =>
-              mentionQuery.length >= 2 && setShowMentionDropdown(true)
-            }
-            onBlur={() =>
-              setTimeout(() => setShowMentionDropdown(false), 200)
-            }
-          />
         </div>
 
         <input
@@ -446,7 +516,7 @@ const CreatePostBox = ({ onPostCreated }) => {
 
         <button
           onClick={handleSubmit}
-          disabled={isSubmitting || (!content.trim() && files.length === 0)}
+          disabled={isSubmitting || !canSubmit}
           className="flex shrink-0 items-center gap-2 rounded-full bg-blue-600 px-4 py-2 text-sm font-bold text-white shadow-lg shadow-blue-500/20 transition-colors duration-300 hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-blue-400"
         >
           {isSubmitting && (

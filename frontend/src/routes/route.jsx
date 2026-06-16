@@ -49,6 +49,14 @@ export const router = createBrowserRouter([
             ),
           },
           {
+            path: "feed",
+            element: (
+              <Suspense fallback={<LazyFallback />}>
+                <FeedPage />
+              </Suspense>
+            ),
+          },
+          {
             path: "messages",
             element: (
               <Suspense fallback={<LazyFallback />}>

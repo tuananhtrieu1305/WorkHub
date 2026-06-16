@@ -52,6 +52,38 @@ const notificationSchema = new Schema(
       ref: "User",
       default: null,
     },
+    actorIds: [
+      {
+        type: Schema.Types.ObjectId,
+        ref: "User",
+      },
+    ],
+    actorCount: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
+    eventCount: {
+      type: Number,
+      default: 1,
+      min: 1,
+    },
+    aggregationKey: {
+      type: String,
+      trim: true,
+      default: null,
+      index: true,
+    },
+    isMention: {
+      type: Boolean,
+      default: false,
+      index: true,
+    },
+    lastInteractedAt: {
+      type: Date,
+      default: Date.now,
+      index: true,
+    },
     data: {
       type: Schema.Types.Mixed,
       default: {},
@@ -79,9 +111,12 @@ const notificationSchema = new Schema(
 
 notificationSchema.index({ userId: 1, readAt: 1, createdAt: -1 });
 notificationSchema.index({ userId: 1, organizationId: 1, createdAt: -1 });
+notificationSchema.index({ userId: 1, organizationId: 1, lastInteractedAt: -1 });
 notificationSchema.index({ userId: 1, deletedAt: 1, createdAt: -1 });
 notificationSchema.index({ entityType: 1, entityId: 1 });
 notificationSchema.index({ userId: 1, isRead: 1, createdAt: -1 });
+notificationSchema.index({ userId: 1, isMention: 1, lastInteractedAt: -1 });
+notificationSchema.index({ userId: 1, aggregationKey: 1, deletedAt: 1 });
 
 const Notification = mongoose.model("Notification", notificationSchema);
 
