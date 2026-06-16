@@ -141,6 +141,7 @@ const OrganizationDetailPage = () => {
       />
 
       <OrganizationJoinPreviewModal
+        accentColor={state.advancedForm?.accentColor}
         joinMessage={state.advancedForm?.joinMessage}
         onClose={() => actions.setJoinPreviewOpen(false)}
         open={state.joinPreviewOpen}

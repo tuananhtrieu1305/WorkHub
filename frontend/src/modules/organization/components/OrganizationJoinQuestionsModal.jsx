@@ -1,4 +1,6 @@
 import { useEffect, useMemo } from "react";
+import { getAvatarUrl } from "../../../utils/avatar";
+import { getRuleLines } from "../joinQuestionRules";
 import Icon from "./Icon";
 import OrganizationLogo from "./OrganizationLogo";
 
@@ -11,6 +13,9 @@ const getAnswerIsMissing = (question, answers) => {
   if (question.type === "rules") return value !== true;
   return !String(value || "").trim();
 };
+
+const getSafeBackgroundUrl = (url = "") =>
+  String(url || "").replaceAll('"', "%22");
 
 const OrganizationJoinQuestionsModal = ({
   answers = {},
@@ -51,6 +56,19 @@ const OrganizationJoinQuestionsModal = ({
   }, [answers, onChangeAnswer, open, questions]);
 
   if (!open || !preview) return null;
+
+  const bannerUrl = getAvatarUrl(organization?.bannerUrl);
+  const accentColor = organization?.accentColor || "#2563eb";
+  const sideBackground = bannerUrl
+    ? `linear-gradient(180deg, rgba(255, 255, 255, 0.72), rgba(255, 255, 255, 0.9)), url("${getSafeBackgroundUrl(
+        bannerUrl,
+      )}") center / cover`
+    : `linear-gradient(135deg, ${accentColor}, #f472b6)`;
+  const cardBannerBackground = bannerUrl
+    ? `linear-gradient(180deg, rgba(15, 23, 42, 0.02), rgba(15, 23, 42, 0.16)), url("${getSafeBackgroundUrl(
+        bannerUrl,
+      )}") center / cover`
+    : `linear-gradient(135deg, ${accentColor}, #f472b6)`;
 
   const renderQuestion = (question) => {
     const value = answers[question.id] ?? getInitialAnswer(question);
@@ -98,21 +116,42 @@ const OrganizationJoinQuestionsModal = ({
     }
 
     if (question.type === "rules") {
+      const rules = getRuleLines(question.description);
+
       return (
-        <button
-          type="button"
-          onClick={() => onChangeAnswer?.(question.id, value !== true)}
-          className={`mt-3 flex w-full items-start gap-3 rounded-2xl px-4 py-3 text-left ring-1 transition hover:-translate-y-0.5 ${
-            value === true
-              ? "bg-emerald-50 text-emerald-800 ring-emerald-100"
-              : "bg-white text-slate-700 ring-slate-200 hover:bg-slate-50"
-          }`}
-        >
-          <Icon name={value === true ? "check_box" : "check_box_outline_blank"} />
-          <span className="text-sm font-bold">
-            Tôi đã đọc và đồng ý với nội dung trên
-          </span>
-        </button>
+        <div className="mt-3">
+          {rules.length > 0 && (
+            <ol className="overflow-hidden rounded-2xl bg-slate-50 text-slate-700 ring-1 ring-slate-200">
+              {rules.map((rule, index) => (
+                <li
+                  key={`${index}-${rule}`}
+                  className="grid grid-cols-[2rem_minmax(0,1fr)] gap-2 border-b border-slate-200 px-4 py-3 last:border-b-0"
+                >
+                  <span className="text-sm font-black text-slate-400">
+                    {index + 1}.
+                  </span>
+                  <span className="text-sm font-semibold leading-6">{rule}</span>
+                </li>
+              ))}
+            </ol>
+          )}
+          <button
+            type="button"
+            onClick={() => onChangeAnswer?.(question.id, value !== true)}
+            className={`mt-3 flex w-full items-start gap-3 rounded-2xl px-4 py-3 text-left ring-1 transition hover:-translate-y-0.5 ${
+              value === true
+                ? "bg-emerald-50 text-emerald-800 ring-emerald-100"
+                : "bg-white text-slate-700 ring-slate-200 hover:bg-slate-50"
+            }`}
+          >
+            <Icon
+              name={value === true ? "check_box" : "check_box_outline_blank"}
+            />
+            <span className="text-sm font-bold">
+              Tôi đã đọc và đồng ý với nội dung trên
+            </span>
+          </button>
+        </div>
       );
     }
 
@@ -134,17 +173,10 @@ const OrganizationJoinQuestionsModal = ({
         aria-hidden="true"
       />
       <section className="organization-modal-card relative z-10 grid max-h-[92vh] w-full max-w-6xl overflow-hidden rounded-[2rem] bg-white shadow-2xl shadow-slate-900/18 ring-1 ring-slate-200 lg:grid-cols-[0.45fr_0.55fr]">
-        <aside className="hidden bg-gradient-to-br from-fuchsia-100 via-rose-50 to-blue-100 p-6 lg:block">
+        <aside className="hidden p-6 lg:block" style={{ background: sideBackground }}>
           <div className="flex h-full min-h-[560px] items-center justify-center rounded-[1.75rem] bg-white/45 p-6 ring-1 ring-white/70">
             <div className="w-full max-w-sm overflow-hidden rounded-[1.75rem] bg-white shadow-xl shadow-rose-200/50 ring-1 ring-slate-200">
-              <div
-                className="h-36"
-                style={{
-                  background: `linear-gradient(135deg, ${
-                    organization?.accentColor || "#2563eb"
-                  }, #f472b6)`,
-                }}
-              />
+              <div className="h-36" style={{ background: cardBannerBackground }} />
               <div className="-mt-9 px-6 pb-6">
                 <OrganizationLogo
                   organization={organization}
@@ -219,7 +251,7 @@ const OrganizationJoinQuestionsModal = ({
                           <span className="ml-1 text-rose-500">*</span>
                         )}
                       </label>
-                      {question.description && (
+                      {question.description && question.type !== "rules" && (
                         <p className="mt-1 rounded-2xl bg-emerald-50 px-4 py-3 text-sm font-semibold leading-6 text-emerald-800 ring-1 ring-emerald-100">
                           {question.description}
                         </p>

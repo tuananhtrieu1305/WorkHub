@@ -184,8 +184,7 @@ const OrganizationInviteModal = ({
                 }
               />
               <p className="mt-2 text-sm font-semibold leading-6 text-blue-700/80">
-                Người dùng nhập mã này sẽ tham gia tổ chức ngay, không vào danh
-                sách chờ duyệt.
+                Người dùng nhập mã hoặc truy cập thông qua liên kết này sẽ tham gia tổ chức ngay lập tức mà không cần đợi phê duyệt
               </p>
             </div>
           )}
