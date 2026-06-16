@@ -1,44 +1,11 @@
 import jwt from "jsonwebtoken";
 import User from "../models/User.js";
 import Conversation from "../models/Conversation.js";
-import Call from "../models/Call.js";
 import {
   buildPresencePayload,
   markUserConnected,
   markUserDisconnected,
 } from "../services/presenceService.js";
-import { applyCallHeartbeat } from "../utils/callPolicy.js";
-import {
-  getConversationParticipantUserRoomName,
-  getConversationRoomName,
-} from "../utils/conversationRealtime.js";
-
-const toComparableId = (value) => {
-  if (value == null) return "";
-  return String(value._id || value.id || value);
-};
-
-const joinConversationRooms = (socket, conversationId) => {
-  const targetConversationId = toComparableId(conversationId);
-  const currentUserId = toComparableId(socket.user?._id);
-  if (!targetConversationId || !currentUserId) return;
-
-  socket.join(getConversationRoomName(targetConversationId));
-  socket.join(
-    getConversationParticipantUserRoomName(targetConversationId, currentUserId),
-  );
-};
-
-const leaveConversationRooms = (socket, conversationId) => {
-  const targetConversationId = toComparableId(conversationId);
-  const currentUserId = toComparableId(socket.user?._id);
-  if (!targetConversationId || !currentUserId) return;
-
-  socket.leave(getConversationRoomName(targetConversationId));
-  socket.leave(
-    getConversationParticipantUserRoomName(targetConversationId, currentUserId),
-  );
-};
 
 const emitPresenceChanged = async (io, userId) => {
   const freshUser = await User.findById(userId).select(
@@ -76,7 +43,6 @@ export const setupSocket = (io) => {
         return next(new Error("User not found"));
       }
       socket.user = user;
-      socket.data.userId = toComparableId(user._id);
       next();
     } catch (error) {
       next(new Error("Invalid token"));
@@ -94,7 +60,9 @@ export const setupSocket = (io) => {
         "participants.userId": socket.user._id,
       }).select("_id");
 
-      conversations.forEach((conv) => joinConversationRooms(socket, conv._id));
+      conversations.forEach((conv) => {
+        socket.join(`conversation:${conv._id}`);
+      });
 
       if (becameOnline) {
         await emitPresenceChanged(io, socket.user._id);
@@ -104,27 +72,13 @@ export const setupSocket = (io) => {
     }
 
     // Join a specific conversation room (when user opens a conversation)
-    socket.on("join_conversation", async (conversationId) => {
-      try {
-        const conversation = await Conversation.findById(conversationId).select(
-          "participants",
-        );
-        if (!conversation) return;
-
-        const isMember = conversation.participants.some(
-          (p) => p.userId.toString() === socket.user._id.toString()
-        );
-        if (!isMember) return;
-
-        joinConversationRooms(socket, conversation._id);
-      } catch (error) {
-        console.error("Join conversation error:", error.message);
-      }
+    socket.on("join_conversation", (conversationId) => {
+      socket.join(`conversation:${conversationId}`);
     });
 
     // Leave a specific conversation room
     socket.on("leave_conversation", (conversationId) => {
-      leaveConversationRooms(socket, conversationId);
+      socket.leave(`conversation:${conversationId}`);
     });
 
     // #65 - Typing status: báo hiệu đang gõ / ngừng gõ
@@ -148,41 +102,6 @@ export const setupSocket = (io) => {
         });
       } catch (error) {
         console.error("Typing status error:", error.message);
-      }
-    });
-
-    socket.on("call_heartbeat", async ({ callId } = {}, acknowledge) => {
-      try {
-        if (!callId) {
-          acknowledge?.({ ok: false, reason: "missing_call_id" });
-          return;
-        }
-
-        const call = await Call.findOne({
-          _id: callId,
-          status: { $in: ["connecting", "active"] },
-          "participants.userId": socket.user._id,
-        });
-        if (!call) {
-          acknowledge?.({ ok: false, reason: "call_not_found" });
-          return;
-        }
-
-        const { participants, updated } = applyCallHeartbeat(
-          call.participants,
-          socket.user._id,
-          new Date(),
-        );
-        if (!updated) {
-          acknowledge?.({ ok: false, reason: "participant_not_found" });
-          return;
-        }
-
-        await Call.findByIdAndUpdate(call._id, { $set: { participants } });
-        acknowledge?.({ ok: true });
-      } catch (error) {
-        console.error("Call socket heartbeat error:", error.message);
-        acknowledge?.({ ok: false, reason: "server_error" });
       }
     });
 

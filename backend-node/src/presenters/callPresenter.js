@@ -11,15 +11,12 @@ import {
   releaseUserLock,
 } from "../services/callLockService.js";
 import { isUserOnline } from "../services/presenceService.js";
-import {
-  applyCallHeartbeat,
-  isCallHeartbeatStale,
-} from "../utils/callPolicy.js";
 
 const PREPARING_TIMEOUT_MS = 15000;
 const RINGING_TIMEOUT_MS = 30000;
 const ANSWERING_TIMEOUT_MS = 15000;
 const CONNECTING_TIMEOUT_MS = 45000;
+const HEARTBEAT_STALE_MS = 30000;
 const RECONCILE_INTERVAL_MS = 10000;
 
 const TERMINAL_STATUSES = new Set([
@@ -707,11 +704,10 @@ export const heartbeatCall = async (req, res) => {
     return res.status(200).json({ call: serializeCall(call) });
   }
 
-  const { participants } = applyCallHeartbeat(
-    call.participants,
-    req.user._id,
-    new Date(),
-  );
+  const { participants } = updateParticipant(call.participants, req.user._id, {
+    lastHeartbeatAt: new Date(),
+    disconnectedAt: null,
+  });
   const updated = await Call.findByIdAndUpdate(
     call._id,
     { $set: { participants } },
@@ -768,16 +764,10 @@ export const reconcileStaleCalls = async () => {
       await completeCall(call, "failed", "join_timeout");
     } else if (call.status === "active") {
       const staleParticipant = (call.participants || []).find((participant) => {
-        return isCallHeartbeatStale(participant.lastHeartbeatAt, now);
+        if (!participant.lastHeartbeatAt) return false;
+        return now.getTime() - new Date(participant.lastHeartbeatAt).getTime() > HEARTBEAT_STALE_MS;
       });
       if (staleParticipant) {
-        console.warn("Call reconciler ending stale active call", {
-          callId: toId(call._id),
-          userId: toId(staleParticipant.userId),
-          lastHeartbeatAt: staleParticipant.lastHeartbeatAt,
-          staleMs:
-            now.getTime() - new Date(staleParticipant.lastHeartbeatAt).getTime(),
-        });
         await completeCall(call, "ended", "network_disconnect");
       }
     }

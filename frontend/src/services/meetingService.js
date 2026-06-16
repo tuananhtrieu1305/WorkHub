@@ -1,16 +1,10 @@
 import api from "../api/axiosClient";
 
-export const createMeeting = async ({
-  title,
-  projectId,
-  departmentId,
-  enableAiSummary,
-} = {}) => {
+export const createMeeting = async ({ title, projectId, departmentId } = {}) => {
   const { data } = await api.post("/meetings", {
     title,
     projectId,
     departmentId,
-    enableAiSummary,
   });
   return data;
 };

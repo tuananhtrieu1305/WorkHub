@@ -1,11 +1,8 @@
 import mongoose from "mongoose";
 import Meeting from "../models/Meeting.js";
-import MeetingSummary from "../models/MeetingSummary.js";
 import ApiError from "../utils/apiError.js";
 import { logActivity } from "../services/activityLogService.js";
 import { getRealtimeMeetingService } from "../services/realtimeMeetingService.js";
-import { scheduleMeetingRecordingSummary } from "../services/meetingAiSummaryService.js";
-import { getRequestOrganizationId } from "../utils/organizationScope.js";
 
 const DEFAULT_PAGE = 1;
 const DEFAULT_LIMIT = 20;
@@ -33,12 +30,6 @@ const parseLimit = (value) => {
 
 const toId = (value) => String(value?._id || value || "");
 
-const parseBooleanInput = (value, fallback = false) => {
-  if (value === undefined || value === null || value === "") return fallback;
-  if (typeof value === "boolean") return value;
-  return ["1", "true", "yes", "on"].includes(String(value).toLowerCase());
-};
-
 const isAdmin = (user) => user?.role === "admin";
 
 const isOwnerOrHost = (user, meeting) => {
@@ -48,13 +39,7 @@ const isOwnerOrHost = (user, meeting) => {
   );
 };
 
-const hasJoinedParticipant = (user, meeting) => {
-  const userId = toId(user);
-  return (meeting?.participants || []).some(
-    (participant) => toId(participant.userId) === userId && participant.joinedAt,
-  );
-};
-
+// Centralize meeting access rules so project/department permissions can be added here later.
 const buildActiveMeetingConditions = () => [
   { status: "active" },
   { status: { $exists: false }, endedAt: null },
@@ -72,22 +57,11 @@ const getMeetingStatus = (meeting) => {
 
 const isSystemVisibleMeeting = (meeting) => isActiveMeeting(meeting);
 
-const isInReadableOrganization = (user, meeting) => {
-  const meetingOrganizationId = toId(meeting?.organizationId);
-  if (!meetingOrganizationId) return true;
-  return toId(user?.activeOrganizationId) === meetingOrganizationId;
-};
-
 const canReadMeeting = (user, meeting) =>
-  isInReadableOrganization(user, meeting) &&
-  (isAdmin(user) ||
-    isOwnerOrHost(user, meeting) ||
-    hasJoinedParticipant(user, meeting) ||
-    isSystemVisibleMeeting(meeting));
+  isAdmin(user) || isOwnerOrHost(user, meeting) || isSystemVisibleMeeting(meeting);
 
 const buildReadableMeetingQuery = (user, filters = {}) => {
-  const organizationId = toId(user?.activeOrganizationId);
-  const query = organizationId ? { organizationId } : {};
+  const query = {};
 
   if (filters.status === "active") {
     query.$or = buildActiveMeetingConditions();
@@ -106,49 +80,18 @@ const buildReadableMeetingQuery = (user, filters = {}) => {
   if (!isAdmin(user) && filters.status !== "active") {
     const userId = toId(user);
     query.$or = filters.status
-      ? [
-          { createdBy: userId },
-          { hostUserId: userId },
-          { participants: { $elemMatch: { userId, joinedAt: { $ne: null } } } },
-        ]
+      ? [{ createdBy: userId }, { hostUserId: userId }]
       : [
           ...buildActiveMeetingConditions(),
           { createdBy: userId },
           { hostUserId: userId },
-          { participants: { $elemMatch: { userId, joinedAt: { $ne: null } } } },
         ];
   }
 
   return query;
 };
 
-export const __meetingPresenterTestables = {
-  buildReadableMeetingQuery,
-  canReadMeeting,
-};
-
-const serializeMeetingSummary = (summary, { includeTranscript = false } = {}) => {
-  if (!summary) return null;
-  const data = summary?.toObject ? summary.toObject() : summary;
-
-  return {
-    id: toId(data._id),
-    meetingId: toId(data.meetingId),
-    status: data.status || "processing",
-    title: data.title || "",
-    summary: data.summary || "",
-    decisions: data.decisions || [],
-    actionItems: data.actionItems || [],
-    followUps: data.followUps || [],
-    recordingUrl: includeTranscript ? data.recordingUrl || "" : undefined,
-    transcript: includeTranscript ? data.transcript || "" : undefined,
-    errorMessage: data.errorMessage || "",
-    createdAt: data.createdAt || null,
-    updatedAt: data.updatedAt || null,
-  };
-};
-
-const serializeMeeting = (meeting, { summary = null } = {}) => {
+const serializeMeeting = (meeting) => {
   const data = meeting?.toObject ? meeting.toObject() : meeting;
   if (!data) return null;
 
@@ -158,39 +101,14 @@ const serializeMeeting = (meeting, { summary = null } = {}) => {
     cloudflareMeetingId: data.cloudflareMeetingId,
     createdBy: toId(data.createdBy) || null,
     hostUserId: toId(data.hostUserId) || null,
-    organizationId: toId(data.organizationId) || null,
     status: getMeetingStatus(data),
     projectId: data.projectId ? toId(data.projectId) : null,
     departmentId: data.departmentId ? toId(data.departmentId) : null,
-    aiSummaryEnabled: data.aiSummaryEnabled ?? Boolean(summary),
     startedAt: data.startedAt || null,
     endedAt: data.endedAt || null,
     createdAt: data.createdAt,
     updatedAt: data.updatedAt,
-    summaryStatus: summary?.status || null,
-    summaryId: summary?._id ? toId(summary._id) : null,
   };
-};
-
-const attachMeetingSummaryStates = async (meetings) => {
-  const ids = meetings.map((meeting) => meeting._id).filter(Boolean);
-  if (!ids.length) return meetings.map((meeting) => serializeMeeting(meeting));
-  if (process.env.NODE_ENV === "test" && mongoose.connection.readyState !== 1) {
-    return meetings.map((meeting) => serializeMeeting(meeting));
-  }
-
-  const summaries = await MeetingSummary.find({ meetingId: { $in: ids } })
-    .select("_id meetingId status errorMessage updatedAt")
-    .lean();
-  const summariesByMeetingId = new Map(
-    summaries.map((summary) => [toId(summary.meetingId), summary]),
-  );
-
-  return meetings.map((meeting) =>
-    serializeMeeting(meeting, {
-      summary: summariesByMeetingId.get(toId(meeting._id)),
-    }),
-  );
 };
 
 const serializeParticipant = (participant) => ({
@@ -279,9 +197,6 @@ const endMeetingDocument = async (meeting) => {
   );
 
   emitMeetingEvent("meeting_ended", updated || meeting);
-  if ((updated || meeting)?.aiSummaryEnabled) {
-    scheduleMeetingRecordingSummary(updated || meeting);
-  }
   return updated || meeting;
 };
 
@@ -374,7 +289,6 @@ const logMeetingActivity = async ({ req, action, meeting, metadata = {} }) => {
     action,
     entityType: "meeting",
     entityId: meeting?._id,
-    organizationId: meeting?.organizationId || getRequestOrganizationId(req),
     projectId: meeting?.projectId || null,
     departmentId: meeting?.departmentId || null,
     metadata,
@@ -395,16 +309,14 @@ const callRealtimeProvider = async (operation, safeMessage) => {
 };
 
 export const createMeeting = async (req, res) => {
-  const organizationId = getRequestOrganizationId(req) || null;
   const title = String(req.body?.title || "WorkHub meeting").trim();
   if (!title) {
     throw new ApiError(400, "Meeting title is required");
   }
-  const enableAiSummary = parseBooleanInput(req.body?.enableAiSummary, false);
 
   const realtimeService = getRealtimeMeetingService();
   const cloudflareMeeting = await callRealtimeProvider(
-    () => realtimeService.createMeeting({ title, enableAiSummary }),
+    () => realtimeService.createMeeting({ title }),
     "Unable to create realtime meeting",
   );
   const cloudflareMeetingId = cloudflareMeeting?.id;
@@ -426,12 +338,10 @@ export const createMeeting = async (req, res) => {
   const meeting = await Meeting.create({
     title,
     cloudflareMeetingId,
-    organizationId,
     createdBy: req.user._id,
     hostUserId: req.user._id,
     projectId: req.body?.projectId || null,
     departmentId: req.body?.departmentId || null,
-    aiSummaryEnabled: enableAiSummary,
     status: "active",
     startedAt: new Date(),
     participants: [
@@ -447,7 +357,7 @@ export const createMeeting = async (req, res) => {
     req,
     action: "meeting.created",
     meeting,
-    metadata: { title, enableAiSummary },
+    metadata: { title },
   });
   emitMeetingEvent("meeting_created", meeting);
 
@@ -517,15 +427,7 @@ export const markMeetingJoined = async (req, res) => {
 
 export const getMeeting = async (req, res) => {
   const meeting = await loadMeetingForUser(req.params.id, req.user);
-  const summary =
-    process.env.NODE_ENV === "test" && mongoose.connection.readyState !== 1
-      ? null
-      : await MeetingSummary.findOne({ meetingId: meeting._id });
-
-  return res.status(200).json({
-    meeting: serializeMeeting(meeting, { summary }),
-    summary: serializeMeetingSummary(summary, { includeTranscript: true }),
-  });
+  return res.status(200).json({ meeting: serializeMeeting(meeting) });
 };
 
 export const listMeetings = async (req, res) => {
@@ -542,7 +444,7 @@ export const listMeetings = async (req, res) => {
   ]);
 
   return res.status(200).json({
-    content: await attachMeetingSummaryStates(meetings),
+    content: meetings.map(serializeMeeting),
     page,
     limit,
     totalElements,

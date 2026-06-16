@@ -10,11 +10,6 @@ const requiredEnv = (name) => {
   return value;
 };
 
-const parseBooleanEnv = (value, fallback = false) => {
-  if (value === undefined || value === null || value === "") return fallback;
-  return ["1", "true", "yes", "on"].includes(String(value).toLowerCase());
-};
-
 export class RealtimeMeetingService {
   constructor() {
     this.accountId = requiredEnv("CLOUDFLARE_REALTIME_ACCOUNT_ID");
@@ -33,57 +28,18 @@ export class RealtimeMeetingService {
     };
   }
 
-  buildAiMeetingConfig({
-    recordOnStart = parseBooleanEnv(
-      process.env.CLOUDFLARE_REALTIME_RECORD_ON_START,
-      true,
-    ),
-    language = process.env.CLOUDFLARE_REALTIME_TRANSCRIPTION_LANGUAGE || "vi",
-    wordLimit = Number.parseInt(
-      process.env.CLOUDFLARE_REALTIME_SUMMARY_WORD_LIMIT || "500",
-      10,
-    ),
-    textFormat = process.env.CLOUDFLARE_REALTIME_SUMMARY_TEXT_FORMAT || "markdown",
-    summaryType =
-      process.env.CLOUDFLARE_REALTIME_SUMMARY_TYPE || "team_meeting",
-  } = {}) {
-    return {
-      record_on_start: recordOnStart,
-      transcribe_on_end: true,
-      summarize_on_end: true,
-      ai_config: {
-        transcription: {
-          language,
-        },
-        summarization: {
-          word_limit: Number.isFinite(wordLimit) ? wordLimit : 500,
-          text_format: textFormat,
-          summary_type: summaryType,
-        },
-      },
-    };
-  }
-
-  async createMeeting({ title, enableAiSummary = false, aiConfig = {} }) {
-    const body = {
-      title: title || "WorkHub meeting",
-      ...(enableAiSummary ? this.buildAiMeetingConfig(aiConfig) : {}),
-    };
-
+  async createMeeting({ title }) {
     const response = await fetch(`${this.baseUrl}/meetings`, {
       method: "POST",
       headers: this.headers,
-      body: JSON.stringify(body),
+      body: JSON.stringify({
+        title: title || "WorkHub meeting",
+      }),
     });
 
     const json = await response.json().catch(() => ({}));
     if (!response.ok || json.success === false) {
-      throw new ApiError(
-        502,
-        json?.errors?.[0]?.message ||
-          json?.error?.message ||
-          "Unable to create realtime meeting",
-      );
+      throw new ApiError(502, "Unable to create realtime meeting");
     }
 
     return json.result || json.data;
@@ -177,28 +133,6 @@ export class RealtimeMeetingService {
     }
 
     return json.result || json.data;
-  }
-
-  async listRecordings({ meetingId, status = [], perPage = 5 } = {}) {
-    const params = new URLSearchParams();
-    if (meetingId) params.set("meeting_id", meetingId);
-    if (perPage) params.set("per_page", String(perPage));
-    status.forEach((item) => params.append("status", item));
-
-    const response = await fetch(`${this.baseUrl}/recordings?${params.toString()}`, {
-      method: "GET",
-      headers: this.headers,
-    });
-
-    const json = await response.json().catch(() => ({}));
-    if (!response.ok || json.success === false) {
-      throw new ApiError(
-        502,
-        json?.errors?.[0]?.message || "Unable to fetch realtime meeting recordings",
-      );
-    }
-
-    return json.result || json.data || [];
   }
 }
 
