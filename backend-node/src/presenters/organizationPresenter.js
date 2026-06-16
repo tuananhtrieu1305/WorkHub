@@ -747,6 +747,60 @@ export const getOrganizationOverview = async (req, res) => {
   res.json(await buildOrganizationDashboard(req.params.id));
 };
 
+const buildOrganizationRoleListPayload = async (
+  context,
+  roles = context?.roles || [],
+  search = "",
+) => {
+  const { membership, organization } = context;
+  const scopedContext = { ...context, roles };
+  const canManageRoles = hasOrganizationPermission(membership, "manageRoles");
+  const roleIds = roles.map((role) => role._id);
+  const organizationId = organization?._id || roles[0]?.organizationId;
+  const countRows =
+    roleIds.length && organizationId
+      ? await OrganizationMember.aggregate([
+          {
+            $match: {
+              organizationId,
+              status: "active",
+              roleId: { $in: roleIds },
+              userId: { $ne: organization?.ownerId || null },
+            },
+          },
+          { $group: { _id: "$roleId", count: { $sum: 1 } } },
+        ])
+      : [];
+  const memberCountMap = new Map(
+    countRows.map((row) => [toId(row._id), Number(row.count || 0)]),
+  );
+  const normalizedSearch = String(search || "").trim().toLowerCase();
+  const visibleRoles = normalizedSearch
+    ? roles.filter((role) => {
+        const doc = role.toObject?.() || role;
+        return [doc.name, doc.key, doc.description].some((value) =>
+          String(value || "").toLowerCase().includes(normalizedSearch),
+        );
+      })
+    : roles;
+
+  return {
+    content: visibleRoles.map((role) => {
+      const canManage = canManageRoleInHierarchy(scopedContext, role);
+      return {
+        ...serializeOrganizationRole({
+          ...(role.toObject?.() || role),
+          memberCount: memberCountMap.get(toId(role._id)) || 0,
+        }),
+        canManage,
+        canReorder: canManage,
+      };
+    }),
+    canManageRoles,
+    permissionKeys: ORGANIZATION_PERMISSION_KEYS,
+  };
+};
+
 export const getOrganizationRoleList = async (req, res) => {
   const context = await getMembershipWithPermissions(req.params.id, req.user._id);
   const membership = context?.membership;
@@ -760,50 +814,13 @@ export const getOrganizationRoleList = async (req, res) => {
     throw new ApiError(403, "You cannot view organization roles");
   }
 
-  const { roles, organization } = context;
-  const canManageRoles = hasOrganizationPermission(membership, "manageRoles");
-  const roleIds = roles.map((role) => role._id);
-  const countRows = roleIds.length
-    ? await OrganizationMember.aggregate([
-        {
-          $match: {
-            organizationId: roles[0]?.organizationId,
-            status: "active",
-            roleId: { $in: roleIds },
-            userId: { $ne: organization?.ownerId || null },
-          },
-        },
-        { $group: { _id: "$roleId", count: { $sum: 1 } } },
-      ])
-    : [];
-  const memberCountMap = new Map(
-    countRows.map((row) => [toId(row._id), Number(row.count || 0)]),
+  res.json(
+    await buildOrganizationRoleListPayload(
+      context,
+      context.roles,
+      req.query.search || req.query.q,
+    ),
   );
-  const search = String(req.query.search || req.query.q || "").trim().toLowerCase();
-  const visibleRoles = search
-    ? roles.filter((role) => {
-        const doc = role.toObject?.() || role;
-        return [doc.name, doc.key, doc.description].some((value) =>
-          String(value || "").toLowerCase().includes(search),
-        );
-      })
-    : roles;
-
-  res.json({
-    content: visibleRoles.map((role) => {
-      const canManage = canManageRoleInHierarchy(context, role);
-      return {
-        ...serializeOrganizationRole({
-          ...(role.toObject?.() || role),
-          memberCount: memberCountMap.get(toId(role._id)) || 0,
-        }),
-        canManage,
-        canReorder: canManage,
-      };
-    }),
-    canManageRoles,
-    permissionKeys: ORGANIZATION_PERMISSION_KEYS,
-  });
 };
 
 export const createOrganizationRole = async (req, res) => {
@@ -1000,7 +1017,12 @@ export const reorderOrganizationRoles = async (req, res) => {
   );
 
   const updatedRoles = await getOrganizationRoles(req.params.id);
-  res.json({ content: updatedRoles.map(serializeOrganizationRole) });
+  res.json(
+    await buildOrganizationRoleListPayload(
+      { ...context, roles: updatedRoles },
+      updatedRoles,
+    ),
+  );
 };
 
 const getOrganizationRoleById = async (organizationId, roleId) => {

@@ -480,10 +480,16 @@ export const useOrganizationWorkspace = () => {
 
       setRoles(nextRoles);
       try {
-        await reorderOrganizationRoles(
+        const payload = await reorderOrganizationRoles(
           organizationId,
           nextRoles.map((role) => role.id).filter(Boolean),
         );
+        if (payload?.content?.length) {
+          setRoles(payload.content);
+        }
+        if (payload?.permissionKeys?.length) {
+          setPermissionKeys(payload.permissionKeys);
+        }
       } catch (error) {
         console.error("Failed to reorder organization roles:", error);
         message.error(getErrorMessage(error, "Không thể sắp xếp vai trò"), {

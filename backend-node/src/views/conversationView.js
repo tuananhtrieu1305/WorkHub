@@ -3,7 +3,9 @@ import {
   getConversations,
   createConversation,
   getConversationById,
+  getConversationDetail,
   updateConversation,
+  updateConversationSettings,
   deleteConversation,
   addConversationMember,
   removeConversationMember,
@@ -32,8 +34,10 @@ const router = express.Router();
 
 router.get("/", protect, getConversations);
 router.post("/", protect, createConversation);
+router.get("/:id/detail", protect, getConversationDetail);
 router.get("/:id", protect, getConversationById);
 router.put("/:id", protect, updateConversation);
+router.patch("/:id/settings", protect, updateConversationSettings);
 router.delete("/:id", protect, deleteConversation);
 router.post("/:id/members", protect, addConversationMember);
 router.delete("/:id/members/:userId", protect, removeConversationMember);

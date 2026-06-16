@@ -22,8 +22,24 @@ export const getConversationActivityTime = (conversation) => {
   );
 };
 
+const getConversationPinnedTime = (conversation) =>
+  toTimestamp(conversation?.currentParticipant?.pinnedAt);
+
 export const sortConversationsByActivity = (conversations = []) => {
   return [...conversations].sort((a, b) => {
+    const aPinned = Boolean(a?.currentParticipant?.isPinned);
+    const bPinned = Boolean(b?.currentParticipant?.isPinned);
+
+    if (aPinned !== bPinned) {
+      return aPinned ? -1 : 1;
+    }
+
+    if (aPinned && bPinned) {
+      const pinnedDiff =
+        getConversationPinnedTime(a) - getConversationPinnedTime(b);
+      if (pinnedDiff !== 0) return pinnedDiff;
+    }
+
     const timeDiff =
       getConversationActivityTime(b) - getConversationActivityTime(a);
     if (timeDiff !== 0) return timeDiff;

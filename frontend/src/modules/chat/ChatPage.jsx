@@ -697,6 +697,29 @@ const ChatPage = () => {
       );
     };
 
+    const handleSocketConversationUpdated = (updatedConversation) => {
+      if (!isActiveOrganizationEvent({ conversation: updatedConversation })) {
+        return;
+      }
+      const updatedConversationId = getConversationId(updatedConversation);
+      if (!updatedConversationId) return;
+
+      setConversations((prev) =>
+        mergeConversationUpdate(prev, updatedConversation, {
+          preserveUnread: true,
+        })
+      );
+      setSelectedConversation((prev) => {
+        if (!prev || getConversationId(prev) !== updatedConversationId) {
+          return prev;
+        }
+        return {
+          ...prev,
+          ...updatedConversation,
+        };
+      });
+    };
+
     const handleReactionAdded = (event) => {
       if (!isActiveOrganizationEvent(event)) return;
       applyMessageUpdate(event.conversationId, (prev) =>
@@ -734,6 +757,7 @@ const ChatPage = () => {
     socket.on("new_message", handleNewMessage);
     socket.on("message_updated", handleMessageUpdated);
     socket.on("message_deleted", handleMessageDeleted);
+    socket.on("conversation_updated", handleSocketConversationUpdated);
     socket.on("reaction_added", handleReactionAdded);
     socket.on("reaction_removed", handleReactionRemoved);
     socket.on("user_typing", handleUserTyping);
@@ -743,6 +767,7 @@ const ChatPage = () => {
       socket.off("new_message", handleNewMessage);
       socket.off("message_updated", handleMessageUpdated);
       socket.off("message_deleted", handleMessageDeleted);
+      socket.off("conversation_updated", handleSocketConversationUpdated);
       socket.off("reaction_added", handleReactionAdded);
       socket.off("reaction_removed", handleReactionRemoved);
       socket.off("user_typing", handleUserTyping);
@@ -1753,6 +1778,24 @@ const ChatPage = () => {
     navigate(`/messages/${getConversationId(nextConversation)}`);
   };
 
+  const handleConversationUpdated = useCallback((updatedConversation) => {
+    const updatedConversationId = getConversationId(updatedConversation);
+    if (!updatedConversationId) return;
+
+    setConversations((prev) =>
+      mergeConversationUpdate(prev, updatedConversation, {
+        preserveUnread: true,
+      })
+    );
+    setSelectedConversation((prev) => {
+      if (!prev || getConversationId(prev) !== updatedConversationId) return prev;
+      return {
+        ...prev,
+        ...updatedConversation,
+      };
+    });
+  }, []);
+
   const activeConversation =
     selectedConversationId &&
     getConversationId(selectedConversation) === selectedConversationId
@@ -1853,6 +1896,7 @@ const ChatPage = () => {
             currentUserId={user?._id || user?.id}
             className="flex w-80 rounded-2xl border border-slate-200 bg-white shadow-sm xl:w-[20rem] 2xl:w-80"
             onClose={() => setShowDetail(false)}
+            onConversationUpdated={handleConversationUpdated}
           />
         </div>
       )}
@@ -1871,6 +1915,7 @@ const ChatPage = () => {
             currentUserId={user?._id || user?.id}
             className="chat-detail-drawer fixed bottom-3 right-3 top-[4.75rem] z-50 flex rounded-2xl border border-slate-200 bg-white shadow-2xl xl:hidden"
             onClose={() => setShowMobileDetail(false)}
+            onConversationUpdated={handleConversationUpdated}
           />
         </>
       )}

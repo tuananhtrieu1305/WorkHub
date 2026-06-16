@@ -434,7 +434,7 @@ const OrganizationRoleModal = ({
                           disabled={disabled}
                           label={permissionLabels[key] || key}
                           description={permissionDescriptions[key]}
-                          className="min-h-20 w-full justify-start px-4 py-3 ring-1 ring-slate-200"
+                          className="min-h-24 w-full px-4 py-3"
                           onChange={(nextChecked) =>
                             updatePermission(key, nextChecked)
                           }

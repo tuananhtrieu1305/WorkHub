@@ -107,10 +107,25 @@ const ALLOWED_AUDIO_MIMES = new Set([
 ]);
 const MESSAGE_USER_SELECT =
   "_id fullName avatar activityStatus activityStatusExpiresAt";
+const DETAIL_SECTION_LIMIT = 50;
+const URL_PATTERN = /\bhttps?:\/\/[^\s<>"')]+/gi;
+const URL_QUERY_PATTERN = /https?:\/\//i;
+const MUTE_DURATION_MS = {
+  "1h": 60 * 60 * 1000,
+  "8h": 8 * 60 * 60 * 1000,
+  "24h": 24 * 60 * 60 * 1000,
+  "7d": 7 * 24 * 60 * 60 * 1000,
+};
 
 const normalizeString = (value, maxLength = 1000) => {
   if (typeof value !== "string") return "";
   return value.trim().slice(0, maxLength);
+};
+
+const normalizeNullableDate = (value) => {
+  if (!value) return null;
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date;
 };
 
 const normalizePositiveNumber = (value) => {
@@ -332,6 +347,50 @@ const getCurrentParticipant = (conversation, userId) => {
 const getConversationActivityAt = (conversation) => {
   return conversation.lastMessage?.createdAt || conversation.createdAt;
 };
+
+const toTimestamp = (value) => {
+  const time = new Date(value || 0).getTime();
+  return Number.isFinite(time) ? time : 0;
+};
+
+const sortConversationsForUser = (conversations = [], userId) =>
+  [...conversations].sort((a, b) => {
+    const aParticipant = getCurrentParticipant(a, userId);
+    const bParticipant = getCurrentParticipant(b, userId);
+    const aPinned = Boolean(aParticipant?.isPinned);
+    const bPinned = Boolean(bParticipant?.isPinned);
+
+    if (aPinned !== bPinned) return aPinned ? -1 : 1;
+
+    if (aPinned && bPinned) {
+      const pinnedDiff =
+        toTimestamp(aParticipant?.pinnedAt) - toTimestamp(bParticipant?.pinnedAt);
+      if (pinnedDiff !== 0) return pinnedDiff;
+    }
+
+    const activityDiff =
+      toTimestamp(getConversationActivityAt(b)) -
+      toTimestamp(getConversationActivityAt(a));
+    if (activityDiff !== 0) return activityDiff;
+
+    return toComparableId(b._id).localeCompare(toComparableId(a._id));
+  });
+
+const isParticipantMuted = (participant, now = new Date()) => {
+  if (!participant) return false;
+  if (participant.mutedIndefinitely) return true;
+  const mutedUntil = normalizeNullableDate(participant.mutedUntil);
+  return Boolean(mutedUntil && mutedUntil > now);
+};
+
+const formatParticipantSettings = (participant) => ({
+  nickname: participant?.nickname || "",
+  isPinned: Boolean(participant?.isPinned),
+  pinnedAt: participant?.pinnedAt || null,
+  mutedUntil: participant?.mutedUntil || null,
+  mutedIndefinitely: Boolean(participant?.mutedIndefinitely),
+  isMuted: isParticipantMuted(participant),
+});
 
 const formatConversationUser = (user, includeEmail = false) => {
   if (!user) return null;
@@ -976,6 +1035,35 @@ const emitPersonalizedNewMessage = async (
   );
 };
 
+const emitPersonalizedConversationUpdated = async (conversation) => {
+  if (!ioInstance) return;
+
+  await Promise.all(
+    (conversation.participants || []).map(async (participant) => {
+      const participantUserId = participant.userId;
+      const participantUserRoom = getOrganizationUserRoomName(
+        conversation.organizationId,
+        participantUserId,
+      );
+      const conversationParticipantRoom =
+        getConversationParticipantUserRoomName(
+          conversation._id || conversation.id,
+          participantUserId,
+          conversation.organizationId,
+        );
+      const conversationData = await formatConversation(conversation, {
+        includeEmail: true,
+        includeLastRead: true,
+        currentUserId: participantUserId,
+      });
+
+      ioInstance
+        .to([participantUserRoom, conversationParticipantRoom].filter(Boolean))
+        .emit("conversation_updated", conversationData);
+    }),
+  );
+};
+
 const formatConversation = async (
   conversation,
   { includeEmail = false, includeLastRead = false, currentUserId = null } = {},
@@ -993,6 +1081,9 @@ const formatConversation = async (
       };
     }),
   );
+  const currentParticipant = currentUserId
+    ? getCurrentParticipant(conversation, currentUserId)
+    : null;
   const unreadState = currentUserId
     ? await getConversationUnreadState(conversation, currentUserId)
     : { hasUnread: false, lastMessageId: null };
@@ -1007,6 +1098,7 @@ const formatConversation = async (
     type: conversation.type,
     name: conversation.name,
     avatar: conversation.avatar,
+    currentParticipant: formatParticipantSettings(currentParticipant),
     participants: participantDetails,
     lastMessage: lastMessageId
       ? { ...preview, id: lastMessageId, messageId: lastMessageId }
@@ -1016,6 +1108,120 @@ const formatConversation = async (
     createdAt: conversation.createdAt,
     lastActivityAt: getConversationActivityAt(conversation),
     updatedAt: conversation.updatedAt,
+  };
+};
+
+const isMediaAttachment = (attachment = {}) => {
+  const kind = String(attachment.kind || "").toLowerCase();
+  const mimeType = getBaseMimeType(attachment.mimeType || "");
+  return (
+    kind === "image" ||
+    kind === "video" ||
+    mimeType.startsWith("image/") ||
+    mimeType.startsWith("video/")
+  );
+};
+
+const formatSharedAttachmentItems = (messages = [], filterFn) =>
+  messages.flatMap((message) =>
+    (message.attachments || [])
+      .filter(filterFn)
+      .map((attachment, index) => ({
+        id: `${toComparableId(message.id)}:${index}`,
+        messageId: message.id,
+        sender: message.sender,
+        createdAt: message.createdAt,
+        fileName: attachment.fileName || "",
+        fileUrl: attachment.fileUrl || "",
+        storageKey: attachment.storageKey || "",
+        fileSize: attachment.fileSize || 0,
+        mimeType: attachment.mimeType || "",
+        kind: attachment.kind || "file",
+      })),
+  );
+
+const cleanExtractedUrl = (url = "") =>
+  String(url).replace(/[.,;:!?]+$/g, "").slice(0, 2048);
+
+const formatSharedLinkItems = (messages = []) =>
+  messages.flatMap((message) => {
+    const matches = String(message.content || "").match(URL_PATTERN) || [];
+    return matches.map((url, index) => {
+      const href = cleanExtractedUrl(url);
+      return {
+        id: `${toComparableId(message.id)}:link:${index}`,
+        messageId: message.id,
+        sender: message.sender,
+        createdAt: message.createdAt,
+        url: href,
+        title: href.replace(/^https?:\/\//i, ""),
+        contentPreview: String(message.content || "").slice(0, 240),
+      };
+    });
+  });
+
+const getConversationDetailData = async (conversation, currentUserId) => {
+  const baseMessageFilter = {
+    conversationId: conversation._id,
+    deletedAt: null,
+  };
+  const [
+    reminderMessages,
+    pollMessages,
+    pinnedMessages,
+    attachmentMessages,
+    linkMessages,
+  ] = await Promise.all([
+    Message.find({ ...baseMessageFilter, type: "reminder" })
+      .sort({ createdAt: -1 })
+      .limit(DETAIL_SECTION_LIMIT),
+    conversation.type === "group"
+      ? Message.find({ ...baseMessageFilter, type: "poll" })
+          .sort({ createdAt: -1 })
+          .limit(DETAIL_SECTION_LIMIT)
+      : Promise.resolve([]),
+    Message.find({ ...baseMessageFilter, isPinned: true })
+      .sort({ pinnedAt: -1, createdAt: -1 })
+      .limit(DETAIL_SECTION_LIMIT),
+    Message.find({ ...baseMessageFilter, "attachments.0": { $exists: true } })
+      .sort({ createdAt: -1 })
+      .limit(DETAIL_SECTION_LIMIT),
+    Message.find({ ...baseMessageFilter, content: URL_QUERY_PATTERN })
+      .sort({ createdAt: -1 })
+      .limit(DETAIL_SECTION_LIMIT),
+  ]);
+
+  const [
+    reminders,
+    polls,
+    formattedPinnedMessages,
+    formattedAttachmentMessages,
+    formattedLinkMessages,
+  ] = await Promise.all([
+    formatMessages(reminderMessages, { currentUserId }),
+    formatMessages(pollMessages, { currentUserId }),
+    formatMessages(pinnedMessages, { currentUserId }),
+    formatMessages(attachmentMessages, { currentUserId }),
+    formatMessages(linkMessages, { currentUserId }),
+  ]);
+
+  return {
+    board: {
+      reminders,
+      polls,
+      pinnedMessages: formattedPinnedMessages,
+    },
+    shared: {
+      media: formatSharedAttachmentItems(
+        formattedAttachmentMessages,
+        isMediaAttachment,
+      ),
+      files: formatSharedAttachmentItems(
+        formattedAttachmentMessages,
+        (attachment) => !isMediaAttachment(attachment),
+      ),
+      links: formatSharedLinkItems(formattedLinkMessages),
+    },
   };
 };
 
@@ -1104,18 +1310,17 @@ export const getConversations = async (req, res) => {
     const pageSize = Math.max(1, parseInt(size));
     const skip = (pageNum - 1) * pageSize;
 
-    const [conversations, totalElements] = await Promise.all([
-      Conversation.find(filter)
-        .sort({ "lastMessage.createdAt": -1, createdAt: -1, _id: -1 })
-        .skip(skip)
-        .limit(pageSize),
-      Conversation.countDocuments(filter),
-    ]);
+    const conversations = await Conversation.find(filter);
+    const totalElements = conversations.length;
+    const pageConversations = sortConversationsForUser(
+      conversations,
+      req.user._id,
+    ).slice(skip, skip + pageSize);
 
     const totalPages = Math.ceil(totalElements / pageSize);
 
     const content = await Promise.all(
-      conversations.map((conv) =>
+      pageConversations.map((conv) =>
         formatConversation(conv, { currentUserId: req.user._id }),
       ),
     );
@@ -1287,6 +1492,127 @@ export const getConversationById = async (req, res) => {
   }
 };
 
+// GET /conversations/:id/detail
+export const getConversationDetail = async (req, res) => {
+  try {
+    const conversation = await getConversationForRequest(req);
+    if (!conversation) {
+      return res.status(404).json({ message: "Conversation not found" });
+    }
+
+    if (!isParticipant(conversation, req.user._id)) {
+      return res
+        .status(403)
+        .json({ message: "You are not a participant of this conversation" });
+    }
+
+    const [conversationData, detailData] = await Promise.all([
+      formatConversation(conversation, {
+        includeEmail: true,
+        includeLastRead: true,
+        currentUserId: req.user._id,
+      }),
+      getConversationDetailData(conversation, req.user._id),
+    ]);
+
+    res.status(200).json({
+      conversation: conversationData,
+      ...detailData,
+    });
+  } catch (error) {
+    console.error("GetConversationDetail error:", error.message);
+    if (error.kind === "ObjectId") {
+      return res.status(400).json({ message: "Invalid conversation ID" });
+    }
+    res.status(500).json({ message: "Server error, please try again" });
+  }
+};
+
+const applyMuteSettings = (participant, body = {}) => {
+  if (
+    !Object.prototype.hasOwnProperty.call(body, "muteDuration") &&
+    !Object.prototype.hasOwnProperty.call(body, "mutedUntil") &&
+    !Object.prototype.hasOwnProperty.call(body, "mutedIndefinitely")
+  ) {
+    return;
+  }
+
+  const duration = normalizeString(body.muteDuration, 24);
+  if (["off", "none", "0", "false"].includes(duration)) {
+    participant.mutedUntil = null;
+    participant.mutedIndefinitely = false;
+    return;
+  }
+
+  if (duration === "forever" || body.mutedIndefinitely === true) {
+    participant.mutedUntil = null;
+    participant.mutedIndefinitely = true;
+    return;
+  }
+
+  if (duration && MUTE_DURATION_MS[duration]) {
+    participant.mutedUntil = new Date(Date.now() + MUTE_DURATION_MS[duration]);
+    participant.mutedIndefinitely = false;
+    return;
+  }
+
+  if (Object.prototype.hasOwnProperty.call(body, "mutedUntil")) {
+    participant.mutedUntil = normalizeNullableDate(body.mutedUntil);
+    participant.mutedIndefinitely = false;
+  }
+};
+
+// PATCH /conversations/:id/settings
+export const updateConversationSettings = async (req, res) => {
+  try {
+    const conversation = await getConversationForRequest(req);
+    if (!conversation) {
+      return res.status(404).json({ message: "Conversation not found" });
+    }
+
+    const participant = getCurrentParticipant(conversation, req.user._id);
+    if (!participant) {
+      return res
+        .status(403)
+        .json({ message: "You are not a participant of this conversation" });
+    }
+
+    if (Object.prototype.hasOwnProperty.call(req.body, "isPinned")) {
+      const nextPinned = Boolean(req.body.isPinned);
+      participant.isPinned = nextPinned;
+      participant.pinnedAt = nextPinned
+        ? participant.pinnedAt || new Date()
+        : null;
+    }
+
+    if (Object.prototype.hasOwnProperty.call(req.body, "nickname")) {
+      if (conversation.type !== "private") {
+        return res
+          .status(400)
+          .json({ message: "Nicknames are only available in private chats" });
+      }
+      participant.nickname = normalizeString(req.body.nickname, 80);
+    }
+
+    applyMuteSettings(participant, req.body);
+    await conversation.save();
+
+    res.status(200).json(
+      await formatConversation(conversation, {
+        includeEmail: true,
+        includeLastRead: true,
+        currentUserId: req.user._id,
+      }),
+    );
+  } catch (error) {
+    console.error("UpdateConversationSettings error:", error.message);
+    if (error.kind === "ObjectId") {
+      return res.status(400).json({ message: "Invalid conversation ID" });
+    }
+    res.status(500).json({ message: "Server error, please try again" });
+  }
+};
+
 // PUT /conversations/:id
 export const updateConversation = async (req, res) => {
   try {
@@ -1303,15 +1629,38 @@ export const updateConversation = async (req, res) => {
 
     const { name, avatar } = req.body;
 
-    if (name !== undefined) conversation.name = name;
-    if (avatar !== undefined) conversation.avatar = avatar;
+    if (name !== undefined) {
+      if (conversation.type !== "group") {
+        return res
+          .status(400)
+          .json({ message: "Private chat names are managed as nicknames" });
+      }
+      const nextName = normalizeString(name, 120);
+      if (!nextName) {
+        return res.status(400).json({ message: "Conversation name is required" });
+      }
+      conversation.name = nextName;
+    }
+    if (avatar !== undefined) {
+      if (conversation.type !== "group") {
+        return res
+          .status(400)
+          .json({ message: "Private chat avatars use member profile photos" });
+      }
+      conversation.avatar = normalizeString(avatar, 2048);
+    }
 
     await conversation.save();
+    await emitPersonalizedConversationUpdated(conversation);
 
     res
       .status(200)
       .json(
-        await formatConversation(conversation, { currentUserId: req.user._id }),
+        await formatConversation(conversation, {
+          includeEmail: true,
+          includeLastRead: true,
+          currentUserId: req.user._id,
+        }),
       );
   } catch (error) {
     console.error("UpdateConversation error:", error.message);
@@ -1399,9 +1748,18 @@ export const addConversationMember = async (req, res) => {
     conversation.participants.push({ userId, joinedAt: new Date() });
     await conversation.save();
 
-    res
-      .status(200)
-      .json({ message: "Member added to conversation successfully" });
+    if (ioInstance) {
+      joinParticipantSocketsToConversationRoom(ioInstance, conversation);
+    }
+    await emitPersonalizedConversationUpdated(conversation);
+
+    res.status(200).json(
+      await formatConversation(conversation, {
+        includeEmail: true,
+        includeLastRead: true,
+        currentUserId: req.user._id,
+      }),
+    );
   } catch (error) {
     console.error("AddConversationMember error:", error.message);
     if (error.kind === "ObjectId") {

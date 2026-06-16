@@ -37,6 +37,28 @@ const conversationSchema = new mongoose.Schema(
           ref: "Message",
           default: null,
         },
+        nickname: {
+          type: String,
+          trim: true,
+          maxlength: 80,
+          default: "",
+        },
+        isPinned: {
+          type: Boolean,
+          default: false,
+        },
+        pinnedAt: {
+          type: Date,
+          default: null,
+        },
+        mutedUntil: {
+          type: Date,
+          default: null,
+        },
+        mutedIndefinitely: {
+          type: Boolean,
+          default: false,
+        },
       },
     ],
     lastMessage: {
@@ -61,6 +83,11 @@ const conversationSchema = new mongoose.Schema(
 conversationSchema.index({ "participants.userId": 1 });
 conversationSchema.index({ organizationId: 1, "participants.userId": 1 });
 conversationSchema.index({ updatedAt: -1 });
+conversationSchema.index({
+  "participants.userId": 1,
+  "participants.isPinned": 1,
+  "participants.pinnedAt": 1,
+});
 conversationSchema.index({
   "participants.userId": 1,
   "lastMessage.createdAt": -1,

@@ -1,33 +1,8 @@
 import { useMemo, useRef, useState } from "react";
 import { permissionLabels } from "../organizationUtils";
+import { getDropPlacement, moveRole } from "../organizationRoleOrder";
 import Icon from "./Icon";
 import { TableRowsSkeleton } from "../../../components/common/Skeleton";
-
-const getDropPlacement = (event, element) => {
-  const rect = element.getBoundingClientRect();
-  return event.clientY > rect.top + rect.height / 2 ? "after" : "before";
-};
-
-const moveRole = (roles, sourceRoleId, targetRoleId, placement = "before") => {
-  if (!sourceRoleId || !targetRoleId || sourceRoleId === targetRoleId) {
-    return roles;
-  }
-
-  const sourceIndex = roles.findIndex((role) => role.id === sourceRoleId);
-  const targetIndex = roles.findIndex((role) => role.id === targetRoleId);
-  if (sourceIndex < 0 || targetIndex < 0) return roles;
-
-  const nextRoles = [...roles];
-  const [movedRole] = nextRoles.splice(sourceIndex, 1);
-  const nextTargetIndex = nextRoles.findIndex((role) => role.id === targetRoleId);
-  const insertIndex =
-    placement === "after" ? nextTargetIndex + 1 : nextTargetIndex;
-  nextRoles.splice(insertIndex, 0, movedRole);
-
-  return nextRoles.every((role, index) => role.id === roles[index]?.id)
-    ? roles
-    : nextRoles;
-};
 
 const RolePermissions = ({ permissionKeys, role }) => {
   const activePermissions = useMemo(
@@ -78,6 +53,8 @@ const OrganizationRolesSection = ({
   const [previewRoles, setPreviewRoles] = useState([]);
   const [roleSearch, setRoleSearch] = useState("");
   const didDropRef = useRef(false);
+  const draggingRoleIdRef = useRef("");
+  const previewRolesRef = useRef([]);
   const normalizedRoleSearch = roleSearch.trim().toLowerCase();
   const filteredRoles = useMemo(
     () =>
@@ -93,14 +70,22 @@ const OrganizationRolesSection = ({
   const canReorderRoles = canManageRoles && !normalizedRoleSearch;
   const displayedRoles = draggingRoleId ? previewRoles : filteredRoles;
 
+  const resetDragState = () => {
+    draggingRoleIdRef.current = "";
+    previewRolesRef.current = [];
+    setDraggingRoleId("");
+    setPreviewRoles([]);
+  };
+
   const commitRoleOrder = (nextRoles = displayedRoles) => {
-    if (!draggingRoleId || !canReorderRoles) {
-      setDraggingRoleId("");
+    const sourceRoleId = draggingRoleIdRef.current || draggingRoleId;
+    if (!sourceRoleId || !canReorderRoles) {
+      resetDragState();
       return;
     }
 
-    setDraggingRoleId("");
     const changed = nextRoles.some((role, index) => role.id !== roles[index]?.id);
+    resetDragState();
     if (changed) onReorderRoles?.(nextRoles);
   };
 
@@ -153,7 +138,7 @@ const OrganizationRolesSection = ({
             </colgroup>
             <thead>
               <tr className="text-xs font-black uppercase">
-                <th className="bg-slate-50 px-4 py-3 text-slate-500">
+                <th className="bg-amber-50 px-4 py-3 text-amber-700">
                   Thứ tự
                 </th>
                 <th className="bg-blue-50 px-4 py-3 text-blue-700">Vai trò</th>
@@ -172,7 +157,7 @@ const OrganizationRolesSection = ({
               {isLoading ? (
                 <TableRowsSkeleton rows={3} columns={5} colSpan={5} />
               ) : displayedRoles.length ? (
-                displayedRoles.map((role, index) => {
+                displayedRoles.map((role) => {
                   const roleColor = role.color || "#2563eb";
                   const roleManageable =
                     canManageRoles && role.canManage !== false;
@@ -187,38 +172,64 @@ const OrganizationRolesSection = ({
                     <tr
                       key={role.id}
                       onDragOver={(event) => {
+                        const sourceRoleId =
+                          draggingRoleIdRef.current || draggingRoleId;
                         if (
                           !canReorderRoles ||
-                          !draggingRoleId ||
-                          draggingRoleId === role.id ||
+                          !sourceRoleId ||
+                          sourceRoleId === role.id ||
                           role.canReorder === false
                         ) {
                           return;
                         }
                         event.preventDefault();
                         event.dataTransfer.dropEffect = "move";
-                        setPreviewRoles((currentRoles) =>
-                          moveRole(
-                            currentRoles.length ? currentRoles : roles,
-                            draggingRoleId,
-                            role.id,
-                            getDropPlacement(event, event.currentTarget),
-                          ),
+                        const placement = getDropPlacement(
+                          event,
+                          event.currentTarget,
                         );
+                        setPreviewRoles((currentRoles) => {
+                          const nextRoles = moveRole(
+                            currentRoles.length ? currentRoles : roles,
+                            sourceRoleId,
+                            role.id,
+                            placement,
+                          );
+                          previewRolesRef.current = nextRoles;
+                          return nextRoles;
+                        });
                       }}
                       onDrop={(event) => {
+                        const activeDragRoleId =
+                          draggingRoleIdRef.current || draggingRoleId;
+                        if (
+                          !canReorderRoles ||
+                          !activeDragRoleId ||
+                          role.canReorder === false
+                        ) {
+                          return;
+                        }
                         event.preventDefault();
-                        didDropRef.current = true;
                         const sourceRoleId =
                           event.dataTransfer.getData("application/x-role-id") ||
                           event.dataTransfer.getData("text/plain") ||
-                          draggingRoleId;
+                          activeDragRoleId;
+                        if (!sourceRoleId || sourceRoleId === role.id) {
+                          resetDragState();
+                          return;
+                        }
+                        const placement = getDropPlacement(
+                          event,
+                          event.currentTarget,
+                        );
                         const nextRoles = moveRole(
-                          displayedRoles,
+                          roles,
                           sourceRoleId,
                           role.id,
-                          getDropPlacement(event, event.currentTarget),
+                          placement,
                         );
+                        previewRolesRef.current = nextRoles;
+                        didDropRef.current = true;
                         setPreviewRoles(nextRoles);
                         commitRoleOrder(nextRoles);
                       }}
@@ -234,6 +245,8 @@ const OrganizationRolesSection = ({
                           onDragStart={(event) => {
                             if (!roleReorderable) return;
                             didDropRef.current = false;
+                            draggingRoleIdRef.current = role.id;
+                            previewRolesRef.current = roles;
                             setPreviewRoles(roles);
                             setDraggingRoleId(role.id);
                             event.dataTransfer.effectAllowed = "move";
@@ -246,15 +259,19 @@ const OrganizationRolesSection = ({
                           onDragEnd={() => {
                             if (didDropRef.current) {
                               didDropRef.current = false;
-                              setDraggingRoleId("");
+                              resetDragState();
                               return;
                             }
-                            commitRoleOrder();
+                            commitRoleOrder(
+                              previewRolesRef.current.length
+                                ? previewRolesRef.current
+                                : roles,
+                            );
                           }}
-                          className={`inline-flex size-10 items-center justify-center rounded-2xl text-slate-400 ring-1 ring-slate-200 transition ${
+                          className={`inline-flex size-10 items-center justify-center rounded-2xl ring-1 transition ${
                             roleReorderable
-                              ? "cursor-grab bg-white hover:bg-blue-50 hover:text-blue-700 active:cursor-grabbing"
-                              : "cursor-not-allowed bg-slate-50 opacity-50"
+                              ? "cursor-grab bg-white text-slate-400 ring-slate-200 hover:bg-blue-50 hover:text-blue-700 active:cursor-grabbing"
+                              : "cursor-not-allowed bg-slate-50 text-slate-300 ring-slate-200 opacity-60"
                           }`}
                           title="Kéo để đổi thứ tự"
                         >
@@ -263,25 +280,14 @@ const OrganizationRolesSection = ({
                       </td>
                       <td className="px-4 py-4">
                         <div className="flex min-w-0 items-center gap-3">
-                          <span
-                            className="grid size-11 shrink-0 place-items-center rounded-2xl ring-1"
-                            style={{
-                              backgroundColor: `${roleColor}16`,
-                              color: roleColor,
-                              borderColor: `${roleColor}2e`,
-                            }}
-                          >
-                            <Icon
-                              name="server_person"
-                              className="text-2xl leading-none"
-                            />
-                          </span>
+                          <Icon
+                            name="server_person"
+                            className="shrink-0 text-[2.15rem] leading-none"
+                            style={{ color: roleColor }}
+                          />
                           <div className="min-w-0">
                             <p className="truncate text-sm font-black text-slate-950">
                               {role.name}
-                            </p>
-                            <p className="mt-1 text-xs font-semibold text-slate-500">
-                              Ưu tiên #{index + 1}
                             </p>
                           </div>
                         </div>

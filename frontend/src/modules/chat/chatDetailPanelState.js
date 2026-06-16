@@ -32,8 +32,9 @@ export const getChatDetailDisplay = (conversation, currentUserId) => {
     ? getOtherParticipant(conversation.participants, currentUserId)
     : null;
   const otherUser = getParticipantUser(otherParticipant);
+  const nickname = conversation.currentParticipant?.nickname || "";
   const displayName = isPrivate
-    ? otherUser?.fullName || "Người dùng"
+    ? nickname || otherUser?.fullName || "Người dùng"
     : conversation.name || "Nhóm";
 
   return {
@@ -41,6 +42,8 @@ export const getChatDetailDisplay = (conversation, currentUserId) => {
     participantCount,
     user: otherUser,
     displayName,
+    nickname,
+    originalName: isPrivate ? otherUser?.fullName || "Người dùng" : displayName,
     avatar: isPrivate ? otherUser?.avatar : conversation.avatar,
     email: isPrivate ? otherUser?.email : null,
     activityStatus: otherUser?.activityStatus,

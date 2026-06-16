@@ -795,12 +795,16 @@ const ChatWindow = ({
   // Get display info for the other participant (private) or group
   const otherParticipant = isPrivate
     ? conversation.participants?.find(
-        (p) => (p.user?._id || p.userId?.toString()) !== user?._id
+        (p) =>
+          getComparableId(p.user?._id || p.user?.id || p.userId) !==
+          currentUserId
       )?.user
     : null;
 
   const displayName = isPrivate
-    ? otherParticipant?.fullName || "Người dùng"
+    ? conversation.currentParticipant?.nickname ||
+      otherParticipant?.fullName ||
+      "Người dùng"
     : conversation.name || "Nhóm";
 
   const displayAvatar = isPrivate
@@ -894,9 +898,18 @@ const ChatWindow = ({
                 </div>
               )
             ) : (
-              <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-emerald-400 to-teal-500 text-white flex items-center justify-center text-sm font-bold shadow-sm">
-                #{displayInitial}
-              </div>
+              displayAvatar ? (
+                <img
+                  src={displayAvatar}
+                  alt={displayName}
+                  referrerPolicy={getAvatarReferrerPolicy(displayAvatar)}
+                  className="h-10 w-10 rounded-xl object-cover ring-2 ring-white shadow-sm"
+                />
+              ) : (
+                <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-emerald-400 to-teal-500 text-white flex items-center justify-center text-sm font-bold shadow-sm">
+                  #{displayInitial}
+                </div>
+              )
             )}
             {/* Online indicator - for private chats */}
             {isPrivate && <ActivityStatusBadge meta={activityStatusMeta} />}

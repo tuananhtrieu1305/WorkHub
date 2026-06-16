@@ -10,8 +10,37 @@ export const getConversationById = async (conversationId) => {
   return data;
 };
 
+export const getConversationDetail = async (conversationId) => {
+  const { data } = await axiosClient.get(`/conversations/${conversationId}/detail`);
+  return data;
+};
+
 export const createConversation = async (payload) => {
   const { data } = await axiosClient.post("/conversations", payload);
+  return data;
+};
+
+export const updateConversation = async (conversationId, payload) => {
+  const { data } = await axiosClient.put(
+    `/conversations/${conversationId}`,
+    payload,
+  );
+  return data;
+};
+
+export const updateConversationSettings = async (conversationId, payload) => {
+  const { data } = await axiosClient.patch(
+    `/conversations/${conversationId}/settings`,
+    payload,
+  );
+  return data;
+};
+
+export const addConversationMember = async (conversationId, userId) => {
+  const { data } = await axiosClient.post(
+    `/conversations/${conversationId}/members`,
+    { userId },
+  );
   return data;
 };
 

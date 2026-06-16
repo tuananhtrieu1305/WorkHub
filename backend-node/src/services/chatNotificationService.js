@@ -23,6 +23,25 @@ const getParticipantUserIds = (conversation) =>
     (conversation?.participants || []).map((participant) => participant.userId),
   );
 
+const isParticipantMuted = (participant, now = new Date()) => {
+  if (!participant) return false;
+  if (participant.mutedIndefinitely) return true;
+  if (!participant.mutedUntil) return false;
+  const mutedUntil = new Date(participant.mutedUntil);
+  return !Number.isNaN(mutedUntil.getTime()) && mutedUntil > now;
+};
+
+const getNotificationEligibleRecipientIds = (conversation, recipientIds = []) => {
+  const recipientSet = new Set(uniqueIdList(recipientIds));
+  const mutedUserIds = new Set(
+    (conversation?.participants || [])
+      .filter((participant) => isParticipantMuted(participant))
+      .map((participant) => toComparableId(participant.userId)),
+  );
+
+  return [...recipientSet].filter((userId) => !mutedUserIds.has(userId));
+};
+
 const normalizeBoolean = (value) =>
   value === true || value === "true" || value === 1 || value === "1";
 
@@ -76,7 +95,10 @@ export const notifyChatMentions = async ({
   const conversationId = getConversationId(conversation);
   const messageId = message?._id || message?.id;
   const actorId = getActorId(actor);
-  const recipients = uniqueIdList(recipientIds, { exclude: actorId });
+  const recipients = getNotificationEligibleRecipientIds(
+    conversation,
+    uniqueIdList(recipientIds, { exclude: actorId }),
+  );
   if (!conversationId || !messageId || recipients.length === 0) return [];
 
   const conversationName =

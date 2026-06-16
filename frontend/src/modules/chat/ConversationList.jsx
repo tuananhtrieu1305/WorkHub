@@ -91,7 +91,9 @@ const ConversationList = ({
     const other = conv.participants?.find(
       (p) => (p.user?._id || p.userId?.toString()) !== currentUserId
     );
-    return other?.user?.fullName?.toLowerCase().includes(q);
+    return [conv.currentParticipant?.nickname, other?.user?.fullName]
+      .filter(Boolean)
+      .some((value) => value.toLowerCase().includes(q));
   };
 
   const filteredConversations = getConversationTabItems(
@@ -117,10 +119,11 @@ const ConversationList = ({
       (p) => (p.user?._id || p.userId?.toString()) !== currentUserId
     );
     const user = other?.user;
+    const nickname = conv.currentParticipant?.nickname || "";
     return {
-      name: user?.fullName || "Người dùng",
+      name: nickname || user?.fullName || "Người dùng",
       avatarUrl: getAvatarUrl(user?.avatar),
-      initial: (user?.fullName || "N").charAt(0).toUpperCase(),
+      initial: (nickname || user?.fullName || "N").charAt(0).toUpperCase(),
       isGroup: false,
       activityStatus: user?.activityStatus,
       isOnline: user?.isOnline,
@@ -141,6 +144,8 @@ const ConversationList = ({
     const lastMsgContent = preview.content;
     const lastMsgTime = formatRelativeTime(lastMsg?.createdAt || conv.updatedAt);
     const isMySentMsg = preview.isMine;
+    const isPinned = Boolean(conv.currentParticipant?.isPinned);
+    const isMuted = Boolean(conv.currentParticipant?.isMuted);
     const handleSelect = () => onSelect?.(conv);
     const handleKeyDown = (event) => {
       if (event.key === "Enter" || event.key === " ") {
@@ -203,11 +208,27 @@ const ConversationList = ({
         <div className="flex-1 min-w-0">
           <div className="flex justify-between items-baseline mb-0.5">
             <h3
-              className={`truncate text-sm font-bold ${
+              className={`flex min-w-0 items-center gap-1.5 truncate text-sm font-bold ${
                 hasUnread ? "text-blue-950" : "text-slate-950"
               }`}
             >
-              {isGroup ? `# ${name}` : name}
+              {isPinned && (
+                <span
+                  className="material-symbols-outlined shrink-0 text-[15px] text-amber-600"
+                  title="Đã ghim"
+                >
+                  push_pin
+                </span>
+              )}
+              <span className="truncate">{isGroup ? `# ${name}` : name}</span>
+              {isMuted && (
+                <span
+                  className="material-symbols-outlined shrink-0 text-[15px] text-slate-400"
+                  title="Đang tắt thông báo"
+                >
+                  notifications_off
+                </span>
+              )}
             </h3>
             <span
               className={`text-[11px] whitespace-nowrap ml-2 ${
