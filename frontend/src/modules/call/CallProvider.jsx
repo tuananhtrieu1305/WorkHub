@@ -59,6 +59,8 @@ const terminalDescriptions = {
   failed: "Phiên gọi không thể kết nối ổn định. Hãy thử gọi lại sau.",
 };
 
+const CALL_HEARTBEAT_INTERVAL_MS = 5000;
+
 const addRoomLeftListener = (meetingClient, handler) => {
   const target = meetingClient?.self || meetingClient;
   if (!target?.on) return () => {};
@@ -92,6 +94,8 @@ export const CallProvider = ({ children }) => {
   const startCallInFlightRef = useRef(false);
   const activeCallRef = useRef(null);
   const callClientRef = useRef(null);
+  const heartbeatIntervalRef = useRef(null);
+  const heartbeatCallIdRef = useRef("");
   const identityRef = useRef(identity);
   const locationRef = useRef(location);
   const isEndingCallRef = useRef(false);
@@ -142,7 +146,69 @@ export const CallProvider = ({ children }) => {
     [navigate],
   );
 
+  const stopCallHeartbeat = useCallback(() => {
+    if (heartbeatIntervalRef.current) {
+      window.clearInterval(heartbeatIntervalRef.current);
+      heartbeatIntervalRef.current = null;
+    }
+    heartbeatCallIdRef.current = "";
+  }, []);
+
+  const startCallHeartbeat = useCallback(
+    (callId) => {
+      if (!callId) return;
+      if (
+        heartbeatCallIdRef.current === callId &&
+        heartbeatIntervalRef.current
+      ) {
+        return;
+      }
+
+      stopCallHeartbeat();
+      heartbeatCallIdRef.current = callId;
+
+      const tick = () => {
+        const activeSocket = socket;
+        if (activeSocket?.connected) {
+          activeSocket.emit("call_heartbeat", { callId }, (response) => {
+            if (response && response.ok === false) {
+              console.warn("WorkHub call socket heartbeat rejected", response.reason);
+            }
+          });
+        }
+
+        heartbeatCall(callId)
+          .then((result) => {
+            const nextCall = result?.call;
+            if (
+              nextCall &&
+              getCallId(nextCall) === callId &&
+              !isTerminalCallStatus(nextCall.status)
+            ) {
+              setActiveCall(nextCall);
+            }
+          })
+          .catch((error) => {
+            // Keep the call alive loop running; a transient 401/network error
+            // should not permanently stop heartbeat attempts.
+            console.warn(
+              "WorkHub call heartbeat failed",
+              error.response?.data?.message || error.message,
+            );
+          });
+      };
+
+      tick();
+      heartbeatIntervalRef.current = window.setInterval(
+        tick,
+        CALL_HEARTBEAT_INTERVAL_MS,
+      );
+    },
+    [socket, stopCallHeartbeat],
+  );
+
   const clearCallClient = useCallback(async ({ leave = false, reason } = {}) => {
+    stopCallHeartbeat();
     const activeClient = callClientRef.current;
     removeRoomLeftListenerRef.current?.();
     removeRoomLeftListenerRef.current = null;
@@ -156,7 +222,7 @@ export const CallProvider = ({ children }) => {
         // SDK may already be disconnected.
       }
     }
-  }, []);
+  }, [stopCallHeartbeat]);
 
   const isActiveOrganizationCallPayload = useCallback(
     (payload) => {
@@ -246,6 +312,7 @@ export const CallProvider = ({ children }) => {
 
       const existingClient = callClientRef.current;
       if (existingClient && getCallId(activeCallRef.current) === callId) {
+        startCallHeartbeat(callId);
         return { call: activeCallRef.current || call, client: existingClient };
       }
 
@@ -291,6 +358,7 @@ export const CallProvider = ({ children }) => {
 
         const joined = await markCallJoined(callId, identityRef.current);
         setActiveCall(joined.call);
+        startCallHeartbeat(callId);
         return { call: joined.call, client: meetingClient };
       })();
 
@@ -313,20 +381,8 @@ export const CallProvider = ({ children }) => {
         setJoiningCall(false);
       }
     },
-    [clearCallClient, handleSdkRoomLeft],
+    [clearCallClient, handleSdkRoomLeft, startCallHeartbeat],
   );
-
-  useEffect(() => {
-    if (!activeCall?.id || !callClient || isTerminalCallStatus(activeCall.status)) {
-      return undefined;
-    }
-
-    const intervalId = window.setInterval(() => {
-      heartbeatCall(activeCall.id).catch(() => {});
-    }, 5000);
-
-    return () => window.clearInterval(intervalId);
-  }, [activeCall?.id, activeCall?.status, callClient]);
 
   useEffect(() => {
     const handlePageExit = () => {
@@ -611,7 +667,13 @@ export const CallProvider = ({ children }) => {
 
     const handleActive = (payload) => {
       if (!isActiveOrganizationCallPayload(payload)) return;
-      setActiveCall(payload?.call || null);
+
+      const call = payload?.call || null;
+      setActiveCall(call);
+
+      if (call?.id && callClientRef.current) {
+        startCallHeartbeat(call.id);
+      }
     };
 
     const handleTerminal = (payload) => {
@@ -674,6 +736,7 @@ export const CallProvider = ({ children }) => {
     redirectAfterEnd,
     isActiveOrganizationCallPayload,
     socket,
+    startCallHeartbeat,
   ]);
 
   const returnToActiveCall = useCallback(() => {
