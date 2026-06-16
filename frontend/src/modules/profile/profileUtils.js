@@ -119,9 +119,22 @@ const toProfileObject = (profile) =>
 
 export const getProfileTheme = (profile = {}) => {
   const safeProfile = toProfileObject(profile);
+  const savedTheme = safeProfile.profileTheme || {};
+  const selectedPreset = profileThemePresets.find(
+    (preset) => preset.id === savedTheme.preset,
+  );
+
   return {
     ...defaultProfileTheme,
-    ...(safeProfile.profileTheme || {}),
+    ...savedTheme,
+    ...(selectedPreset
+      ? {
+          preset: selectedPreset.id,
+          accentColor: selectedPreset.accentColor,
+          backgroundColor: selectedPreset.backgroundColor,
+          textColor: selectedPreset.textColor,
+        }
+      : {}),
   };
 };
 
@@ -176,8 +189,8 @@ export const buildProfileBannerStyle = (profile = {}) => {
   return {
     color: "var(--profile-text)",
     background: `
-      linear-gradient(180deg, rgba(255, 255, 255, 0.74), transparent 38%),
-      linear-gradient(135deg, color-mix(in srgb, var(--profile-bg) 88%, #ffffff) 0%, color-mix(in srgb, var(--profile-accent) 30%, var(--profile-bg)) 58%, color-mix(in srgb, var(--profile-bg) 76%, #ffffff) 100%)
+      linear-gradient(180deg, rgba(255, 255, 255, 0.84), rgba(255, 255, 255, 0.2) 48%, transparent 78%),
+      linear-gradient(135deg, color-mix(in srgb, var(--profile-bg) 66%, #ffffff) 0%, color-mix(in srgb, var(--profile-accent) 18%, #ffffff) 58%, color-mix(in srgb, var(--profile-bg) 54%, #ffffff) 100%)
     `,
     "--profile-accent": theme.accentColor,
     "--profile-bg": theme.backgroundColor,
@@ -191,9 +204,9 @@ export const buildProfileAccentStyle = (profile = {}) => {
     "--profile-accent": theme.accentColor,
     "--profile-bg": theme.backgroundColor,
     "--profile-text": theme.textColor,
-    "--profile-accent-muted": `color-mix(in srgb, ${theme.accentColor} 14%, #ffffff)`,
-    "--profile-accent-soft": `color-mix(in srgb, ${theme.accentColor} 9%, #ffffff)`,
-    "--profile-accent-ring": `color-mix(in srgb, ${theme.accentColor} 34%, #ffffff)`,
+    "--profile-accent-muted": `color-mix(in srgb, ${theme.accentColor} 12%, #ffffff)`,
+    "--profile-accent-soft": `color-mix(in srgb, ${theme.accentColor} 8%, #ffffff)`,
+    "--profile-accent-ring": `color-mix(in srgb, ${theme.accentColor} 30%, #ffffff)`,
   };
 };
 

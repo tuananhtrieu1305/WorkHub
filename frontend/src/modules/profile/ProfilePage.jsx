@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { App } from "antd";
 import {
-  deleteMyProfileBanner,
   getMyProfile,
   updateMyAvatar,
   updateMyProfile,
@@ -22,6 +21,7 @@ import {
   profileThemePresets,
   toDateInputValue,
 } from "./profileUtils";
+import BannerCropModal from "../organization/components/banner/BannerCropModal";
 
 const emptyLink = { label: "", url: "", type: "website" };
 
@@ -133,8 +133,10 @@ const ProfilePage = () => {
   const { user, updateCurrentUser } = useAuth();
   const avatarInputRef = useRef(null);
   const bannerInputRef = useRef(null);
+  const bannerObjectUrlRef = useRef("");
   const [profile, setProfile] = useState(user || null);
   const [form, setForm] = useState(() => toProfileForm(user || {}));
+  const [selectedBannerFile, setSelectedBannerFile] = useState(null);
   const [interestDraft, setInterestDraft] = useState("");
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
@@ -151,6 +153,13 @@ const ProfilePage = () => {
   const theme = form.profileTheme || defaultProfileTheme;
   const bannerUrl =
     theme.useBannerImage !== false ? getAvatarUrl(form.profileBannerUrl) : "";
+  const displayEmail = previewProfile.email || user?.email || "";
+
+  const revokeSelectedBannerUrl = () => {
+    if (!bannerObjectUrlRef.current) return;
+    URL.revokeObjectURL(bannerObjectUrlRef.current);
+    bannerObjectUrlRef.current = "";
+  };
 
   const setField = (field, value) => {
     setForm((current) => ({ ...current, [field]: value }));
@@ -189,6 +198,15 @@ const ProfilePage = () => {
     };
   }, [message, updateCurrentUser]);
 
+  useEffect(
+    () => () => {
+      if (!bannerObjectUrlRef.current) return;
+      URL.revokeObjectURL(bannerObjectUrlRef.current);
+      bannerObjectUrlRef.current = "";
+    },
+    [],
+  );
+
   const handleAvatarChange = async (event) => {
     const file = event.target.files?.[0];
     event.target.value = "";
@@ -211,11 +229,23 @@ const ProfilePage = () => {
     }
   };
 
-  const handleBannerChange = async (event) => {
+  const handleBannerChange = (event) => {
     const file = event.target.files?.[0];
     event.target.value = "";
     if (!file) return;
 
+    revokeSelectedBannerUrl();
+    const previewUrl = URL.createObjectURL(file);
+    bannerObjectUrlRef.current = previewUrl;
+    setSelectedBannerFile({ file, previewUrl });
+  };
+
+  const closeBannerCrop = () => {
+    revokeSelectedBannerUrl();
+    setSelectedBannerFile(null);
+  };
+
+  const uploadProfileBanner = async (file) => {
     setUploading((current) => ({ ...current, banner: true }));
     try {
       const result = await updateMyProfileBanner(file);
@@ -236,39 +266,22 @@ const ProfilePage = () => {
         profileTheme: nextTheme,
       });
       message.success("Đã cập nhật ảnh biểu ngữ");
+      return true;
     } catch (error) {
       console.error("Failed to update profile banner:", error);
       message.error(
         error?.response?.data?.message || "Không thể cập nhật ảnh biểu ngữ",
       );
+      return false;
     } finally {
       setUploading((current) => ({ ...current, banner: false }));
     }
   };
 
-  const handleRemoveBanner = async () => {
-    setUploading((current) => ({ ...current, banner: true }));
-    try {
-      const result = await deleteMyProfileBanner();
-      const nextTheme = result.profileTheme || {
-        ...form.profileTheme,
-        useBannerImage: false,
-      };
-      setField("profileBannerUrl", "");
-      setTheme(nextTheme);
-      setProfile((current) => ({
-        ...(current || {}),
-        profileBannerUrl: "",
-        profileTheme: nextTheme,
-      }));
-      updateCurrentUser?.({ profileBannerUrl: "", profileTheme: nextTheme });
-      message.success("Đã chuyển sang bảng màu profile");
-    } catch (error) {
-      console.error("Failed to remove profile banner:", error);
-      message.error("Không thể gỡ ảnh biểu ngữ");
-    } finally {
-      setUploading((current) => ({ ...current, banner: false }));
-    }
+  const handleBannerCropSave = async (file) => {
+    const updated = await uploadProfileBanner(file);
+    if (updated) closeBannerCrop();
+    return updated;
   };
 
   const handleAddInterest = () => {
@@ -336,15 +349,24 @@ const ProfilePage = () => {
       <input
         ref={bannerInputRef}
         type="file"
-        accept="image/png,image/jpeg,image/jpg,image/gif,image/webp"
+        accept="image/png,image/jpeg,image/jpg,image/webp"
         className="sr-only"
         onChange={handleBannerChange}
+      />
+      <BannerCropModal
+        key={selectedBannerFile?.previewUrl}
+        file={selectedBannerFile?.file}
+        imageUrl={selectedBannerFile?.previewUrl}
+        isSaving={uploading.banner}
+        onClose={closeBannerCrop}
+        onSave={handleBannerCropSave}
+        open={Boolean(selectedBannerFile)}
       />
 
       <form onSubmit={handleSave} className="mx-auto grid max-w-6xl gap-6 px-4 py-6 sm:px-6 lg:px-8">
         <header className="profile-hero-card overflow-hidden rounded-[1.75rem] backdrop-blur">
           <div
-            className="profile-banner-surface relative h-56 overflow-hidden"
+            className="profile-banner-surface relative h-64 overflow-hidden sm:h-72"
             style={buildProfileBannerStyle(previewProfile)}
           >
             {bannerUrl && (
@@ -367,38 +389,22 @@ const ProfilePage = () => {
                 </span>
                 Ảnh biểu ngữ
               </button>
-              {form.profileBannerUrl && (
-                <button
-                  type="button"
-                  onClick={handleRemoveBanner}
-                  disabled={uploading.banner}
-                  className="profile-danger-soft-button inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-black shadow-lg shadow-rose-900/10 backdrop-blur disabled:translate-y-0 disabled:opacity-70"
-                >
-                  <span className="material-symbols-outlined text-[19px]">
-                    palette
-                  </span>
-                  Dùng bảng màu
-                </button>
-              )}
             </div>
           </div>
 
-          <div className="-mt-14 flex flex-col gap-4 px-5 pb-5 sm:flex-row sm:items-end sm:justify-between">
-            <div className="flex min-w-0 flex-col gap-4 sm:flex-row sm:items-end">
+          <div className="flex flex-col gap-4 px-5 py-5 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex min-w-0 flex-col gap-4 sm:flex-row sm:items-center">
               <AvatarPreview
                 profile={previewProfile}
                 isUploading={uploading.avatar}
                 onPickAvatar={() => avatarInputRef.current?.click()}
               />
               <div className="min-w-0 pb-1">
-                <p className="text-sm font-black uppercase text-[var(--profile-accent)]">
-                  Hồ sơ cá nhân
-                </p>
                 <h1 className="mt-1 truncate text-3xl font-black text-slate-950">
                   {form.fullName || user?.fullName || "Người dùng WorkHub"}
                 </h1>
                 <p className="mt-1 line-clamp-2 text-sm font-bold text-slate-500">
-                  {form.bio || form.position || user?.email}
+                  {displayEmail || form.bio || form.position}
                 </p>
               </div>
             </div>
@@ -651,7 +657,7 @@ const ProfilePage = () => {
                     <span
                       className="mb-3 block h-14 rounded-xl"
                       style={{
-                        background: `linear-gradient(135deg, ${preset.backgroundColor}, ${preset.accentColor})`,
+                        background: `linear-gradient(135deg, color-mix(in srgb, ${preset.backgroundColor} 92%, #ffffff), color-mix(in srgb, ${preset.accentColor} 34%, #ffffff))`,
                       }}
                     />
                     <span className="block text-sm font-black text-slate-900">

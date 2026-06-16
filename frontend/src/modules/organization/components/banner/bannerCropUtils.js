@@ -1,4 +1,4 @@
-export const BANNER_CROP_ASPECT = 16 / 5;
+export const BANNER_CROP_ASPECT = 16 / 6;
 
 export const clamp = (value, min, max) => Math.min(Math.max(value, min), max);
 

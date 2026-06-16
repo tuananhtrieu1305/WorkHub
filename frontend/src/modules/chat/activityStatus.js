@@ -5,7 +5,7 @@ const activityStatusMeta = {
     label: "Đang hoạt động",
     icon: "circle",
     textClassName: "text-emerald-600",
-    badgeClassName: "bg-white text-emerald-500",
+    badgeClassName: "bg-white/95 text-emerald-500",
     menuIconClassName: "text-emerald-500",
   },
   idle: {
@@ -14,7 +14,7 @@ const activityStatusMeta = {
     label: "Chờ",
     icon: "dark_mode",
     textClassName: "text-amber-600",
-    badgeClassName: "bg-white text-amber-500",
+    badgeClassName: "bg-white/95 text-amber-500",
     menuIconClassName: "text-amber-500",
   },
   dnd: {
@@ -24,7 +24,7 @@ const activityStatusMeta = {
     description: "Bạn sẽ không nhận được thông báo trên màn hình",
     icon: "do_not_disturb_on",
     textClassName: "text-red-600",
-    badgeClassName: "bg-white text-red-500",
+    badgeClassName: "bg-white/95 text-red-500",
     menuIconClassName: "text-red-500",
   },
   invisible: {
@@ -34,7 +34,7 @@ const activityStatusMeta = {
     description: "Bạn sẽ xuất hiện ngoại tuyến",
     icon: "radio_button_unchecked",
     textClassName: "text-slate-500",
-    badgeClassName: "bg-white text-slate-400",
+    badgeClassName: "bg-white/95 text-slate-400",
     menuIconClassName: "text-slate-400",
   },
   offline: {
@@ -43,7 +43,7 @@ const activityStatusMeta = {
     label: "",
     icon: "offline_ring",
     textClassName: "text-slate-500",
-    badgeClassName: "bg-white text-slate-400",
+    badgeClassName: "bg-white/95 text-slate-400",
     menuIconClassName: "text-slate-400",
   },
 };

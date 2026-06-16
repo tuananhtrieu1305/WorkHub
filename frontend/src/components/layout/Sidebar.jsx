@@ -1,32 +1,51 @@
 import { NavLink, useLocation } from "react-router-dom";
+import { useAuth } from "../../context/AuthContext";
+import {
+  getAvatarReferrerPolicy,
+  getAvatarUrl,
+} from "../../utils/avatar";
 import { navItems } from "./navItems";
 
 const Sidebar = () => {
   const location = useLocation();
+  const { user } = useAuth();
+  const avatarUrl = getAvatarUrl(user?.avatar);
+  const userInitial =
+    (user?.fullName || user?.email || "U").charAt(0).toUpperCase();
 
   const isActive = (path) => {
     if (path === "/") return location.pathname === "/";
     return location.pathname.startsWith(path);
   };
 
+  const profileActive = isActive("/profile");
+
   return (
     <aside className="hidden w-20 flex-shrink-0 flex-col overflow-y-auto border-r border-slate-200/50 bg-slate-50/50 lg:flex">
       <div className="p-3 flex flex-col gap-6 items-center">
-        {/* <div className="flex flex-col items-center">
+        <NavLink
+          to="/profile/me"
+          className={`sidebar-profile-link group mt-1 flex size-14 items-center justify-center rounded-full transition-all duration-300 hover:scale-105 focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-300 focus-visible:ring-offset-2 ${
+            profileActive ? "sidebar-profile-link--active" : "glass-panel shadow-sm"
+          }`}
+          title="Trang hồ sơ cá nhân"
+          aria-label="Trang hồ sơ cá nhân"
+        >
           {avatarUrl ? (
             <img
               src={avatarUrl}
-              alt={user?.fullName}
-              className="size-10 rounded-full ring-2 ring-blue-500 shadow-lg shadow-blue-500/20 object-cover"
+              alt={user?.fullName || "Avatar"}
+              referrerPolicy={getAvatarReferrerPolicy(avatarUrl)}
+              className="size-12 rounded-full object-cover ring-2 ring-white transition group-hover:scale-[1.03]"
             />
           ) : (
-            <div className="size-10 rounded-full ring-2 ring-blue-500 shadow-lg shadow-blue-500/20 bg-blue-600 text-white flex items-center justify-center text-sm font-bold">
+            <span className="flex size-12 items-center justify-center rounded-full bg-teal-700 text-base font-black text-white ring-2 ring-white transition group-hover:scale-[1.03]">
               {userInitial}
-            </div>
+            </span>
           )}
-        </div> */}
+        </NavLink>
 
-        <nav className="flex flex-col gap-3 w-full mt-2">
+        <nav className="flex flex-col gap-3 w-full">
           {navItems.map((item) => {
             const active = isActive(item.path);
             return (

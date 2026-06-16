@@ -71,10 +71,10 @@ const ChatDetailPanel = ({
           {/* Online status dot for private chats */}
           {isPrivate && (
             <div
-              className={`absolute bottom-1 right-1 flex w-5 h-5 items-center justify-center rounded-full border-2 border-white ${activityStatusMeta.badgeClassName}`}
+              className={`activity-status-badge activity-status-badge--large absolute bottom-1 right-1 ${activityStatusMeta.badgeClassName}`}
               title={activityStatusMeta.menuLabel}
             >
-              <ActivityStatusIcon meta={activityStatusMeta} size="xs" />
+              <ActivityStatusIcon meta={activityStatusMeta} size="sm" />
             </div>
           )}
         </div>

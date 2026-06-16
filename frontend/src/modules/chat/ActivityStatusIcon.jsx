@@ -1,21 +1,27 @@
 const sizeClasses = {
   xs: {
-    dot: "h-2 w-2",
-    ring: "h-2.5 w-2.5 border-[1.5px]",
-    iconContainer: "h-2 w-2",
-    symbolSize: "8px",
+    dot: "h-2.5 w-2.5",
+    ring: "h-3 w-3 border",
+    iconContainer: "h-4 w-4",
+    symbolSize: "16px",
+  },
+  headerOnline: {
+    dot: "h-3.5 w-3.5",
+    ring: "h-3 w-3 border",
+    iconContainer: "h-4 w-4",
+    symbolSize: "16px",
   },
   sm: {
-    dot: "h-2.5 w-2.5",
-    ring: "h-3 w-3 border-2",
-    iconContainer: "h-2.5 w-2.5",
-    symbolSize: "10px",
+    dot: "h-3 w-3",
+    ring: "h-3.5 w-3.5 border",
+    iconContainer: "h-4 w-4",
+    symbolSize: "15px",
   },
   md: {
     dot: "h-3.5 w-3.5",
-    ring: "h-4 w-4 border-2",
-    iconContainer: "h-3.5 w-3.5",
-    symbolSize: "14px",
+    ring: "h-4 w-4 border",
+    iconContainer: "h-[18px] w-[18px]",
+    symbolSize: "18px",
   },
 };
 
@@ -45,7 +51,7 @@ const ActivityStatusIcon = ({ meta, size = "sm", className = "" }) => {
     >
       <span
         style={{ fontSize: classes.symbolSize, fontVariationSettings: '"FILL" 1' }}
-        className={`material-symbols-outlined activity-status-symbol leading-none ${meta.menuIconClassName}`}
+        className={`material-symbols-outlined activity-status-symbol block leading-none ${meta.menuIconClassName}`}
       >
         {meta.icon}
       </span>

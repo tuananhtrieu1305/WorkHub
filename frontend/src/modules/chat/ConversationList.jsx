@@ -37,7 +37,7 @@ const getChannelGradient = (name) => {
 
 const ActivityStatusBadge = ({ meta }) => (
   <span
-    className={`absolute -bottom-0.5 -right-0.5 flex h-3.5 w-3.5 items-center justify-center rounded-full border-2 border-white ${meta.badgeClassName}`}
+    className={`activity-status-badge activity-status-badge--compact absolute -bottom-0.5 -right-0.5 ${meta.badgeClassName}`}
   >
     <ActivityStatusIcon meta={meta} size="xs" />
   </span>

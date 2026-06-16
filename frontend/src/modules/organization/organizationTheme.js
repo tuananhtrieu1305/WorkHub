@@ -1,12 +1,21 @@
 export const DEFAULT_ORGANIZATION_ACCENT = "#2563eb";
 
 export const organizationAccentPresets = [
-  { label: "Xanh biển", value: "#2563eb" },
-  { label: "Ngọc lục", value: "#059669" },
-  { label: "Hổ phách", value: "#d97706" },
-  { label: "San hô", value: "#e11d48" },
-  { label: "Tím dịu", value: "#7c3aed" },
-  { label: "Xanh cyan", value: "#0891b2" },
+  { label: "Xanh biển", value: "#1d4ed8" },
+  { label: "Chàm", value: "#4338ca" },
+  { label: "Tím nho", value: "#7e22ce" },
+  { label: "Hồng mận", value: "#be185d" },
+  { label: "Đỏ son", value: "#dc2626" },
+  { label: "Cam đất", value: "#c2410c" },
+  { label: "Hổ phách", value: "#b45309" },
+  { label: "Rêu", value: "#4d7c0f" },
+  { label: "Ngọc lục", value: "#047857" },
+  { label: "Teal", value: "#0f766e" },
+  { label: "Cyan sâu", value: "#0e7490" },
+  { label: "Xanh trời", value: "#0369a1" },
+  { label: "Slate", value: "#475569" },
+  { label: "Kẽm", value: "#52525b" },
+  { label: "Đá đen", value: "#334155" },
 ];
 
 export const normalizeAccentColor = (

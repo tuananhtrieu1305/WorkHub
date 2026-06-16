@@ -26,6 +26,7 @@ import {
   getAvatarReferrerPolicy,
   getAvatarUrl,
 } from "../../utils/avatar";
+import { getProfileTheme } from "../../modules/profile/profileUtils";
 import { navItems } from "./navItems";
 import {
   buildMeetingPath,
@@ -283,6 +284,12 @@ const Header = ({ overlay = false }) => {
 
   const userInitial = user?.fullName?.charAt(0)?.toUpperCase() || "U";
   const currentStatusMeta = getActivityStatusMeta(user?.activityStatus);
+  const profileTheme = getProfileTheme(user || {});
+  const profileThemeVars = {
+    "--header-profile-accent": profileTheme.accentColor,
+    "--header-profile-bg": profileTheme.backgroundColor,
+    "--header-profile-text": profileTheme.textColor,
+  };
 
   const avatarUrl = getAvatarUrl(user?.avatar);
   const filteredNotifications = filterNotificationsByTab(notifications, inboxTab);
@@ -676,11 +683,10 @@ const Header = ({ overlay = false }) => {
           <div className="relative" ref={notificationRef}>
             <button
               type="button"
-              className={`relative flex size-10 items-center justify-center rounded-full border transition-colors duration-200 cursor-pointer ${
-                showNotificationPanel
-                  ? "border-blue-200 bg-blue-50 text-blue-600 shadow-sm"
-                  : "border-transparent bg-slate-100 text-slate-600 hover:border-blue-100 hover:bg-blue-50 hover:text-blue-600"
-              }`}
+              className={`header-notification-button relative flex size-10 items-center justify-center rounded-full border cursor-pointer ${
+                showNotificationPanel ? "is-open" : ""
+              } ${notificationUnreadCount > 0 ? "has-unread" : ""}`}
+              style={profileThemeVars}
               title="Thông báo"
               aria-haspopup="dialog"
               aria-expanded={showNotificationPanel}
@@ -690,7 +696,7 @@ const Header = ({ overlay = false }) => {
                 notifications
               </span>
               {notificationUnreadCount > 0 && (
-                <span className="absolute -right-1 -top-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-extrabold leading-none text-white ring-2 ring-white">
+                <span className="header-notification-badge absolute -right-1 -top-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-extrabold leading-none text-white ring-2 ring-white">
                   {notificationUnreadCount > 9 ? "9+" : notificationUnreadCount}
                 </span>
               )}
@@ -924,17 +930,15 @@ const Header = ({ overlay = false }) => {
               </div>
             )}
           </div>
-          <button
-            className="hidden items-center justify-center rounded-full size-10 bg-slate-100 text-slate-600 hover:bg-slate-200 hover:text-purple-600 transition-all duration-300 cursor-pointer lg:flex"
-            title="Trợ giúp"
-          >
-            <span className="material-symbols-outlined text-xl">help</span>
-          </button>
         </div>
 
         <div className="relative" ref={dropdownRef}>
           <button
+            type="button"
             className="flex items-center gap-2 cursor-pointer"
+            aria-label="Mở menu tài khoản"
+            aria-haspopup="menu"
+            aria-expanded={showDropdown}
             onClick={toggleDropdown}
           >
             <span className="relative inline-flex">
@@ -943,33 +947,39 @@ const Header = ({ overlay = false }) => {
                   src={avatarUrl}
                   alt={user?.fullName}
                   referrerPolicy={getAvatarReferrerPolicy(avatarUrl)}
-                  className="size-10 rounded-full ring-2 ring-white shadow-md object-cover"
+                  className="size-10 rounded-full object-cover shadow-sm"
                 />
               ) : (
-                <span className="size-10 rounded-full ring-2 ring-white shadow-md bg-blue-600 text-white flex items-center justify-center text-sm font-bold">
+                <span className="size-10 rounded-full bg-blue-600 text-white flex items-center justify-center text-sm font-bold shadow-sm">
                   {userInitial}
                 </span>
               )}
               <span
-                className={`absolute -bottom-0.5 -right-0.5 flex size-4 items-center justify-center rounded-full border-2 border-white ${currentStatusMeta.badgeClassName}`}
+                className={`activity-status-badge activity-status-badge--header absolute -bottom-0.5 -right-0.5 ${currentStatusMeta.badgeClassName}`}
               >
-                <ActivityStatusIcon meta={currentStatusMeta} size="xs" />
+                <ActivityStatusIcon
+                  meta={currentStatusMeta}
+                  size={currentStatusMeta.value === "online" ? "headerOnline" : "xs"}
+                />
               </span>
             </span>
           </button>
 
           {showDropdown && (
-            <div className="absolute right-0 top-full z-50 mt-2 w-[min(20rem,calc(100vw-1rem))] rounded-xl border border-white/10 bg-[#383941] text-white shadow-[0_18px_50px_rgba(15,23,42,0.35)]">
-              <div className="p-4 border-b border-white/10">
-                <p className="text-sm font-bold text-white truncate">
+            <div
+              className="header-profile-menu absolute right-0 top-full z-50 mt-2 w-[min(20rem,calc(100vw-1rem))] rounded-2xl border"
+              style={profileThemeVars}
+            >
+              <div className="header-profile-menu-identity p-4">
+                <p className="truncate text-sm font-black">
                   {user?.fullName}
                 </p>
-                <p className="text-xs text-slate-300 mt-0.5 truncate">
+                <p className="header-profile-muted mt-0.5 truncate text-xs font-semibold">
                   {user?.email}
                 </p>
               </div>
-              <div className="border-b border-white/10 px-3 py-3">
-                <p className="px-2 pb-2 text-[11px] font-bold uppercase tracking-wider text-slate-400">
+              <div className="header-profile-menu-section px-3 py-3">
+                <p className="header-profile-label px-2 pb-2 text-[11px] font-black uppercase tracking-wider">
                   Trạng thái hoạt động
                 </p>
                 <div className="space-y-1">
@@ -999,8 +1009,8 @@ const Header = ({ overlay = false }) => {
                               getDefaultActivityStatusDuration(),
                             )
                           }
-                          className={`grid w-full grid-cols-[1.25rem_1fr_1.25rem] items-center gap-4 rounded-lg px-3 py-3 text-left transition-colors cursor-pointer ${
-                            isActive ? "bg-white/10" : "hover:bg-white/5"
+                          className={`header-profile-status-option grid w-full grid-cols-[1.25rem_1fr_1.25rem] items-center gap-4 rounded-xl px-3 py-3 text-left transition cursor-pointer ${
+                            isActive ? "is-active" : ""
                           } disabled:cursor-not-allowed disabled:opacity-70`}
                         >
                           <span className="flex h-5 w-5 items-center justify-center">
@@ -1010,23 +1020,23 @@ const Header = ({ overlay = false }) => {
                             />
                           </span>
                           <span className="min-w-0 flex-1">
-                            <span className="block text-sm font-bold leading-5 text-white">
+                            <span className="block text-sm font-black leading-5">
                               {option.menuLabel}
                             </span>
                             {option.description && (
-                              <span className="mt-1 block whitespace-normal text-xs leading-snug text-slate-300">
+                              <span className="header-profile-muted mt-1 block whitespace-normal text-xs font-semibold leading-snug">
                                 {option.description}
                               </span>
                             )}
                           </span>
                           {isOnlineOption ? (
                             isActive && (
-                              <span className="material-symbols-outlined text-lg text-blue-300">
+                              <span className="material-symbols-outlined text-lg text-[var(--header-profile-accent)]">
                                 check
                               </span>
                             )
                           ) : (
-                            <span className="material-symbols-outlined text-xl text-slate-300">
+                            <span className="material-symbols-outlined header-profile-muted text-xl">
                               chevron_right
                             </span>
                           )}
@@ -1034,7 +1044,10 @@ const Header = ({ overlay = false }) => {
 
                         {showDurationFlyout && (
                           <div className="absolute right-full top-0 z-[60] pr-2" style={{ minWidth: '13rem' }}>
-                            <div className="flex flex-col rounded-xl border border-white/10 bg-[#383941] py-1 shadow-[0_18px_50px_rgba(15,23,42,0.35)]">
+                            <div
+                              className="header-profile-duration-menu flex flex-col rounded-xl border py-1"
+                              style={profileThemeVars}
+                            >
                               {ACTIVITY_STATUS_DURATIONS.map((duration) => (
                                 <button
                                   key={duration.label}
@@ -1047,7 +1060,7 @@ const Header = ({ overlay = false }) => {
                                       duration.expiresInMinutes,
                                     );
                                   }}
-                                  className="block w-full whitespace-nowrap px-5 py-2.5 text-left text-sm font-medium text-white transition-colors hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-70 cursor-pointer"
+                                  className="header-profile-duration-option block w-full whitespace-nowrap px-5 py-2.5 text-left text-sm font-bold transition disabled:cursor-not-allowed disabled:opacity-70 cursor-pointer"
                                 >
                                   {duration.label}
                                 </button>
@@ -1062,29 +1075,19 @@ const Header = ({ overlay = false }) => {
               </div>
               <div className="py-1">
                 <button
-                  className="flex items-center gap-3 w-full px-4 py-2.5 text-sm text-slate-100 hover:bg-white/10 transition-colors font-medium cursor-pointer"
+                  className="header-profile-menu-action flex w-full items-center gap-3 px-4 py-2.5 text-sm font-bold transition cursor-pointer"
                   onClick={() => {
                     navigate("/profile/me");
                     setShowDropdown(false);
                   }}
                 >
-                  <span className="material-symbols-outlined text-lg text-slate-300">person</span>
+                  <span className="material-symbols-outlined text-lg">person</span>
                   Trang cá nhân
                 </button>
-                <button
-                  className="flex items-center gap-3 w-full px-4 py-2.5 text-sm text-slate-100 hover:bg-white/10 transition-colors font-medium cursor-pointer"
-                  onClick={() => {
-                    navigate("/settings");
-                    setShowDropdown(false);
-                  }}
-                >
-                  <span className="material-symbols-outlined text-lg text-slate-300">settings</span>
-                  Cài đặt
-                </button>
               </div>
-              <div className="border-t border-white/10 py-1">
+              <div className="header-profile-menu-footer py-1">
                 <button
-                  className="flex items-center gap-3 w-full px-4 py-2.5 text-sm text-red-300 hover:bg-red-500/10 transition-colors font-medium cursor-pointer"
+                  className="flex w-full items-center gap-3 px-4 py-2.5 text-sm font-bold text-red-500 transition hover:bg-red-50 cursor-pointer"
                   onClick={handleLogout}
                 >
                   <span className="material-symbols-outlined text-lg">logout</span>

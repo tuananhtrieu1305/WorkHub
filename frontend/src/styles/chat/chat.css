@@ -3045,6 +3045,41 @@ video.chat-attachment-media {
   }
 }
 
+.activity-status-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.125rem;
+  height: 1.125rem;
+  border: 1px solid rgba(255, 255, 255, 0.72);
+  border-radius: 9999px;
+  line-height: 1;
+  filter: none;
+  box-shadow:
+    0 2px 5px rgba(15, 23, 42, 0.14),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.18);
+}
+
+.activity-status-badge--compact {
+  width: 1rem;
+  height: 1rem;
+}
+
+.activity-status-badge--header {
+  width: 1.25rem;
+  height: 1.25rem;
+}
+
+.activity-status-badge--large {
+  width: 1.25rem;
+  height: 1.25rem;
+}
+
+.activity-status-badge .activity-status-symbol {
+  line-height: 1;
+  transform: none;
+}
+
 .activity-status-symbol {
   font-variation-settings:
     "FILL" 1,

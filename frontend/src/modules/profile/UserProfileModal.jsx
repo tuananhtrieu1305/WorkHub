@@ -395,7 +395,7 @@ const UserProfileModal = ({ open, userId, userPreview = null, onClose }) => {
       >
         <div className="profile-modal-scroll overflow-y-auto">
           <div
-            className="profile-banner-surface relative h-56 overflow-hidden sm:h-60"
+            className="profile-banner-surface relative h-60 overflow-hidden sm:h-64"
             style={buildProfileBannerStyle(displayProfile)}
           >
             {bannerUrl && (
