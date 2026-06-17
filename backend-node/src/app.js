@@ -27,7 +27,6 @@ import taskRoutes, {
   projectTaskRouter,
 } from "./views/taskView.js";
 import notificationRoutes from "./views/notificationView.js";
-import adminRoutes from "./views/adminView.js";
 import meetingRoutes from "./views/meetingView.js";
 import { setMeetingIo, startMeetingReconciler } from "./presenters/meetingPresenter.js";
 import callRoutes from "./views/callView.js";
@@ -68,7 +67,6 @@ export const createApp = () => {
   app.use("/api/share", shareRouter);
   app.use("/api/tasks", taskRoutes);
   app.use("/api/notifications", notificationRoutes);
-  app.use("/api/admin", adminRoutes);
   app.use("/api/meetings", meetingRoutes);
   app.use("/api/calls", callRoutes);
   app.use("/api/webhooks/cloudflare", cloudflareWebhookRoutes);

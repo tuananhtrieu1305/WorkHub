@@ -181,15 +181,8 @@ export const listByEntity = async (entityType, entityId, filters = {}) => {
   return listActivityLogs(query, filters);
 };
 
-export const listForAdmin = async (filters = {}) => {
-  const query = applyOptionalFilters({}, filters);
-
-  return listActivityLogs(query, filters);
-};
-
 export default {
   logActivity,
   listByEntity,
-  listForAdmin,
   redactSensitiveMetadata,
 };
