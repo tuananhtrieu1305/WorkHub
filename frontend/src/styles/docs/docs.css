@@ -100,7 +100,7 @@
 
 .docs-toolbar {
   display: grid;
-  grid-template-columns: minmax(15rem, 1fr) repeat(3, minmax(10rem, 12rem));
+  grid-template-columns: minmax(15rem, 1fr) minmax(18rem, 1.2fr) repeat(2, minmax(10rem, 12rem));
   gap: 0.75rem;
   border-radius: 1.5rem;
   border: 1px solid #dbeafe;
@@ -142,6 +142,43 @@
   color: #0f172a;
   font-weight: 800;
   outline: none;
+}
+
+.docs-file-filter {
+  display: flex;
+  min-width: 0;
+  min-height: 2.875rem;
+  align-items: center;
+  gap: 0.5rem;
+  overflow-x: auto;
+  border-radius: 1rem;
+  border: 1px solid #dbe3ee;
+  background: #f8fafc;
+  padding: 0.375rem;
+}
+
+.docs-file-filter-chip {
+  display: inline-flex;
+  min-width: max-content;
+  align-items: center;
+  justify-content: center;
+  gap: 0.375rem;
+  border-radius: 0.75rem;
+  padding: 0.5rem 0.625rem;
+  color: #475569;
+  font-size: 0.75rem;
+  font-weight: 900;
+  transition:
+    background 160ms ease,
+    color 160ms ease,
+    transform 160ms ease;
+}
+
+.docs-file-filter-chip:hover,
+.docs-file-filter-chip.is-active {
+  background: #0891b2;
+  color: #ffffff;
+  transform: translateY(-1px);
 }
 
 .docs-search-box:focus-within,
@@ -239,6 +276,85 @@
   border-radius: 1.5rem;
   padding: 1rem;
   background: linear-gradient(135deg, #ffffff, #f0f9ff);
+}
+
+.docs-trend-summary {
+  margin-top: 1rem;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  color: #64748b;
+  font-size: 0.75rem;
+  font-weight: 900;
+}
+
+.docs-trend-summary span {
+  border-radius: 999px;
+  background: rgba(14, 116, 144, 0.08);
+  padding: 0.375rem 0.625rem;
+}
+
+.docs-trend-chart {
+  margin-top: 1rem;
+  display: flex;
+  height: 8rem;
+  align-items: end;
+  gap: 0.5rem;
+}
+
+.docs-trend-bar-shell {
+  display: flex;
+  width: 100%;
+  height: 6.5rem;
+  align-items: end;
+  border-radius: 1rem 1rem 0.5rem 0.5rem;
+  background: linear-gradient(180deg, rgba(224, 242, 254, 0.45), rgba(248, 250, 252, 0.72));
+  padding: 0.25rem;
+}
+
+.docs-trend-bar {
+  position: relative;
+  display: flex;
+  width: 100%;
+  height: var(--bar-height);
+  min-height: 0.5rem;
+  transform-origin: bottom;
+  align-items: flex-start;
+  justify-content: center;
+  overflow: hidden;
+  border-radius: 0.75rem 0.75rem 0.375rem 0.375rem;
+  background: linear-gradient(180deg, #38bdf8, #0891b2);
+  color: #ffffff;
+  box-shadow: 0 12px 24px -18px rgba(8, 145, 178, 0.8);
+  animation: docsTrendGrow 720ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+  animation-delay: var(--bar-delay);
+  transition:
+    background 160ms ease,
+    transform 160ms ease;
+}
+
+.docs-trend-bar.is-empty {
+  background: #cbd5e1;
+  box-shadow: none;
+}
+
+.docs-trend-bar span {
+  margin-top: 0.25rem;
+  font-size: 0.625rem;
+  font-weight: 900;
+  line-height: 1;
+  opacity: 0;
+  transition: opacity 160ms ease;
+}
+
+.docs-trend-bar:hover {
+  background: linear-gradient(180deg, #60a5fa, #2563eb);
+  transform: translateY(-2px);
+}
+
+.docs-trend-bar:hover span {
+  opacity: 1;
 }
 
 .docs-document-row {
@@ -443,6 +559,17 @@
   }
 }
 
+@keyframes docsTrendGrow {
+  from {
+    opacity: 0;
+    transform: scaleY(0.08);
+  }
+  to {
+    opacity: 1;
+    transform: scaleY(1);
+  }
+}
+
 @media (max-width: 1100px) {
   .docs-stats-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -492,6 +619,8 @@
 @media (prefers-reduced-motion: reduce) {
   .docs-document-row,
   .docs-folder-chip,
+  .docs-file-filter-chip,
+  .docs-trend-bar,
   .docs-icon-button,
   .docs-primary-button,
   .docs-secondary-button,

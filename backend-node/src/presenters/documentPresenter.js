@@ -12,6 +12,7 @@ import { buildR2ObjectKey, getR2StorageService } from "../services/r2StorageServ
 import permission from "../services/documentPermissionService.js";
 import { setFileHeaders } from "../utils/fileResponse.js";
 import { validateUploadedFile } from "../services/fileValidationService.js";
+import { getLocalDateKey } from "../utils/dateKeys.js";
 import {
   assertResourceInActiveOrganization,
   getRequestOrganizationId,
@@ -62,6 +63,16 @@ const escapeRegExp = (value = "") =>
 const normalizeDocumentCategory = (value) => {
   const category = String(value || "").trim().toLowerCase();
   return DOCUMENT_CATEGORIES.has(category) ? category : "general";
+};
+
+const normalizeDocumentName = (value, fallback) => {
+  const name = String(value || "")
+    .trim()
+    .replace(/[\r\n\t]+/g, " ")
+    .replace(/[\\/]+/g, "-")
+    .replace(/\s+/g, " ")
+    .slice(0, 255);
+  return name || fallback;
 };
 
 const normalizeDocumentTags = (value) => {
@@ -328,7 +339,7 @@ export const uploadDocumentToFolder = async (req, res) => {
 
     const uploadSessionId = crypto.randomUUID();
     document = await Document.create({
-      name: validation.safeName,
+      name: normalizeDocumentName(req.body.name, validation.safeName),
       description: req.body.description || "",
       category: normalizeDocumentCategory(req.body.category),
       tags: normalizeDocumentTags(req.body.tags),
@@ -557,7 +568,6 @@ export const getDocumentStats = async (req, res) => {
   const uploaderMap = new Map();
   const today = new Date();
   today.setHours(0, 0, 0, 0);
-  const dayMs = 24 * 60 * 60 * 1000;
   const activityMap = new Map();
   let storageBytes = 0;
   let downloads = 0;
@@ -588,14 +598,15 @@ export const getDocumentStats = async (req, res) => {
 
     const createdAt = new Date(doc.createdAt);
     if (Number.isFinite(createdAt.getTime())) {
-      const key = createdAt.toISOString().slice(0, 10);
+      const key = getLocalDateKey(createdAt);
       activityMap.set(key, (activityMap.get(key) || 0) + 1);
     }
   });
 
   const trend = Array.from({ length: 14 }, (_, index) => {
-    const date = new Date(today.getTime() - (13 - index) * dayMs);
-    const key = date.toISOString().slice(0, 10);
+    const date = new Date(today);
+    date.setDate(today.getDate() - (13 - index));
+    const key = getLocalDateKey(date);
     return {
       key,
       label: date.toLocaleDateString("vi-VN", {

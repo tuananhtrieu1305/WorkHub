@@ -37,6 +37,17 @@ const categoryOptions = Object.entries(categoryLabels).map(([value, label]) => (
   label,
 }));
 
+const extensionFilterOptions = [
+  { value: "all", label: "Tất cả", icon: "draft" },
+  { value: ".pdf", label: "PDF", icon: "picture_as_pdf" },
+  { value: ".docx", label: "DOCX", icon: "description" },
+  { value: ".xlsx", label: "XLSX", icon: "table_chart" },
+  { value: ".pptx", label: "PPTX", icon: "co_present" },
+  { value: ".png", label: "PNG", icon: "image" },
+  { value: ".jpg", label: "JPG", icon: "image" },
+  { value: ".txt", label: "TXT", icon: "article" },
+];
+
 const statusLabels = {
   active: "Sẵn sàng",
   uploading: "Đang tải",
@@ -69,8 +80,8 @@ const extensionTone = {
 
 const defaultFilters = {
   search: "",
-  category: "all",
   folderId: "",
+  extension: "all",
   owner: "all",
   sort: "recent",
 };
@@ -78,8 +89,8 @@ const defaultFilters = {
 const defaultUploadForm = {
   file: null,
   folderId: "",
+  name: "",
   description: "",
-  category: "general",
   tags: "",
 };
 
@@ -115,6 +126,42 @@ const formatDateTime = (value) => {
     month: "2-digit",
     year: "numeric",
   });
+};
+
+const getLocalDateKey = (value) => {
+  const date = value instanceof Date ? value : new Date(value);
+  if (!Number.isFinite(date.getTime())) return "";
+  return [
+    date.getFullYear(),
+    String(date.getMonth() + 1).padStart(2, "0"),
+    String(date.getDate()).padStart(2, "0"),
+  ].join("-");
+};
+
+const buildEmptyUploadTrend = () => {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  return Array.from({ length: 14 }, (_, index) => {
+    const date = new Date(today);
+    date.setDate(today.getDate() - (13 - index));
+    return {
+      key: getLocalDateKey(date),
+      label: date.toLocaleDateString("vi-VN", {
+        day: "2-digit",
+        month: "2-digit",
+      }),
+      value: 0,
+    };
+  });
+};
+
+const normalizeUploadTrend = (trend) => {
+  const source = Array.isArray(trend) && trend.length ? trend.slice(-14) : buildEmptyUploadTrend();
+  return source.map((item, index) => ({
+    key: item.key || `trend-${index}`,
+    label: item.label || item.key || `Ngày ${index + 1}`,
+    value: Number.isFinite(Number(item.value)) ? Number(item.value) : 0,
+  }));
 };
 
 const getErrorMessage = (error, fallback) =>
@@ -207,7 +254,9 @@ const DocumentIcon = ({ document }) => {
 
 const DocsStats = ({ stats }) => {
   const summary = stats?.summary || {};
-  const maxTrend = Math.max(1, ...(stats?.trend || []).map((item) => item.value));
+  const trendItems = normalizeUploadTrend(stats?.trend);
+  const maxTrend = Math.max(1, ...trendItems.map((item) => item.value));
+  const totalTrendUploads = trendItems.reduce((total, item) => total + item.value, 0);
 
   return (
     <section className="docs-stats-grid">
@@ -269,19 +318,33 @@ const DocsStats = ({ stats }) => {
             monitoring
           </span>
         </div>
-        <div className="mt-5 flex h-28 items-end gap-2">
-          {(stats?.trend || []).map((item) => (
-            <div key={item.key} className="group flex flex-1 flex-col items-center gap-2">
-              <div
-                className="w-full rounded-t-xl bg-cyan-400 transition group-hover:bg-blue-500"
-                style={{ height: `${Math.max(8, (item.value / maxTrend) * 100)}%` }}
-                title={`${item.label}: ${item.value}`}
-              />
-              <span className="hidden text-[10px] font-bold text-slate-400 sm:inline">
+        <div className="docs-trend-summary">
+          <span>{totalTrendUploads} lượt upload</span>
+          <span>14 ngày gần nhất</span>
+        </div>
+        <div className="docs-trend-chart">
+          {trendItems.map((item, index) => {
+            const barHeight = item.value > 0 ? Math.max(16, (item.value / maxTrend) * 100) : 8;
+            return (
+              <div key={item.key} className="group flex flex-1 flex-col items-center gap-2">
+                <div className="docs-trend-bar-shell">
+                  <div
+                    className={`docs-trend-bar ${item.value === 0 ? "is-empty" : ""}`}
+                    style={{
+                      "--bar-height": `${barHeight}%`,
+                      "--bar-delay": `${index * 45}ms`,
+                    }}
+                    title={`${item.label}: ${item.value}`}
+                  >
+                    <span>{item.value}</span>
+                  </div>
+                </div>
+                <span className="hidden text-[10px] font-bold text-slate-400 sm:inline">
                 {item.label}
-              </span>
-            </div>
-          ))}
+                </span>
+              </div>
+            );
+          })}
         </div>
       </article>
     </section>
@@ -563,8 +626,8 @@ const DocsPage = () => {
     }
     const formData = new FormData();
     formData.append("file", uploadForm.file);
+    if (uploadForm.name.trim()) formData.append("name", uploadForm.name.trim());
     formData.append("description", uploadForm.description);
-    formData.append("category", uploadForm.category);
     formData.append("tags", JSON.stringify(buildTags(uploadForm.tags)));
     if (uploadForm.folderId) formData.append("folderId", uploadForm.folderId);
 
@@ -821,17 +884,24 @@ const DocsPage = () => {
             placeholder="Tìm theo tên, mô tả, tag..."
           />
         </label>
-        <select
-          value={filters.category}
-          onChange={(event) => handleFilterChange("category", event.target.value)}
-          className="docs-select"
-        >
-          {categoryOptions.map((option) => (
-            <option key={option.value} value={option.value}>
-              {option.label}
-            </option>
+        <div className="docs-file-filter" aria-label="Lọc theo loại file">
+          {extensionFilterOptions.map((option) => (
+            <button
+              key={option.value}
+              type="button"
+              onClick={() => handleFilterChange("extension", option.value)}
+              className={`docs-file-filter-chip ${
+                filters.extension === option.value ? "is-active" : ""
+              }`}
+              title={option.label}
+            >
+              <span className="material-symbols-outlined text-[18px]">
+                {option.icon}
+              </span>
+              <span>{option.label}</span>
+            </button>
           ))}
-        </select>
+        </div>
         <select
           value={filters.owner}
           onChange={(event) => handleFilterChange("owner", event.target.value)}
@@ -968,6 +1038,7 @@ const DocsPage = () => {
                   setUploadForm((current) => ({
                     ...current,
                     file: event.target.files?.[0] || null,
+                    name: current.name || event.target.files?.[0]?.name || "",
                   }))
                 }
               />
@@ -994,25 +1065,18 @@ const DocsPage = () => {
                 </select>
               </label>
               <label className="grid gap-2">
-                <FieldLabel>Nhóm tài liệu</FieldLabel>
-                <select
-                  value={uploadForm.category}
+                <FieldLabel>Tên hiển thị</FieldLabel>
+                <input
+                  value={uploadForm.name}
                   onChange={(event) =>
                     setUploadForm((current) => ({
                       ...current,
-                      category: event.target.value,
+                      name: event.target.value,
                     }))
                   }
                   className="docs-input"
-                >
-                  {categoryOptions
-                    .filter((option) => option.value !== "all")
-                    .map((option) => (
-                      <option key={option.value} value={option.value}>
-                        {option.label}
-                      </option>
-                    ))}
-                </select>
+                  placeholder="VD: Quy chế lương thưởng 2026"
+                />
               </label>
             </div>
             <label className="grid gap-2">
