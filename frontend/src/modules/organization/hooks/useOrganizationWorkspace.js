@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
+import { getEffectiveActivityStatus } from "../../chat/activityStatus";
 import {
   banOrganizationMember,
   createOrganizationInvite,
@@ -112,6 +113,74 @@ const getMemberName = (member) =>
 
 const getInviteCode = (invite) => invite?.code || "Mã mời";
 
+const getVisibleMemberActivityStatus = (member) => {
+  const status = getEffectiveActivityStatus({
+    activityStatus: member?.user?.activityStatus,
+    isOnline: Boolean(member?.user?.isOnline),
+  });
+  return status === "invisible" ? "offline" : status;
+};
+
+const shouldUseActivityFilter = (activityStatus) =>
+  ["online", "idle", "dnd", "offline"].includes(String(activityStatus || ""));
+
+const applyActivityFilterFallback = (payload, filters) => {
+  const activityStatus = String(filters.activityStatus || "all");
+  const content = payload.content || [];
+  if (!shouldUseActivityFilter(activityStatus)) {
+    return {
+      content,
+      pagination: {
+        page: payload.page || payload.number || filters.page || 1,
+        size: payload.size || filters.size || 8,
+        totalElements: payload.totalElements || 0,
+        totalPages: payload.totalPages || 0,
+        first: payload.first !== false,
+        last: payload.last !== false,
+      },
+    };
+  }
+
+  const hasUnfilteredRows = content.some(
+    (member) => getVisibleMemberActivityStatus(member) !== activityStatus,
+  );
+  if (!hasUnfilteredRows) {
+    return {
+      content,
+      pagination: {
+        page: payload.page || payload.number || filters.page || 1,
+        size: filters.size || payload.size || 8,
+        totalElements: payload.totalElements || content.length,
+        totalPages: payload.totalPages || (content.length ? 1 : 0),
+        first: payload.first !== false,
+        last: payload.last !== false,
+      },
+    };
+  }
+
+  const pageSize = filters.size || 8;
+  const requestedPage = filters.page || 1;
+  const filteredContent = content.filter(
+    (member) => getVisibleMemberActivityStatus(member) === activityStatus,
+  );
+  const totalElements = filteredContent.length;
+  const totalPages = totalElements ? Math.ceil(totalElements / pageSize) : 0;
+  const currentPage = totalPages ? Math.min(requestedPage, totalPages) : 1;
+  const pageStart = (currentPage - 1) * pageSize;
+
+  return {
+    content: filteredContent.slice(pageStart, pageStart + pageSize),
+    pagination: {
+      page: currentPage,
+      size: pageSize,
+      totalElements,
+      totalPages,
+      first: currentPage <= 1,
+      last: totalPages === 0 || currentPage >= totalPages,
+    },
+  };
+};
+
 const buildInvitePayload = (form, { canBypassApproval = false } = {}) => {
   const duration = inviteExpiryDurations[form.expiresIn];
   const expiresAt =
@@ -150,7 +219,8 @@ export const useOrganizationWorkspace = () => {
   const [joinRequestQuestions, setJoinRequestQuestions] = useState([]);
   const [memberFilters, setMemberFilters] = useState({
     search: "",
-    status: "all",
+    status: "active",
+    activityStatus: "all",
     role: "",
     page: 1,
     size: 8,
@@ -276,16 +346,15 @@ export const useOrganizationWorkspace = () => {
 
     setLoading((current) => ({ ...current, members: true }));
     try {
-      const payload = await getOrganizationMembers(organizationId, memberFilters);
-      setMembers(payload.content || []);
-      setMemberPagination({
-        page: payload.page || payload.number || memberFilters.page || 1,
-        size: payload.size || memberFilters.size || 8,
-        totalElements: payload.totalElements || 0,
-        totalPages: payload.totalPages || 0,
-        first: payload.first !== false,
-        last: payload.last !== false,
+      const usesActivityFilter = shouldUseActivityFilter(memberFilters.activityStatus);
+      const payload = await getOrganizationMembers(organizationId, {
+        ...memberFilters,
+        page: usesActivityFilter ? 1 : memberFilters.page,
+        size: usesActivityFilter ? 50 : memberFilters.size,
       });
+      const normalizedPayload = applyActivityFilterFallback(payload, memberFilters);
+      setMembers(normalizedPayload.content);
+      setMemberPagination(normalizedPayload.pagination);
     } catch (error) {
       console.error("Failed to load organization members:", error);
       message.error(getErrorMessage(error, "Không thể tải thành viên"), {

@@ -82,23 +82,6 @@ const Sidebar = () => {
           })}
         </nav>
 
-        <div className="w-full pt-4 mt-2 border-t border-slate-200/50 flex flex-col items-center gap-3">
-          <div className="glass-panel w-full flex flex-col items-center p-2 rounded-2xl shadow-sm">
-            <span className="material-symbols-outlined text-blue-500 text-xl mb-1">track_changes</span>
-            <span className="text-[10px] font-extrabold text-slate-700 text-center leading-tight uppercase tracking-wide">
-              Focus
-            </span>
-            <div className="w-full h-1.5 bg-slate-200 rounded-full mt-2 overflow-hidden">
-              <div className="h-full bg-blue-500 rounded-full" style={{ width: "65%" }} />
-            </div>
-          </div>
-          <div className="glass-panel w-full flex flex-col items-center p-2 rounded-2xl shadow-sm">
-            <span className="material-symbols-outlined text-orange-500 text-xl mb-1">timer</span>
-            <span className="text-[11px] font-extrabold text-orange-600 text-center leading-tight">
-              25:00
-            </span>
-          </div>
-        </div>
       </div>
     </aside>
   );

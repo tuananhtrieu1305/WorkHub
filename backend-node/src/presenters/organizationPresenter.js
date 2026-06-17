@@ -70,6 +70,7 @@ const MAX_LOGO_SIZE_BYTES = 5 * 1024 * 1024;
 const MAX_BANNER_SIZE_BYTES = 8 * 1024 * 1024;
 const HOUR_MS = 60 * 60 * 1000;
 const PAUSE_DURATION_HOURS = new Set([1, 2, 4, 6, 12, 24]);
+const MEMBER_ACTIVITY_FILTERS = new Set(["online", "idle", "dnd", "offline"]);
 
 const toId = (value) => String(value?._id || value?.id || value || "");
 
@@ -419,6 +420,14 @@ const serializeJoinAnswer = (answer) => ({
   value: answer.value,
 });
 
+const getVisibleMemberActivityStatus = (member) => {
+  const presence = getPresenceFields(member?.userId);
+  if (!presence.isOnline || presence.activityStatus === "invisible") {
+    return "offline";
+  }
+  return presence.activityStatus;
+};
+
 const serializeMember = (membership, roleMap = new Map(), organization = null) => {
   const user = membership.userId;
   const rolePayloads = getRolesFromMap(membership, roleMap).map((role) =>
@@ -678,6 +687,9 @@ export const getOrganizationMembers = async (req, res) => {
   }
 
   const requestedStatus = String(req.query.status || "active").toLowerCase();
+  const requestedActivityStatus = String(
+    req.query.activityStatus || req.query.activity || "all",
+  ).toLowerCase();
   const canManage = hasOrganizationPermission(membership, "manageMembers");
   const canViewMembers = hasOrganizationPermission(membership, "viewMembers");
   if (!canViewMembers) {
@@ -730,6 +742,11 @@ export const getOrganizationMembers = async (req, res) => {
     .sort({ status: 1, roleId: 1, role: 1, joinedAt: 1, updatedAt: 1 });
   if (!roles) roles = await getOrganizationRoles(req.params.id);
   const roleMap = buildRoleMap(roles);
+  if (MEMBER_ACTIVITY_FILTERS.has(requestedActivityStatus)) {
+    members = members.filter(
+      (member) => getVisibleMemberActivityStatus(member) === requestedActivityStatus,
+    );
+  }
   if (search) {
     const needle = search.toLowerCase();
     members = members.filter((member) => {

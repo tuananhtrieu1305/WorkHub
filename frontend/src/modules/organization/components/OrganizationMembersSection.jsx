@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import {
   getActivityStatusMeta,
@@ -7,7 +7,7 @@ import {
 import { formatDate, hasPermission } from "../organizationUtils";
 import Icon from "./Icon";
 import MemberAvatar from "./MemberAvatar";
-import { PanelListSkeleton } from "../../../components/common/Skeleton";
+import { TableRowsSkeleton } from "../../../components/common/Skeleton";
 
 const getMemberRoles = (member = {}) =>
   Array.isArray(member.roles) && member.roles.length
@@ -34,6 +34,127 @@ const getMemberRoleIdSet = (member = {}) =>
 
 const getMemberName = (member) =>
   member?.user?.fullName || member?.user?.email || "Thành viên";
+
+const activityFilterOptions = [
+  { value: "all", label: "Tất cả", icon: "tune" },
+  { value: "online", label: "Trực tuyến", icon: "circle" },
+  { value: "idle", label: "Chờ", icon: "dark_mode" },
+  { value: "dnd", label: "Không làm phiền", icon: "do_not_disturb_on" },
+  { value: "offline", label: "Ngoại tuyến", icon: "offline_ring" },
+];
+
+const findFilterOption = (options, value) =>
+  options.find((option) => option.value === value) || options[0];
+
+const FilterDropdown = ({ ariaLabel, onChange, options, value }) => {
+  const [open, setOpen] = useState(false);
+  const wrapperRef = useRef(null);
+  const selected = findFilterOption(options, value);
+
+  useEffect(() => {
+    if (!open) return undefined;
+
+    const handlePointerDown = (event) => {
+      if (!wrapperRef.current?.contains(event.target)) setOpen(false);
+    };
+    const handleKeyDown = (event) => {
+      if (event.key === "Escape") setOpen(false);
+    };
+
+    document.addEventListener("pointerdown", handlePointerDown);
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("pointerdown", handlePointerDown);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [open]);
+
+  return (
+    <div ref={wrapperRef} className="relative min-w-0">
+      <button
+        type="button"
+        onClick={() => setOpen((current) => !current)}
+        className={`flex h-12 w-full items-center justify-between gap-3 rounded-2xl border px-4 text-left text-sm font-black shadow-sm transition duration-200 focus:outline-none focus:ring-4 focus:ring-blue-100 ${
+          open
+            ? "border-blue-300 bg-white text-blue-900 shadow-blue-100/70"
+            : "border-slate-200 bg-slate-50 text-slate-950 hover:border-blue-200 hover:bg-white"
+        }`}
+        aria-expanded={open}
+        aria-label={ariaLabel}
+      >
+        <span className="flex min-w-0 items-center gap-2.5">
+          {selected?.color ? (
+            <span
+              className="size-2.5 shrink-0 rounded-full ring-2 ring-white"
+              style={{ backgroundColor: selected.color }}
+            />
+          ) : (
+            <Icon
+              name={selected?.icon || "filter_list"}
+              className="shrink-0 text-xl leading-none text-slate-500"
+            />
+          )}
+          <span className="truncate">{selected?.label}</span>
+        </span>
+        <Icon
+          name="expand_more"
+          className={`shrink-0 text-slate-400 transition duration-200 ${
+            open ? "rotate-180 text-blue-600" : ""
+          }`}
+        />
+      </button>
+
+      <div
+        className={`absolute left-0 right-0 top-[calc(100%+0.5rem)] z-40 origin-top overflow-hidden rounded-[1.25rem] bg-white shadow-2xl ring-1 ring-slate-200 transition duration-200 ${
+          open
+            ? "translate-y-0 scale-100 opacity-100"
+            : "pointer-events-none -translate-y-1 scale-[0.98] opacity-0"
+        }`}
+      >
+        <div className="max-h-72 overflow-y-auto p-1.5">
+          {options.map((option) => {
+            const selectedOption = option.value === selected?.value;
+            return (
+              <button
+                key={option.value || option.label}
+                type="button"
+                onClick={() => {
+                  onChange(option.value);
+                  setOpen(false);
+                }}
+                className={`flex w-full items-center justify-between gap-3 rounded-2xl px-3 py-2.5 text-left transition ${
+                  selectedOption
+                    ? "bg-blue-50 text-blue-800"
+                    : "text-slate-600 hover:bg-slate-50"
+                }`}
+              >
+                <span className="flex min-w-0 items-center gap-2.5">
+                  {option.color ? (
+                    <span
+                      className="size-2.5 shrink-0 rounded-full ring-2 ring-white"
+                      style={{ backgroundColor: option.color }}
+                    />
+                  ) : (
+                    <Icon
+                      name={option.icon || "filter_list"}
+                      className="shrink-0 text-lg leading-none"
+                    />
+                  )}
+                  <span className="truncate text-sm font-black">
+                    {option.label}
+                  </span>
+                </span>
+                {selectedOption && (
+                  <Icon name="check_circle" className="shrink-0 text-blue-600" />
+                )}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+};
 
 const RoleBadge = ({ compact = true, role }) => {
   const color = role?.color || "#2563eb";
@@ -269,6 +390,19 @@ const OrganizationMembersSection = ({
     const memberRoleIds = getMemberRoleIdSet(roleAssignMember);
     return manageableRoles.filter((role) => !memberRoleIds.has(String(role.id)));
   }, [manageableRoles, roleAssignMember]);
+  const roleFilterOptions = useMemo(
+    () => [
+      { value: "", label: "Mọi vai trò", icon: "admin_panel_settings" },
+      ...roles.map((role) => ({
+        value: role.id,
+        label: role.name,
+        icon: "server_person",
+        color: role.color || "#2563eb",
+      })),
+    ],
+    [roles],
+  );
+  const activityStatusValue = filters.activityStatus || "all";
   const currentPage = pagination?.page || filters.page || 1;
   const totalPages = pagination?.totalPages || 0;
   const pageSize = pagination?.size || filters.size || 8;
@@ -298,154 +432,178 @@ const OrganizationMembersSection = ({
             Theo dõi trạng thái, vai trò và quyền thao tác của từng người.
           </p>
         </div>
-        <div className="grid gap-2 sm:grid-cols-[minmax(220px,1fr)_160px_170px]">
+        <div className="grid gap-2 sm:grid-cols-[minmax(240px,1fr)_180px_190px]">
           <label className="relative block">
             <Icon
               name="search"
               className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-lg leading-none text-slate-400"
             />
             <input
-              value={filters.search}
+              value={filters.search || ""}
               onChange={(event) => changeFilters({ search: event.target.value })}
-              placeholder="Tìm theo tên, email, vai trò"
-              className="h-11 w-full rounded-2xl border border-slate-200 bg-slate-50 pl-10 pr-3 text-sm font-bold outline-none transition focus:border-blue-300 focus:bg-white focus:ring-4 focus:ring-blue-100"
+              placeholder="Tìm kiếm"
+              className="h-12 w-full rounded-2xl border border-slate-200 bg-slate-50 pl-10 pr-3 text-sm font-bold outline-none transition focus:border-blue-300 focus:bg-white focus:ring-4 focus:ring-blue-100"
             />
           </label>
-          <select
-            value={filters.status}
-            onChange={(event) => changeFilters({ status: event.target.value })}
-            className="h-11 rounded-2xl border border-slate-200 bg-slate-50 px-3 text-sm font-bold outline-none transition focus:border-blue-300 focus:bg-white focus:ring-4 focus:ring-blue-100"
-          >
-            <option value="all">Tất cả</option>
-            <option value="active">Đang hoạt động</option>
-            {canManageMembers && <option value="pending">Chờ duyệt</option>}
-          </select>
-          <select
-            value={filters.role}
-            onChange={(event) => changeFilters({ role: event.target.value })}
-            className="h-11 rounded-2xl border border-slate-200 bg-slate-50 px-3 text-sm font-bold outline-none transition focus:border-blue-300 focus:bg-white focus:ring-4 focus:ring-blue-100"
-          >
-            <option value="">Mọi vai trò</option>
-            {roles.map((role) => (
-              <option key={role.id} value={role.id}>
-                {role.name}
-              </option>
-            ))}
-          </select>
+          <FilterDropdown
+            ariaLabel="Lọc theo trạng thái hoạt động"
+            onChange={(value) => changeFilters({ activityStatus: value })}
+            options={activityFilterOptions}
+            value={activityStatusValue}
+          />
+          <FilterDropdown
+            ariaLabel="Lọc theo vai trò"
+            onChange={(value) => changeFilters({ role: value })}
+            options={roleFilterOptions}
+            value={filters.role || ""}
+          />
         </div>
       </div>
 
-      <div className="mt-5 rounded-3xl ring-1 ring-slate-200">
-        <div className="hidden grid-cols-[minmax(260px,1.2fr)_135px_230px_175px_280px] gap-2 rounded-t-3xl bg-slate-50 px-4 py-3 text-xs font-black uppercase lg:grid">
-          <span className="rounded-2xl bg-blue-50 px-3 py-2 text-blue-700 ring-1 ring-blue-100">
-            Người dùng
-          </span>
-          <span className="rounded-2xl bg-emerald-50 px-3 py-2 text-emerald-700 ring-1 ring-emerald-100">
-            Gia nhập
-          </span>
-          <span className="rounded-2xl bg-violet-50 px-3 py-2 text-violet-700 ring-1 ring-violet-100">
-            Vai trò
-          </span>
-          <span className="rounded-2xl bg-amber-50 px-3 py-2 text-amber-700 ring-1 ring-amber-100">
-            Hoạt động
-          </span>
-          <span className="rounded-2xl bg-rose-50 px-3 py-2 text-right text-rose-700 ring-1 ring-rose-100">
-            Thao tác
-          </span>
-        </div>
+      <div className="mt-5 overflow-hidden rounded-3xl ring-1 ring-slate-200">
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[1120px] table-fixed border-collapse text-left">
+            <colgroup>
+              <col className="w-[310px]" />
+              <col className="w-[140px]" />
+              <col className="w-[270px]" />
+              <col className="w-[170px]" />
+              <col className="w-[230px]" />
+            </colgroup>
+            <thead>
+              <tr className="text-xs font-black uppercase">
+                <th className="bg-blue-50 px-4 py-3 text-blue-700">
+                  Người dùng
+                </th>
+                <th className="bg-emerald-50 px-4 py-3 text-emerald-700">
+                  Gia nhập
+                </th>
+                <th className="bg-violet-50 px-4 py-3 text-violet-700">
+                  Vai trò
+                </th>
+                <th className="bg-amber-50 px-4 py-3 text-amber-700">
+                  Hoạt động
+                </th>
+                <th className="bg-rose-50 px-4 py-3 text-right text-rose-700">
+                  Thao tác
+                </th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100 bg-white">
+              {isLoading ? (
+                <TableRowsSkeleton rows={4} columns={5} colSpan={5} />
+              ) : members.length ? (
+                members.map((member) => {
+                  const memberRoleIds = getMemberRoleIdSet(member);
+                  const assignableRoles = manageableRoles.filter(
+                    (role) => !memberRoleIds.has(String(role.id)),
+                  );
+                  const canManageRow =
+                    canManageMembers &&
+                    !member.isOwner &&
+                    member.canManage !== false &&
+                    member.status !== "banned" &&
+                    member.status !== "removed";
+                  const memberName = getMemberName(member);
 
-        {isLoading ? (
-          <PanelListSkeleton count={4} iconRounded="rounded-2xl" />
-        ) : members.length ? (
-          <div className="divide-y divide-slate-100">
-            {members.map((member) => {
-              const memberRoleIds = getMemberRoleIdSet(member);
-              const assignableRoles = manageableRoles.filter(
-                (role) => !memberRoleIds.has(String(role.id)),
-              );
-              const canManageRow =
-                canManageMembers &&
-                !member.isOwner &&
-                member.canManage !== false &&
-                member.status !== "banned" &&
-                member.status !== "removed";
-
-              return (
-                <div
-                  key={member.id}
-                  className="grid gap-3 px-4 py-4 lg:grid-cols-[minmax(260px,1.2fr)_135px_230px_175px_280px] lg:items-center"
-                >
-                  <div className="flex min-w-0 items-center gap-3">
-                    <MemberAvatar member={member} />
-                    <div className="min-w-0">
-                      <p className="truncate text-sm font-black text-slate-950">
-                        {member.user?.fullName || "Người dùng"}
-                      </p>
-                      <p className="truncate text-xs font-semibold text-slate-500">
-                        {member.user?.email}
+                  return (
+                    <tr
+                      key={member.id}
+                      className="align-middle transition hover:bg-slate-50/80"
+                    >
+                      <td className="px-4 py-4">
+                        <div className="flex min-w-0 items-center gap-3">
+                          <MemberAvatar member={member} />
+                          <div className="min-w-0">
+                            <p className="truncate text-sm font-black text-slate-950">
+                              {member.user?.fullName || "Người dùng"}
+                            </p>
+                            <p className="truncate text-xs font-semibold text-slate-500">
+                              {member.user?.email || "Chưa có email"}
+                            </p>
+                          </div>
+                        </div>
+                      </td>
+                      <td className="px-4 py-4">
+                        <span className="font-mono text-sm font-black tabular-nums text-slate-700">
+                          {formatDate(member.joinedAt) || "Chưa gia nhập"}
+                        </span>
+                      </td>
+                      <td className="px-4 py-4">
+                        <MemberRoleCell
+                          member={member}
+                          onToggle={() =>
+                            setOpenRoleMemberId((current) =>
+                              current === member.id ? "" : member.id,
+                            )
+                          }
+                          open={openRoleMemberId === member.id}
+                        />
+                      </td>
+                      <td className="px-4 py-4">
+                        <ActivityBadge member={member} />
+                      </td>
+                      <td className="px-4 py-4">
+                        <div className="flex justify-end gap-2">
+                          {canManageRow ? (
+                            <>
+                              <button
+                                type="button"
+                                onClick={() => setRoleAssignMember(member)}
+                                disabled={!assignableRoles.length}
+                                className="inline-flex size-9 items-center justify-center rounded-xl bg-blue-50 text-blue-700 transition hover:bg-blue-100 disabled:cursor-not-allowed disabled:opacity-45"
+                                aria-label={`Thêm vai trò cho ${memberName}`}
+                                title="Thêm vai trò"
+                              >
+                                <Icon name="add" />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => onKickMember?.(member)}
+                                className="inline-flex size-9 items-center justify-center rounded-xl bg-amber-50 text-amber-700 transition hover:bg-amber-100"
+                                aria-label={`Đuổi ${memberName}`}
+                                title="Đuổi"
+                              >
+                                <Icon name="person_remove" />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => onBanMember?.(member)}
+                                className="inline-flex size-9 items-center justify-center rounded-xl bg-rose-50 text-rose-700 transition hover:bg-rose-100"
+                                aria-label={`Chặn ${memberName}`}
+                                title="Chặn"
+                              >
+                                <Icon name="block" />
+                              </button>
+                            </>
+                          ) : (
+                            <span className="inline-flex h-9 items-center rounded-xl bg-slate-50 px-3 text-xs font-black text-slate-400 ring-1 ring-slate-200">
+                              Chỉ xem
+                            </span>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })
+              ) : (
+                <tr>
+                  <td colSpan={5}>
+                    <div className="grid place-items-center gap-2 px-4 py-12 text-center">
+                      <Icon
+                        name="person_search"
+                        className="text-4xl leading-none text-slate-300"
+                      />
+                      <p className="text-sm font-black text-slate-600">
+                        Không tìm thấy thành viên phù hợp.
                       </p>
                     </div>
-                  </div>
-                  <span className="text-sm font-bold text-slate-600">
-                    {formatDate(member.joinedAt) || "Chưa gia nhập"}
-                  </span>
-                  <MemberRoleCell
-                    member={member}
-                    onToggle={() =>
-                      setOpenRoleMemberId((current) =>
-                        current === member.id ? "" : member.id,
-                      )
-                    }
-                    open={openRoleMemberId === member.id}
-                  />
-                  <ActivityBadge member={member} />
-                  <div className="flex flex-wrap justify-start gap-2 lg:justify-end">
-                    {canManageRow ? (
-                      <>
-                        <button
-                          type="button"
-                          onClick={() => setRoleAssignMember(member)}
-                          disabled={!assignableRoles.length}
-                          className="inline-flex h-10 items-center gap-1.5 rounded-xl bg-blue-50 px-3 text-xs font-black text-blue-700 ring-1 ring-blue-100 transition hover:bg-blue-100 disabled:cursor-not-allowed disabled:opacity-45"
-                        >
-                          <Icon name="add" />
-                          Thêm vai trò
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => onKickMember?.(member)}
-                          className="inline-flex h-10 items-center gap-1.5 rounded-xl bg-amber-50 px-3 text-xs font-black text-amber-700 ring-1 ring-amber-100 transition hover:bg-amber-100"
-                        >
-                          <Icon name="person_remove" />
-                          Đuổi
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => onBanMember?.(member)}
-                          className="inline-flex h-10 items-center gap-1.5 rounded-xl bg-rose-50 px-3 text-xs font-black text-rose-700 ring-1 ring-rose-100 transition hover:bg-rose-100"
-                        >
-                          <Icon name="block" />
-                          Chặn
-                        </button>
-                      </>
-                    ) : (
-                      <span className="text-xs font-black text-slate-400">
-                        Chỉ xem
-                      </span>
-                    )}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        ) : (
-          <div className="grid place-items-center gap-2 px-4 py-12 text-center">
-            <Icon name="person_search" className="text-4xl leading-none text-slate-300" />
-            <p className="text-sm font-black text-slate-600">
-              Không tìm thấy thành viên phù hợp.
-            </p>
-          </div>
-        )}
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
 
         <div className="flex flex-col gap-3 rounded-b-3xl border-t border-slate-100 bg-slate-50/80 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
           <p className="text-xs font-bold text-slate-500">
