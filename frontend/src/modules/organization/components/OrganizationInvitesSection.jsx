@@ -82,6 +82,8 @@ const OrganizationInvitesSection = ({
   const message = useWorkHubToast();
   const canManageInvites = hasPermission(organization, "manageInvites");
   const canManageMembers = hasPermission(organization, "manageMembers");
+  const canManageJoinApproval =
+    hasPermission(organization, "manageJoinApproval") || canManageMembers;
   const canCreateInvites =
     hasPermission(organization, "createInvites") || canManageInvites;
 
@@ -125,7 +127,7 @@ const OrganizationInvitesSection = ({
 
   return (
     <div className="grid gap-5">
-      {canManageMembers && (
+      {canManageJoinApproval && (
         <section className="rounded-3xl bg-white p-5 ring-1 ring-slate-200">
           <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
             <div>

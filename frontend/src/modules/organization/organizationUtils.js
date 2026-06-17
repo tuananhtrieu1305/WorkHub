@@ -8,6 +8,8 @@ export const permissionLabels = {
   manageRoles: "Quản lý vai trò",
   manageInvites: "Quản lý lời mời",
   manageSettings: "Cài đặt nâng cao",
+  manageJoinApproval: "Quản lý yêu cầu duyệt",
+  viewBannedMembers: "Xem tài khoản bị chặn",
   createInvites: "Tạo lời mời",
   pauseInvites: "Tạm dừng lời mời",
   viewDocumentInsights: "Xem thống kê tài liệu",
@@ -34,6 +36,10 @@ export const permissionDescriptions = {
     "Cho phép tạo role mới, chỉnh sửa, xóa hoặc sắp xếp các role nằm bên dưới role cao nhất của họ.",
   manageInvites: "Cho phép xem, chỉnh sửa và thu hồi các lời mời trong tổ chức.",
   manageSettings: "Cho phép thay đổi cài đặt tham gia, role mặc định và quy tắc tổ chức.",
+  manageJoinApproval:
+    "Cho phép xem và cấu hình section Yêu cầu duyệt khi tham gia trong tab Nâng cao.",
+  viewBannedMembers:
+    "Cho phép xem section Tài khoản bị chặn trong tab Nâng cao.",
   createInvites: "Cho phép tự tạo mã mời hoặc liên kết mời thành viên mới.",
   pauseInvites: "Cho phép tạm dừng lời mời đang hoạt động trong một khoảng thời gian.",
   viewDocumentInsights: "Cho phép xem thống kê và tín hiệu hoạt động của tài liệu.",
@@ -104,7 +110,7 @@ export const permissionSections = [
     title: "Quyền nâng cao",
     description: "Quyền quản lý rộng, chỉ nên cấp cho người thật sự tin cậy.",
     icon: "admin_panel_settings",
-    keys: ["manageOrganization"],
+    keys: ["manageJoinApproval", "viewBannedMembers", "manageOrganization"],
   },
 ];
 
@@ -162,7 +168,8 @@ export const hasPermission = (organization, permissionKey) =>
 export const canBypassInviteApproval = (organization) =>
   hasPermission(organization, "manageInvites") ||
   hasPermission(organization, "manageMembers") ||
-  hasPermission(organization, "manageSettings");
+  hasPermission(organization, "manageSettings") ||
+  hasPermission(organization, "manageJoinApproval");
 
 export const buildShareableInviteLink = (invite) => {
   const rawLink =

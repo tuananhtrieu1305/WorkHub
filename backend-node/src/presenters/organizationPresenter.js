@@ -346,7 +346,8 @@ const getDefaultMembershipRole = async (organization) => {
 const canBypassInviteApproval = (membership) =>
   hasOrganizationPermission(membership, "manageInvites") ||
   hasOrganizationPermission(membership, "manageMembers") ||
-  hasOrganizationPermission(membership, "manageSettings");
+  hasOrganizationPermission(membership, "manageSettings") ||
+  hasOrganizationPermission(membership, "manageJoinApproval");
 
 const recordInviteSuccessfulUse = async (invite, membership, userId) => {
   if (!invite || !membership || membership.inviteUsageCountedAt) return;
@@ -692,7 +693,11 @@ export const getOrganizationMembers = async (req, res) => {
   ).toLowerCase();
   const canManage = hasOrganizationPermission(membership, "manageMembers");
   const canViewMembers = hasOrganizationPermission(membership, "viewMembers");
-  if (!canViewMembers) {
+  const canViewBannedMembers = hasOrganizationPermission(
+    membership,
+    "viewBannedMembers",
+  );
+  if (requestedStatus !== "banned" && !canViewMembers) {
     throw new ApiError(403, "You cannot view organization members");
   }
   const requestedPage = Number.parseInt(req.query.page, 10);
@@ -702,10 +707,14 @@ export const getOrganizationMembers = async (req, res) => {
     Number.isFinite(requestedSize) && requestedSize > 0
       ? Math.min(requestedSize, 50)
       : 20;
+  if (requestedStatus === "banned" && !canViewBannedMembers) {
+    throw new ApiError(403, "You cannot view banned organization members");
+  }
+
   const statuses =
     requestedStatus === "all" && canManage
       ? ["active", "pending"]
-      : requestedStatus === "banned" && canManage
+      : requestedStatus === "banned" && canViewBannedMembers
         ? ["banned"]
       : requestedStatus === "pending" && canManage
         ? ["pending"]
@@ -916,7 +925,8 @@ export const getOrganizationRoleList = async (req, res) => {
   }
   if (
     !hasOrganizationPermission(membership, "viewMembers") &&
-    !hasOrganizationPermission(membership, "manageRoles")
+    !hasOrganizationPermission(membership, "manageRoles") &&
+    !hasOrganizationPermission(membership, "manageSettings")
   ) {
     throw new ApiError(403, "You cannot view organization roles");
   }
@@ -1490,12 +1500,21 @@ export const getOrganizationInvites = async (req, res) => {
 };
 
 export const getOrganizationJoinRequests = async (req, res) => {
-  const { roles } = await requireOrganizationPermission(
+  const permissionContext = await getMembershipWithPermissions(
     req.params.id,
     req.user._id,
-    "manageMembers",
-    "Only authorized members can view join requests",
   );
+  const membership = permissionContext?.membership;
+  if (!membership) {
+    throw new ApiError(403, "You are not a member of this organization");
+  }
+  if (
+    !hasOrganizationPermission(membership, "manageJoinApproval") &&
+    !hasOrganizationPermission(membership, "manageMembers")
+  ) {
+    throw new ApiError(403, "Only authorized members can view join requests");
+  }
+  const { roles } = permissionContext;
 
   const [organization, pendingMembers] = await Promise.all([
     Organization.findById(req.params.id),
@@ -1702,14 +1721,44 @@ export const pauseOrganizationInvites = async (req, res) => {
 };
 
 export const updateOrganizationSettings = async (req, res) => {
-  const { membership } = await requireOrganizationPermission(
+  const permissionContext = await getMembershipWithPermissions(
     req.params.id,
     req.user._id,
-    "manageSettings",
-    "Only authorized members can update organization settings",
   );
+  const membership = permissionContext?.membership;
+  if (!membership) {
+    throw new ApiError(403, "You are not a member of this organization");
+  }
 
   const settings = normalizeOrganizationSettingsPayload(req.body);
+  const canManageSettings = hasOrganizationPermission(
+    membership,
+    "manageSettings",
+  );
+  const canManageJoinApproval = hasOrganizationPermission(
+    membership,
+    "manageJoinApproval",
+  );
+  const generalSettingKeys = [
+    "allowMemberInvites",
+    "memberDirectoryVisible",
+    "defaultRoleId",
+    "defaultRoleKey",
+  ];
+  const joinApprovalSettingKeys = [
+    "requireApproval",
+    "joinMessage",
+    "joinQuestions",
+  ];
+  const unauthorizedKeys = Object.keys(settings).filter((key) => {
+    if (generalSettingKeys.includes(key)) return !canManageSettings;
+    if (joinApprovalSettingKeys.includes(key)) return !canManageJoinApproval;
+    return !canManageSettings;
+  });
+  if (unauthorizedKeys.length) {
+    throw new ApiError(403, "Only authorized members can update organization settings");
+  }
+
   const update = {};
   Object.entries(settings).forEach(([key, value]) => {
     update[`settings.${key}`] = value;
@@ -1972,12 +2021,21 @@ export const updateOrganizationFavorite = async (req, res) => {
 };
 
 export const reviewOrganizationJoinRequest = async (req, res) => {
-  const { organization, roles } = await requireOrganizationPermission(
+  const permissionContext = await getMembershipWithPermissions(
     req.params.id,
     req.user._id,
-    "manageMembers",
-    "Only authorized members can review requests",
   );
+  const membershipContext = permissionContext?.membership;
+  if (!membershipContext) {
+    throw new ApiError(403, "You are not a member of this organization");
+  }
+  if (
+    !hasOrganizationPermission(membershipContext, "manageJoinApproval") &&
+    !hasOrganizationPermission(membershipContext, "manageMembers")
+  ) {
+    throw new ApiError(403, "Only authorized members can review requests");
+  }
+  const { organization, roles } = permissionContext;
 
   const action = String(req.body?.action || "").toLowerCase();
   if (!["approve", "reject"].includes(action)) {

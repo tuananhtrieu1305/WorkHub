@@ -375,7 +375,7 @@ export const useOrganizationWorkspace = () => {
   }, [memberFilters, message, organizationId]);
 
   const loadBannedMembers = useCallback(async () => {
-    if (!organizationId || !hasPermission(activeOrganization, "manageMembers")) {
+    if (!organizationId || !hasPermission(activeOrganization, "viewBannedMembers")) {
       setBannedMembers([]);
       return;
     }
@@ -442,7 +442,11 @@ export const useOrganizationWorkspace = () => {
   }, [message, organizationId]);
 
   const loadJoinRequests = useCallback(async () => {
-    if (!organizationId || !hasPermission(activeOrganization, "manageMembers")) {
+    if (
+      !organizationId ||
+      (!hasPermission(activeOrganization, "manageJoinApproval") &&
+        !hasPermission(activeOrganization, "manageMembers"))
+    ) {
       setJoinRequests([]);
       setJoinRequestQuestions([]);
       return;
@@ -931,25 +935,34 @@ export const useOrganizationWorkspace = () => {
       if (!organizationId || !advancedForm) return;
 
       const canUpdateSettings = hasPermission(activeOrganization, "manageSettings");
+      const canUpdateJoinApproval = hasPermission(
+        activeOrganization,
+        "manageJoinApproval",
+      );
       const canUpdateAppearance = hasPermission(
         activeOrganization,
         "manageOrganization",
       );
-      if (!canUpdateSettings && !canUpdateAppearance) return;
+      if (!canUpdateSettings && !canUpdateJoinApproval && !canUpdateAppearance) return;
 
       setLoading((current) => ({ ...current, settings: true }));
       try {
         let saved = activeOrganization;
 
-        if (canUpdateSettings) {
-          saved = await updateOrganizationSettings(organizationId, {
-            requireApproval: advancedForm.requireApproval,
-            allowMemberInvites: advancedForm.allowMemberInvites,
-            memberDirectoryVisible: advancedForm.memberDirectoryVisible,
-            defaultRoleId: advancedForm.defaultRoleId,
-            joinMessage: advancedForm.joinMessage,
-            joinQuestions: advancedForm.joinQuestions || [],
-          });
+        if (canUpdateSettings || canUpdateJoinApproval) {
+          const settingsPayload = {};
+          if (canUpdateSettings) {
+            settingsPayload.allowMemberInvites = advancedForm.allowMemberInvites;
+            settingsPayload.memberDirectoryVisible =
+              advancedForm.memberDirectoryVisible;
+            settingsPayload.defaultRoleId = advancedForm.defaultRoleId;
+          }
+          if (canUpdateJoinApproval) {
+            settingsPayload.requireApproval = advancedForm.requireApproval;
+            settingsPayload.joinMessage = advancedForm.joinMessage;
+            settingsPayload.joinQuestions = advancedForm.joinQuestions || [];
+          }
+          saved = await updateOrganizationSettings(organizationId, settingsPayload);
         }
 
         if (
@@ -1139,18 +1152,25 @@ export const useOrganizationWorkspace = () => {
   }, [loadMembers, selectedTab]);
 
   useEffect(() => {
-    if (selectedTab === "advanced") loadMembers();
-  }, [loadMembers, selectedTab]);
+    if (selectedTab === "advanced" && activeOrganization?.isOwner) loadMembers();
+  }, [activeOrganization?.isOwner, loadMembers, selectedTab]);
 
   useEffect(() => {
     if (selectedTab === "advanced") loadBannedMembers();
   }, [loadBannedMembers, selectedTab]);
 
   useEffect(() => {
-    if (selectedTab === "roles" || selectedTab === "members" || selectedTab === "advanced") {
+    const shouldLoadRoles =
+      selectedTab === "roles" ||
+      selectedTab === "members" ||
+      (selectedTab === "advanced" &&
+        (hasPermission(activeOrganization, "viewMembers") ||
+          hasPermission(activeOrganization, "manageRoles") ||
+          hasPermission(activeOrganization, "manageSettings")));
+    if (shouldLoadRoles) {
       loadRoles();
     }
-  }, [loadRoles, selectedTab]);
+  }, [activeOrganization, loadRoles, selectedTab]);
 
   useEffect(() => {
     if (selectedTab === "invites") loadInvites();

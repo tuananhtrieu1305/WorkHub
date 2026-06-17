@@ -46,19 +46,190 @@ const Icon = ({ className = "", name }) => (
 
 const cx = (...classes) => classes.filter(Boolean).join(" ");
 
+const OPEN_STATUS_IDS = ["todo", "in_progress", "review", "blocked"];
+const STATUS_FLOW = TASK_STATUSES.map((status) => status.id);
+const PRIORITY_WEIGHT = {
+  urgent: 0,
+  high: 1,
+  medium: 2,
+  low: 3,
+};
+
+const VIEW_MODES = [
+  { id: "board", label: "Bảng", icon: "view_kanban" },
+  { id: "list", label: "Danh sách", icon: "table_rows" },
+  { id: "focus", label: "Tập trung", icon: "filter_center_focus" },
+];
+
+const QUICK_FILTERS = [
+  { id: "all", label: "Tất cả", icon: "select_all" },
+  { id: "mine", label: "Liên quan tới tôi", icon: "account_circle" },
+  { id: "overdue", label: "Quá hạn", icon: "event_busy" },
+  { id: "due_soon", label: "Sắp đến hạn", icon: "event_upcoming" },
+  { id: "blocked", label: "Đang vướng", icon: "report" },
+  { id: "unassigned", label: "Chưa giao", icon: "person_off" },
+];
+
+const SORT_OPTIONS = [
+  { id: "updated", label: "Mới cập nhật" },
+  { id: "due", label: "Hạn gần nhất" },
+  { id: "priority", label: "Ưu tiên cao" },
+  { id: "status", label: "Theo luồng việc" },
+];
+
 const getErrorMessage = (error, fallback) =>
   error?.response?.data?.message || fallback;
 
 const getMemberUser = (member) => member?.user || member;
 
 const getMemberUserId = (member) =>
-  getMemberUser(member)?.id || getMemberUser(member)?._id || member?.userId || member?.id || "";
+  getMemberUser(member)?.id ||
+  getMemberUser(member)?._id ||
+  member?.userId ||
+  member?.id ||
+  "";
 
 const getMemberName = (member) =>
   getMemberUser(member)?.fullName ||
   getMemberUser(member)?.name ||
   getMemberUser(member)?.email ||
   "Thành viên";
+
+const getTaskShortId = (task) => {
+  const taskId = String(getTaskId(task) || "");
+  return taskId ? taskId.slice(-6).toUpperCase() : "TASK";
+};
+
+const getDateTime = (value, fallback = 0) => {
+  if (!value) return fallback;
+  const date = new Date(value);
+  return Number.isFinite(date.getTime()) ? date.getTime() : fallback;
+};
+
+const getDaysUntilDue = (task) => {
+  if (!task?.endAt) return null;
+  const dueDate = new Date(task.endAt);
+  if (!Number.isFinite(dueDate.getTime())) return null;
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  dueDate.setHours(0, 0, 0, 0);
+  return Math.round((dueDate - today) / (24 * 60 * 60 * 1000));
+};
+
+const formatDueDistance = (task) => {
+  const days = getDaysUntilDue(task);
+  if (days === null || ["done", "cancelled"].includes(task?.status)) {
+    return formatTaskDate(task?.endAt);
+  }
+  if (days < 0) return `Quá hạn ${Math.abs(days)} ngày`;
+  if (days === 0) return "Đến hạn hôm nay";
+  if (days === 1) return "Đến hạn ngày mai";
+  if (days <= 7) return `Còn ${days} ngày`;
+  return formatTaskDate(task.endAt);
+};
+
+const getChecklistProgress = (task) => ({
+  done: task?.checklistProgress?.done || 0,
+  total: task?.checklistProgress?.total || 0,
+  percent: task?.checklistProgress?.percent || 0,
+});
+
+const taskMatchesQuickFilter = (task, quickFilter, currentUserId) => {
+  if (quickFilter === "all") return true;
+  if (quickFilter === "mine") return isUserTask(task, currentUserId);
+  if (quickFilter === "overdue") return getDueState(task) === "overdue";
+  if (quickFilter === "due_soon") return getDueState(task) === "soon";
+  if (quickFilter === "blocked") return task.status === "blocked";
+  if (quickFilter === "unassigned") return !(task.assignees || []).length;
+  return true;
+};
+
+const sortTasks = (items, sortBy) => {
+  const sorted = [...items];
+  sorted.sort((a, b) => {
+    if (sortBy === "due") {
+      const dueA = getDateTime(a.endAt, Number.MAX_SAFE_INTEGER);
+      const dueB = getDateTime(b.endAt, Number.MAX_SAFE_INTEGER);
+      if (dueA !== dueB) return dueA - dueB;
+    }
+
+    if (sortBy === "priority") {
+      const priorityA = PRIORITY_WEIGHT[a.priority] ?? 9;
+      const priorityB = PRIORITY_WEIGHT[b.priority] ?? 9;
+      if (priorityA !== priorityB) return priorityA - priorityB;
+    }
+
+    if (sortBy === "status") {
+      const statusA = STATUS_FLOW.indexOf(a.status);
+      const statusB = STATUS_FLOW.indexOf(b.status);
+      if (statusA !== statusB) return statusA - statusB;
+    }
+
+    return (
+      getDateTime(b.updatedAt || b.createdAt, 0) -
+      getDateTime(a.updatedAt || a.createdAt, 0)
+    );
+  });
+  return sorted;
+};
+
+const getAdjacentStatuses = (statusId) => {
+  const currentIndex = STATUS_FLOW.indexOf(statusId);
+  return {
+    previous: currentIndex > 0 ? TASK_STATUS_MAP[STATUS_FLOW[currentIndex - 1]] : null,
+    next:
+      currentIndex >= 0 && currentIndex < STATUS_FLOW.length - 1
+        ? TASK_STATUS_MAP[STATUS_FLOW[currentIndex + 1]]
+        : null,
+  };
+};
+
+const buildTaskInsights = (items) => {
+  const total = items.length;
+  const done = items.filter((task) => task.status === "done").length;
+  const open = items.filter((task) => OPEN_STATUS_IDS.includes(task.status)).length;
+  const blocked = items.filter((task) => task.status === "blocked").length;
+  const overdue = items.filter((task) => getDueState(task) === "overdue").length;
+  const dueSoon = items.filter((task) => getDueState(task) === "soon").length;
+  const urgent = items.filter((task) => task.priority === "urgent").length;
+  const unassigned = items.filter((task) => !(task.assignees || []).length).length;
+  const completionRate = total ? Math.round((done / total) * 100) : 0;
+  const checklistTotal = items.reduce(
+    (sum, task) => sum + (task.checklistProgress?.total || 0),
+    0,
+  );
+  const checklistDone = items.reduce(
+    (sum, task) => sum + (task.checklistProgress?.done || 0),
+    0,
+  );
+  const checklistRate = checklistTotal
+    ? Math.round((checklistDone / checklistTotal) * 100)
+    : 0;
+
+  return {
+    blocked,
+    checklistDone,
+    checklistRate,
+    checklistTotal,
+    completionRate,
+    done,
+    dueSoon,
+    open,
+    overdue,
+    total,
+    unassigned,
+    urgent,
+  };
+};
+
+const getTaskAssigneeLabel = (task) => {
+  const assignees = task.assignees || [];
+  if (!assignees.length) return "Chưa giao";
+  return assignees
+    .slice(0, 2)
+    .map((assignment) => assignment.user?.fullName || assignment.user?.email || "Thành viên")
+    .join(", ");
+};
 
 const Avatar = ({ className = "", user }) => {
   const avatarUrl = getAvatarUrl(user?.avatar);
@@ -84,17 +255,17 @@ const AvatarStack = ({ assignees = [], max = 4 }) => {
 
   if (!assignees.length) {
     return (
-      <span className="task-avatar-empty">
+      <span className="task-avatar-empty" title="Chưa giao người phụ trách">
         <Icon name="person_add" />
       </span>
     );
   }
 
   return (
-    <div className="task-avatar-stack">
-      {visibleAssignees.map((assignment) => (
+    <div className="task-avatar-stack" title={getTaskAssigneeLabel({ assignees })}>
+      {visibleAssignees.map((assignment, index) => (
         <Avatar
-          key={assignment.userId || assignment.id}
+          key={assignment.userId || assignment.id || index}
           user={assignment.user}
           className="-ml-2 first:ml-0"
         />
@@ -129,14 +300,79 @@ const TaskDueBadge = ({ task }) => {
   return (
     <span className={`task-due-badge task-due-badge--${dueState}`}>
       <Icon name={dueState === "overdue" ? "event_busy" : "event"} />
-      {formatTaskDate(task.endAt)}
+      {formatDueDistance(task)}
     </span>
   );
 };
 
-const TaskCard = ({ isDragging, onClick, onDragEnd, onDragStart, task }) => {
+const TaskStatusPill = ({ status }) => {
+  const meta = getTaskStatusMeta(status);
+
+  return (
+    <span
+      className="task-status-pill"
+      style={{
+        "--task-status-color": meta.accent,
+        "--task-status-bg": meta.soft,
+      }}
+    >
+      <Icon name={meta.icon} />
+      {meta.label}
+    </span>
+  );
+};
+
+const TaskQuickStatusActions = ({ onChange, task }) => {
+  const canChangeStatus = Boolean(task.permissions?.canChangeStatus);
+  const { previous, next } = getAdjacentStatuses(task.status);
+
+  if (!canChangeStatus || (!previous && !next)) {
+    return null;
+  }
+
+  return (
+    <div className="task-card-actions" aria-label="Chuyển trạng thái nhanh">
+      {previous && (
+        <button
+          type="button"
+          onClick={(event) => {
+            event.stopPropagation();
+            onChange(task, previous.id);
+          }}
+          className="task-card-action task-card-action--muted"
+        >
+          <Icon name="arrow_back" />
+          {previous.shortLabel}
+        </button>
+      )}
+      {next && (
+        <button
+          type="button"
+          onClick={(event) => {
+            event.stopPropagation();
+            onChange(task, next.id);
+          }}
+          className="task-card-action"
+        >
+          {next.shortLabel}
+          <Icon name="arrow_forward" />
+        </button>
+      )}
+    </div>
+  );
+};
+
+const TaskCard = ({
+  isDragging,
+  onClick,
+  onDragEnd,
+  onDragStart,
+  onQuickStatusChange,
+  task,
+}) => {
   const status = getTaskStatusMeta(task.status);
   const canDrag = Boolean(task.permissions?.canChangeStatus);
+  const checklistProgress = getChecklistProgress(task);
 
   return (
     <article
@@ -154,7 +390,12 @@ const TaskCard = ({ isDragging, onClick, onDragEnd, onDragStart, task }) => {
         "--task-card-soft": status.soft,
       }}
     >
-      <div className="flex items-start justify-between gap-3">
+      <div className="task-card-topline">
+        <span className="task-card-id">#{getTaskShortId(task)}</span>
+        <TaskStatusPill status={task.status} />
+      </div>
+
+      <div className="task-card-heading">
         <div className="min-w-0">
           <h3 className="task-card-title">{task.title}</h3>
           {task.description && (
@@ -166,48 +407,54 @@ const TaskCard = ({ isDragging, onClick, onDragEnd, onDragStart, task }) => {
         </span>
       </div>
 
-      <div className="mt-4 flex flex-wrap items-center gap-2">
+      <div className="task-card-badges">
         <TaskPriorityBadge priority={task.priority} />
         <TaskDueBadge task={task} />
       </div>
 
-      <div className="mt-4">
-        <div className="mb-2 flex items-center justify-between gap-3 text-xs font-black text-slate-500">
+      <div className="task-card-progress">
+        <div className="task-card-progress-label">
           <span>Checklist</span>
-          <span>{task.checklistProgress?.done || 0}/{task.checklistProgress?.total || 0}</span>
+          <strong>
+            {checklistProgress.done}/{checklistProgress.total}
+          </strong>
         </div>
         <div className="task-progress-track">
           <span
             className="task-progress-bar"
-            style={{ width: `${task.checklistProgress?.percent || 0}%` }}
+            style={{ width: `${checklistProgress.percent}%` }}
           />
         </div>
       </div>
 
-      <div className="mt-4 flex items-center justify-between gap-3">
+      <div className="task-card-footer">
         <AvatarStack assignees={task.assignees || []} />
         <span className="task-card-updated">
           <Icon name="schedule" />
           {formatTaskDate(task.updatedAt || task.createdAt)}
         </span>
       </div>
+
+      <TaskQuickStatusActions onChange={onQuickStatusChange} task={task} />
     </article>
   );
 };
 
 const TaskColumn = ({
   draggingTaskId,
+  isDropTarget,
   onCardClick,
   onDragEnd,
   onDragEnter,
   onDragLeave,
   onDragStart,
   onDrop,
+  onQuickStatusChange,
   status,
   tasks,
 }) => (
   <section
-    className="task-column"
+    className={cx("task-column", isDropTarget && "is-drop-target")}
     onDragOver={(event) => {
       event.preventDefault();
       event.dataTransfer.dropEffect = "move";
@@ -240,20 +487,22 @@ const TaskColumn = ({
             onClick={() => onCardClick(task)}
             onDragEnd={onDragEnd}
             onDragStart={onDragStart}
+            onQuickStatusChange={onQuickStatusChange}
             task={task}
           />
         ))
       ) : (
         <div className="task-column-empty">
           <Icon name="inbox" />
-          <span>Chưa có task</span>
+          <span>Không có việc trong cột này</span>
+          <small>Kéo task vào đây hoặc tạo task mới.</small>
         </div>
       )}
     </div>
   </section>
 );
 
-const TaskSummaryCard = ({ icon, label, tone, value }) => (
+const TaskSummaryCard = ({ caption, icon, label, tone, value }) => (
   <article className={`task-summary-card task-summary-card--${tone}`}>
     <span className="task-summary-icon">
       <Icon name={icon} />
@@ -261,6 +510,7 @@ const TaskSummaryCard = ({ icon, label, tone, value }) => (
     <div>
       <p>{label}</p>
       <strong>{value}</strong>
+      {caption && <small>{caption}</small>}
     </div>
   </article>
 );
@@ -273,12 +523,14 @@ const TaskMemberPicker = ({
 }) => {
   if (!members.length) return null;
 
+  const selectedIdSet = new Set(selectedIds.map(String));
+
   return (
     <div className="task-member-picker">
       {members.map((member) => {
         const memberUser = getMemberUser(member);
         const memberId = getMemberUserId(member);
-        const selected = selectedIds.includes(memberId);
+        const selected = selectedIdSet.has(String(memberId));
         return (
           <button
             key={memberId}
@@ -287,7 +539,7 @@ const TaskMemberPicker = ({
             onClick={() => {
               onChange(
                 selected
-                  ? selectedIds.filter((item) => item !== memberId)
+                  ? selectedIds.filter((item) => String(item) !== String(memberId))
                   : [...selectedIds, memberId],
               );
             }}
@@ -316,8 +568,12 @@ const TaskCreateModal = ({
     <form className="task-modal-card" onSubmit={onSubmit}>
       <div className="task-modal-header">
         <div>
-          <h2>Tạo công việc</h2>
-          <p>Bảng task của tổ chức</p>
+          <span className="task-modal-kicker">
+            <Icon name="add_task" />
+            Task mới
+          </span>
+          <h2>Tạo công việc rõ người, rõ hạn</h2>
+          <p>Điền thông tin đủ để người nhận có thể bắt tay vào làm ngay.</p>
         </div>
         <button type="button" onClick={onClose} className="task-icon-button">
           <Icon name="close" />
@@ -331,6 +587,7 @@ const TaskCreateModal = ({
             value={form.title}
             onChange={(event) => onChange({ ...form, title: event.target.value })}
             maxLength={255}
+            placeholder="Ví dụ: Hoàn thiện tài liệu API cho nhóm mobile"
             required
           />
         </label>
@@ -344,6 +601,7 @@ const TaskCreateModal = ({
             }
             rows={4}
             maxLength={5000}
+            placeholder="Bối cảnh, đầu ra mong muốn, link tài liệu hoặc tiêu chí hoàn thành."
           />
         </label>
 
@@ -411,6 +669,7 @@ const TaskCreateModal = ({
               onChange({ ...form, checklistText: event.target.value })
             }
             rows={4}
+            placeholder="Mỗi dòng là một đầu việc nhỏ. Tối đa 20 dòng."
           />
         </label>
       </div>
@@ -459,6 +718,7 @@ const TaskDrawer = ({
   const canAssign = Boolean(task.permissions?.canAssign);
   const canDelete = Boolean(task.permissions?.canDelete);
   const canChangeStatus = Boolean(task.permissions?.canChangeStatus);
+  const checklistProgress = getChecklistProgress(task);
 
   return (
     <aside className="task-drawer">
@@ -467,7 +727,7 @@ const TaskDrawer = ({
           <div>
             <span className="task-drawer-eyebrow">
               <Icon name={status.icon} />
-              {status.label}
+              {status.label} - #{getTaskShortId(task)}
             </span>
             <h2>{task.title}</h2>
           </div>
@@ -477,8 +737,23 @@ const TaskDrawer = ({
         </div>
 
         <div className="task-drawer-body">
+          <section className="task-drawer-section task-drawer-brief">
+            <div>
+              <span>Tiến độ checklist</span>
+              <strong>{checklistProgress.percent}%</strong>
+            </div>
+            <div>
+              <span>Hạn</span>
+              <strong>{formatDueDistance(task)}</strong>
+            </div>
+            <div>
+              <span>Ưu tiên</span>
+              <strong>{getTaskPriorityMeta(task.priority).label}</strong>
+            </div>
+          </section>
+
           {canEdit ? (
-            <div className="grid gap-4">
+            <div className="task-drawer-editor">
               <label className="task-field">
                 <span>Tiêu đề</span>
                 <input
@@ -579,8 +854,11 @@ const TaskDrawer = ({
             </div>
             <div className="grid gap-2">
               {(task.assignees || []).length ? (
-                task.assignees.map((assignment) => (
-                  <div key={assignment.userId || assignment.id} className="task-assignee-row">
+                task.assignees.map((assignment, index) => (
+                  <div
+                    key={assignment.userId || assignment.id || index}
+                    className="task-assignee-row"
+                  >
                     <div className="flex min-w-0 items-center gap-3">
                       <Avatar user={assignment.user} />
                       <div className="min-w-0">
@@ -605,7 +883,7 @@ const TaskDrawer = ({
             </div>
 
             {canAssign && assignableMembers.length > 0 && (
-              <div className="mt-3 flex gap-2">
+              <div className="task-inline-composer">
                 <select
                   value={selectedAssigneeId}
                   onChange={(event) => setSelectedAssigneeId(event.target.value)}
@@ -636,7 +914,9 @@ const TaskDrawer = ({
           <section className="task-drawer-section">
             <div className="task-drawer-section-header">
               <h3>Checklist</h3>
-              <span>{task.checklistProgress?.percent || 0}%</span>
+              <span>
+                {checklistProgress.done}/{checklistProgress.total}
+              </span>
             </div>
             <div className="grid gap-2">
               {(task.checklist || []).length ? (
@@ -667,11 +947,12 @@ const TaskDrawer = ({
               )}
             </div>
             {canEdit && (
-              <div className="mt-3 flex gap-2">
+              <div className="task-inline-composer">
                 <input
                   value={newChecklistTitle}
                   onChange={(event) => onSetNewChecklistTitle(event.target.value)}
                   className="task-compact-input"
+                  placeholder="Thêm đầu việc nhỏ"
                 />
                 <button
                   type="button"
@@ -687,16 +968,16 @@ const TaskDrawer = ({
 
           <section className="task-drawer-section task-meta-grid">
             <div>
-              <span>Hạn</span>
-              <strong>{formatTaskDate(task.endAt)}</strong>
-            </div>
-            <div>
               <span>Người tạo</span>
               <strong>{task.creator?.fullName || "Không rõ"}</strong>
             </div>
             <div>
               <span>Cập nhật</span>
               <strong>{formatTaskDate(task.updatedAt)}</strong>
+            </div>
+            <div>
+              <span>Mã task</span>
+              <strong>#{getTaskShortId(task)}</strong>
             </div>
           </section>
         </div>
@@ -713,6 +994,450 @@ const TaskDrawer = ({
     </aside>
   );
 };
+
+const TaskLaneStrip = ({
+  focusStatusId,
+  onSelectStatus,
+  tasksByStatus,
+  totalVisibleTasks,
+}) => (
+  <section className="task-lane-strip" aria-label="Lọc theo trạng thái">
+    <button
+      type="button"
+      onClick={() => onSelectStatus("all")}
+      className={focusStatusId === "all" ? "is-selected" : ""}
+    >
+      <Icon name="dashboard" />
+      <span>Tất cả</span>
+      <strong>{totalVisibleTasks}</strong>
+    </button>
+    {TASK_STATUSES.map((status) => (
+      <button
+        key={status.id}
+        type="button"
+        onClick={() => onSelectStatus(status.id)}
+        className={focusStatusId === status.id ? "is-selected" : ""}
+        style={{ "--lane-color": status.accent, "--lane-bg": status.soft }}
+      >
+        <Icon name={status.icon} />
+        <span>{status.label}</span>
+        <strong>{tasksByStatus[status.id]?.length || 0}</strong>
+      </button>
+    ))}
+  </section>
+);
+
+const TaskCommandBar = ({
+  canViewOrganizationTasks,
+  filters,
+  hasActiveFilters,
+  members,
+  onCreateTask,
+  onRefresh,
+  onResetFilters,
+  onSetFilters,
+  quickFilter,
+  quickFilterCounts,
+  setQuickFilter,
+  setSortBy,
+  setViewMode,
+  sortBy,
+  viewMode,
+}) => (
+  <section className="task-command-bar">
+    <div className="task-command-row">
+      <label className="task-search">
+        <Icon name="search" />
+        <input
+          value={filters.search}
+          onChange={(event) =>
+            onSetFilters((current) => ({ ...current, search: event.target.value }))
+          }
+          placeholder="Tìm task, mô tả hoặc người phụ trách"
+        />
+      </label>
+
+      <div className="task-view-switcher" aria-label="Chế độ xem">
+        {VIEW_MODES.map((mode) => (
+          <button
+            key={mode.id}
+            type="button"
+            onClick={() => setViewMode(mode.id)}
+            className={viewMode === mode.id ? "is-selected" : ""}
+          >
+            <Icon name={mode.icon} />
+            {mode.label}
+          </button>
+        ))}
+      </div>
+
+      <button type="button" onClick={onRefresh} className="task-secondary-button">
+        <Icon name="refresh" />
+        Làm mới
+      </button>
+      {onCreateTask && (
+        <button type="button" onClick={onCreateTask} className="task-primary-button">
+          <Icon name="add_task" />
+          Tạo task
+        </button>
+      )}
+    </div>
+
+    <div className="task-command-row task-command-row--filters">
+      <div className="task-quick-filters">
+        {QUICK_FILTERS.map((filter) => (
+          <button
+            key={filter.id}
+            type="button"
+            onClick={() => setQuickFilter(filter.id)}
+            className={quickFilter === filter.id ? "is-selected" : ""}
+          >
+            <Icon name={filter.icon} />
+            <span>{filter.label}</span>
+            <strong>{quickFilterCounts[filter.id] || 0}</strong>
+          </button>
+        ))}
+      </div>
+
+      <div className="task-filter-controls">
+        <div className="task-segmented">
+          <button
+            type="button"
+            onClick={() => onSetFilters((current) => ({ ...current, scope: "all" }))}
+            className={filters.scope === "all" ? "is-selected" : ""}
+          >
+            Tổ chức
+          </button>
+          <button
+            type="button"
+            onClick={() => onSetFilters((current) => ({ ...current, scope: "mine" }))}
+            className={filters.scope === "mine" ? "is-selected" : ""}
+          >
+            Của tôi
+          </button>
+        </div>
+
+        <select
+          value={filters.priority}
+          onChange={(event) =>
+            onSetFilters((current) => ({ ...current, priority: event.target.value }))
+          }
+          className="task-toolbar-select"
+        >
+          <option value="all">Mọi ưu tiên</option>
+          {TASK_PRIORITIES.map((priority) => (
+            <option key={priority.id} value={priority.id}>
+              {priority.label}
+            </option>
+          ))}
+        </select>
+
+        <select
+          value={sortBy}
+          onChange={(event) => setSortBy(event.target.value)}
+          className="task-toolbar-select"
+        >
+          {SORT_OPTIONS.map((option) => (
+            <option key={option.id} value={option.id}>
+              {option.label}
+            </option>
+          ))}
+        </select>
+
+        {canViewOrganizationTasks && members.length > 0 && (
+          <select
+            value={filters.assigneeId}
+            onChange={(event) =>
+              onSetFilters((current) => ({
+                ...current,
+                assigneeId: event.target.value,
+              }))
+            }
+            className="task-toolbar-select"
+          >
+            <option value="all">Mọi phụ trách</option>
+            <option value="mine">Liên quan tới tôi</option>
+            {members.map((member) => {
+              const memberId = getMemberUserId(member);
+              return (
+                <option key={memberId} value={memberId}>
+                  {getMemberName(member)}
+                </option>
+              );
+            })}
+          </select>
+        )}
+
+        {hasActiveFilters && (
+          <button type="button" onClick={onResetFilters} className="task-reset-button">
+            <Icon name="restart_alt" />
+            Xóa lọc
+          </button>
+        )}
+      </div>
+    </div>
+  </section>
+);
+
+const TaskBoardView = ({
+  displayStatuses,
+  draggingTaskId,
+  dropTargetStatus,
+  onCardClick,
+  onDragEnd,
+  onDragEnter,
+  onDragLeave,
+  onDragStart,
+  onDrop,
+  onQuickStatusChange,
+  tasksByStatus,
+}) => (
+  <section className="task-board" aria-label="Kanban task board">
+    {displayStatuses.map((status) => (
+      <TaskColumn
+        key={status.id}
+        draggingTaskId={draggingTaskId}
+        isDropTarget={dropTargetStatus === status.id}
+        onCardClick={onCardClick}
+        onDragEnd={onDragEnd}
+        onDragEnter={onDragEnter}
+        onDragLeave={onDragLeave}
+        onDragStart={onDragStart}
+        onDrop={onDrop}
+        onQuickStatusChange={onQuickStatusChange}
+        status={status}
+        tasks={tasksByStatus[status.id] || []}
+      />
+    ))}
+  </section>
+);
+
+const TaskListView = ({ onCardClick, onQuickStatusChange, tasks }) => (
+  <section className="task-list-view" aria-label="Danh sách task">
+    <div className="task-list-head">
+      <span>Công việc</span>
+      <span>Trạng thái</span>
+      <span>Phụ trách</span>
+      <span>Hạn</span>
+      <span>Tiến độ</span>
+    </div>
+    {tasks.map((task) => {
+      const checklistProgress = getChecklistProgress(task);
+      return (
+        <article
+          key={getTaskId(task)}
+          className="task-list-row"
+          onClick={() => onCardClick(task)}
+        >
+          <div className="task-list-title">
+            <span>#{getTaskShortId(task)}</span>
+            <h3>{task.title}</h3>
+            {task.description && <p>{task.description}</p>}
+          </div>
+          <div>
+            <select
+              value={task.status}
+              disabled={!task.permissions?.canChangeStatus}
+              onClick={(event) => event.stopPropagation()}
+              onChange={(event) => onQuickStatusChange(task, event.target.value)}
+              className="task-status-select"
+            >
+              {TASK_STATUSES.map((status) => (
+                <option key={status.id} value={status.id}>
+                  {status.label}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="task-list-assignees">
+            <AvatarStack assignees={task.assignees || []} max={3} />
+            <span>{getTaskAssigneeLabel(task)}</span>
+          </div>
+          <div className="task-list-due">
+            <TaskDueBadge task={task} />
+          </div>
+          <div className="task-list-progress">
+            <strong>{checklistProgress.percent}%</strong>
+            <div className="task-progress-track">
+              <span
+                className="task-progress-bar"
+                style={{ width: `${checklistProgress.percent}%` }}
+              />
+            </div>
+          </div>
+        </article>
+      );
+    })}
+  </section>
+);
+
+const TaskFocusView = ({
+  focusStatus,
+  onCardClick,
+  onQuickStatusChange,
+  sortedTasks,
+  tasks,
+}) => {
+  const focusMeta = getTaskStatusMeta(focusStatus);
+  const overdueTasks = sortedTasks.filter((task) => getDueState(task) === "overdue");
+  const dueSoonTasks = sortedTasks.filter((task) => getDueState(task) === "soon");
+
+  return (
+    <section className="task-focus-view">
+      <div
+        className="task-focus-main"
+        style={{
+          "--task-focus-color": focusMeta.accent,
+          "--task-focus-bg": focusMeta.soft,
+        }}
+      >
+        <header className="task-focus-header">
+          <span className="task-focus-icon">
+            <Icon name={focusMeta.icon} />
+          </span>
+          <div>
+            <p>Luồng đang tập trung</p>
+            <h2>{focusMeta.label}</h2>
+          </div>
+          <strong>{tasks.length}</strong>
+        </header>
+
+        <div className="task-focus-stack">
+          {tasks.length ? (
+            tasks.map((task) => (
+              <TaskCard
+                key={getTaskId(task)}
+                isDragging={false}
+                onClick={() => onCardClick(task)}
+                onDragEnd={() => {}}
+                onDragStart={() => {}}
+                onQuickStatusChange={onQuickStatusChange}
+                task={task}
+              />
+            ))
+          ) : (
+            <div className="task-focus-empty">
+              <Icon name="done_all" />
+              <h3>Cột này đang sạch</h3>
+              <p>Chọn một trạng thái khác hoặc tạo task mới để bắt đầu.</p>
+            </div>
+          )}
+        </div>
+      </div>
+
+      <aside className="task-focus-side">
+        <section>
+          <h3>Cần xử lý trước</h3>
+          <div className="task-mini-list">
+            {[...overdueTasks, ...dueSoonTasks]
+              .filter((task, index, array) =>
+                array.findIndex((item) => getTaskId(item) === getTaskId(task)) === index,
+              )
+              .slice(0, 6)
+              .map((task) => (
+                <button key={getTaskId(task)} type="button" onClick={() => onCardClick(task)}>
+                  <span>{task.title}</span>
+                  <small>{formatDueDistance(task)}</small>
+                </button>
+              ))}
+            {!overdueTasks.length && !dueSoonTasks.length && (
+              <div className="task-empty-inline">Không có việc gấp trong bộ lọc này.</div>
+            )}
+          </div>
+        </section>
+      </aside>
+    </section>
+  );
+};
+
+const TaskInsightPanel = ({
+  insights,
+  onSelectQuickFilter,
+  sortedTasks,
+  workload,
+}) => (
+  <aside className="task-insight-panel">
+    <section className="task-insight-card task-insight-card--risk">
+      <div className="task-insight-header">
+        <span>
+          <Icon name="radar" />
+        </span>
+        <div>
+          <h3>Tín hiệu rủi ro</h3>
+          <p>Những điểm dễ làm nghẽn luồng việc</p>
+        </div>
+      </div>
+      <div className="task-risk-grid">
+        <button type="button" onClick={() => onSelectQuickFilter("overdue")}>
+          <strong>{insights.overdue}</strong>
+          <span>Quá hạn</span>
+        </button>
+        <button type="button" onClick={() => onSelectQuickFilter("blocked")}>
+          <strong>{insights.blocked}</strong>
+          <span>Đang vướng</span>
+        </button>
+        <button type="button" onClick={() => onSelectQuickFilter("unassigned")}>
+          <strong>{insights.unassigned}</strong>
+          <span>Chưa giao</span>
+        </button>
+      </div>
+    </section>
+
+    <section className="task-insight-card">
+      <div className="task-insight-header">
+        <span>
+          <Icon name="bolt" />
+        </span>
+        <div>
+          <h3>Hàng đợi ưu tiên</h3>
+          <p>Task cần nhìn ngay</p>
+        </div>
+      </div>
+      <div className="task-mini-list">
+        {sortedTasks
+          .filter((task) =>
+            ["urgent", "high"].includes(task.priority) ||
+            ["overdue", "soon"].includes(getDueState(task)),
+          )
+          .slice(0, 5)
+          .map((task) => (
+            <button key={getTaskId(task)} type="button">
+              <span>{task.title}</span>
+              <small>{getTaskPriorityMeta(task.priority).label} - {formatDueDistance(task)}</small>
+            </button>
+          ))}
+        {!sortedTasks.length && (
+          <div className="task-empty-inline">Chưa có task trong bộ lọc.</div>
+        )}
+      </div>
+    </section>
+
+    <section className="task-insight-card">
+      <div className="task-insight-header">
+        <span>
+          <Icon name="groups" />
+        </span>
+        <div>
+          <h3>Tải việc</h3>
+          <p>Nhóm người đang gánh nhiều task</p>
+        </div>
+      </div>
+      <div className="task-workload-list">
+        {workload.length ? (
+          workload.map((item) => (
+            <div key={item.id}>
+              <Avatar user={item.user} />
+              <span>{item.name}</span>
+              <strong>{item.count}</strong>
+            </div>
+          ))
+        ) : (
+          <div className="task-empty-inline">Chưa có dữ liệu phân công.</div>
+        )}
+      </div>
+    </section>
+  </aside>
+);
 
 const TasksPage = () => {
   const { user } = useAuth();
@@ -762,6 +1487,10 @@ const TasksPage = () => {
     scope: "all",
     assigneeId: "all",
   });
+  const [quickFilter, setQuickFilter] = useState("all");
+  const [viewMode, setViewMode] = useState("board");
+  const [focusStatusId, setFocusStatusId] = useState("all");
+  const [sortBy, setSortBy] = useState("updated");
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [draggingTaskId, setDraggingTaskId] = useState("");
@@ -890,9 +1619,25 @@ const TasksPage = () => {
       if (filters.priority !== "all" && task.priority !== filters.priority) {
         return false;
       }
+      if (!taskMatchesQuickFilter(task, quickFilter, currentUserId)) {
+        return false;
+      }
       return taskMatchesSearch(task, filters.search);
     });
-  }, [currentUserId, filters.assigneeId, filters.priority, filters.scope, filters.search, tasks]);
+  }, [
+    currentUserId,
+    filters.assigneeId,
+    filters.priority,
+    filters.scope,
+    filters.search,
+    quickFilter,
+    tasks,
+  ]);
+
+  const sortedVisibleTasks = useMemo(
+    () => sortTasks(visibleTasks, sortBy),
+    [sortBy, visibleTasks],
+  );
 
   const tasksByStatus = useMemo(() => {
     const grouped = TASK_STATUSES.reduce(
@@ -902,28 +1647,93 @@ const TasksPage = () => {
       }),
       {},
     );
-    visibleTasks.forEach((task) => {
+    sortedVisibleTasks.forEach((task) => {
       const status = TASK_STATUS_MAP[task.status] ? task.status : "todo";
       grouped[status].push(task);
     });
     return grouped;
-  }, [visibleTasks]);
+  }, [sortedVisibleTasks]);
+
+  const displayStatuses = useMemo(() => {
+    if (focusStatusId === "all") return TASK_STATUSES;
+    return TASK_STATUSES.filter((status) => status.id === focusStatusId);
+  }, [focusStatusId]);
+
+  const effectiveFocusStatusId =
+    focusStatusId === "all" ? "in_progress" : focusStatusId;
 
   const personalMetrics = useMemo(() => {
     const mine = tasks.filter((task) => isUserTask(task, currentUserId));
     const done = mine.filter((task) => task.status === "done").length;
     const overdue = mine.filter((task) => getDueState(task) === "overdue").length;
-    const open = mine.filter((task) =>
-      ["todo", "in_progress", "blocked", "review"].includes(task.status),
-    ).length;
+    const open = mine.filter((task) => OPEN_STATUS_IDS.includes(task.status)).length;
     return { total: mine.length, done, open, overdue };
   }, [currentUserId, tasks]);
+
+  const insights = useMemo(
+    () => buildTaskInsights(sortedVisibleTasks),
+    [sortedVisibleTasks],
+  );
+
+  const quickFilterCounts = useMemo(() => {
+    return QUICK_FILTERS.reduce(
+      (acc, filter) => ({
+        ...acc,
+        [filter.id]: tasks.filter((task) =>
+          taskMatchesQuickFilter(task, filter.id, currentUserId),
+        ).length,
+      }),
+      {},
+    );
+  }, [currentUserId, tasks]);
+
+  const workload = useMemo(() => {
+    const workloadMap = new Map();
+    members.forEach((member) => {
+      const memberUser = getMemberUser(member);
+      const id = String(getMemberUserId(member));
+      workloadMap.set(id, {
+        count: 0,
+        id,
+        name: getMemberName(member),
+        user: memberUser,
+      });
+    });
+
+    sortedVisibleTasks.forEach((task) => {
+      (task.assignees || []).forEach((assignment) => {
+        const id = String(assignment.userId || assignment.user?.id || assignment.user?._id || "");
+        if (!id) return;
+        const current =
+          workloadMap.get(id) || {
+            count: 0,
+            id,
+            name: assignment.user?.fullName || assignment.user?.email || "Thành viên",
+            user: assignment.user,
+          };
+        workloadMap.set(id, { ...current, count: current.count + 1 });
+      });
+    });
+
+    return [...workloadMap.values()]
+      .filter((item) => item.count > 0)
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 5);
+  }, [members, sortedVisibleTasks]);
 
   const assignableMembers = useMemo(() => {
     if (!selectedTask) return members;
     const assignedIds = new Set((selectedTask.assigneeIds || []).map(String));
     return members.filter((member) => !assignedIds.has(String(getMemberUserId(member))));
   }, [members, selectedTask]);
+
+  const hasActiveFilters =
+    filters.search ||
+    filters.priority !== "all" ||
+    filters.scope !== "all" ||
+    filters.assigneeId !== "all" ||
+    quickFilter !== "all" ||
+    focusStatusId !== "all";
 
   const openTaskDetail = useCallback(async (task) => {
     const taskId = getTaskId(task);
@@ -1146,6 +1956,17 @@ const TasksPage = () => {
     }
   };
 
+  const resetFilters = () => {
+    setFilters({
+      search: "",
+      priority: "all",
+      scope: "all",
+      assigneeId: "all",
+    });
+    setQuickFilter("all");
+    setFocusStatusId("all");
+  };
+
   if (!canViewAssignedTasks) {
     return (
       <div className="task-page task-page-centered">
@@ -1161,39 +1982,40 @@ const TasksPage = () => {
   }
 
   return (
-    <div className="task-page">
+    <div className={`task-page task-page--${viewMode}`}>
       <section className="task-hero">
         <div className="task-hero-copy">
           <span className="task-eyebrow">
             <Icon name="hub" />
             {activeOrganization?.name || "WorkHub"}
           </span>
-          <h1>Bảng công việc</h1>
+          <h1>Điều phối công việc</h1>
           <p>
             {canViewOrganizationTasks
-              ? "Theo dõi toàn bộ luồng việc, trạng thái và tải việc của tổ chức."
-              : "Theo dõi các công việc bạn tạo, sở hữu hoặc được giao."}
+              ? "Một bảng điều hành gọn, nhìn được rủi ro, tải việc và tiến độ của toàn tổ chức."
+              : "Theo dõi các công việc bạn tạo, sở hữu hoặc được giao trong một không gian tập trung."}
           </p>
         </div>
 
-        <div className="task-hero-actions">
-          <button type="button" onClick={loadTasks} className="task-secondary-button">
-            <Icon name="refresh" />
-            Làm mới
-          </button>
-          {canCreateTasks && (
-            <button
-              type="button"
-              onClick={() => {
-                setTaskForm(EMPTY_TASK_FORM);
-                setCreateModalOpen(true);
-              }}
-              className="task-primary-button"
-            >
-              <Icon name="add_task" />
-              Tạo task
-            </button>
-          )}
+        <div className="task-hero-panel">
+          <div>
+            <span>Hoàn thành</span>
+            <strong>
+              {canViewInsights && summary
+                ? `${summary.totals?.completionRate || 0}%`
+                : `${insights.completionRate}%`}
+            </strong>
+          </div>
+          <div>
+            <span>Việc mở</span>
+            <strong>
+              {canViewInsights && summary ? summary.totals?.open || 0 : insights.open}
+            </strong>
+          </div>
+          <div>
+            <span>Checklist</span>
+            <strong>{insights.checklistRate}%</strong>
+          </div>
         </div>
       </section>
 
@@ -1201,24 +2023,28 @@ const TasksPage = () => {
         {canViewInsights && summary ? (
           <>
             <TaskSummaryCard
+              caption="Toàn tổ chức"
               icon="assignment"
               label="Tổng task"
-              tone="blue"
+              tone="ink"
               value={summary.totals?.total || 0}
             />
             <TaskSummaryCard
+              caption="Todo, doing, review, blocked"
               icon="bolt"
               label="Đang mở"
-              tone="teal"
+              tone="blue"
               value={summary.totals?.open || 0}
             />
             <TaskSummaryCard
+              caption="Cần xử lý trước"
               icon="event_upcoming"
               label="Sắp đến hạn"
               tone="amber"
               value={summary.totals?.dueSoon || 0}
             />
             <TaskSummaryCard
+              caption="Theo bộ lọc hiện tại"
               icon="verified"
               label="Hoàn thành"
               tone="green"
@@ -1228,24 +2054,28 @@ const TasksPage = () => {
         ) : (
           <>
             <TaskSummaryCard
+              caption="Liên quan tới bạn"
               icon="assignment_ind"
               label="Việc của tôi"
-              tone="blue"
+              tone="ink"
               value={personalMetrics.total}
             />
             <TaskSummaryCard
+              caption="Còn phải xử lý"
               icon="pending_actions"
               label="Đang mở"
-              tone="teal"
+              tone="blue"
               value={personalMetrics.open}
             />
             <TaskSummaryCard
+              caption="Cần cứu ngay"
               icon="event_busy"
               label="Quá hạn"
               tone="rose"
               value={personalMetrics.overdue}
             />
             <TaskSummaryCard
+              caption="Đã xong"
               icon="task_alt"
               label="Hoàn thành"
               tone="green"
@@ -1255,95 +2085,111 @@ const TasksPage = () => {
         )}
       </section>
 
-      <section className="task-toolbar">
-        <label className="task-search">
-          <Icon name="search" />
-          <input
-            value={filters.search}
-            onChange={(event) =>
-              setFilters((current) => ({ ...current, search: event.target.value }))
-            }
-          />
-        </label>
+      <TaskCommandBar
+        canViewOrganizationTasks={canViewOrganizationTasks}
+        filters={filters}
+        hasActiveFilters={Boolean(hasActiveFilters)}
+        members={members}
+        onCreateTask={
+          canCreateTasks
+            ? () => {
+                setTaskForm(EMPTY_TASK_FORM);
+                setCreateModalOpen(true);
+              }
+            : null
+        }
+        onRefresh={loadTasks}
+        onResetFilters={resetFilters}
+        onSetFilters={setFilters}
+        quickFilter={quickFilter}
+        quickFilterCounts={quickFilterCounts}
+        setQuickFilter={setQuickFilter}
+        setSortBy={setSortBy}
+        setViewMode={setViewMode}
+        sortBy={sortBy}
+        viewMode={viewMode}
+      />
 
-        <div className="task-segmented">
-          <button
-            type="button"
-            onClick={() => setFilters((current) => ({ ...current, scope: "all" }))}
-            className={filters.scope === "all" ? "is-selected" : ""}
-          >
-            Tất cả
-          </button>
-          <button
-            type="button"
-            onClick={() => setFilters((current) => ({ ...current, scope: "mine" }))}
-            className={filters.scope === "mine" ? "is-selected" : ""}
-          >
-            Của tôi
-          </button>
+      <TaskLaneStrip
+        focusStatusId={focusStatusId}
+        onSelectStatus={setFocusStatusId}
+        tasksByStatus={tasksByStatus}
+        totalVisibleTasks={sortedVisibleTasks.length}
+      />
+
+      <section className="task-workspace">
+        <div className="task-workspace-main">
+          {viewMode === "board" && (
+            <TaskBoardView
+              displayStatuses={displayStatuses}
+              draggingTaskId={draggingTaskId}
+              dropTargetStatus={dropTargetStatus}
+              onCardClick={openTaskDetail}
+              onDragEnd={() => {
+                setDraggingTaskId("");
+                setDropTargetStatus("");
+              }}
+              onDragEnter={(statusId) => setDropTargetStatus(statusId)}
+              onDragLeave={() => setDropTargetStatus("")}
+              onDragStart={handleDragStart}
+              onDrop={handleDrop}
+              onQuickStatusChange={updateTaskStatus}
+              tasksByStatus={tasksByStatus}
+            />
+          )}
+
+          {viewMode === "list" && (
+            <TaskListView
+              onCardClick={openTaskDetail}
+              onQuickStatusChange={updateTaskStatus}
+              tasks={sortedVisibleTasks}
+            />
+          )}
+
+          {viewMode === "focus" && (
+            <TaskFocusView
+              focusStatus={effectiveFocusStatusId}
+              onCardClick={openTaskDetail}
+              onQuickStatusChange={updateTaskStatus}
+              sortedTasks={sortedVisibleTasks}
+              tasks={tasksByStatus[effectiveFocusStatusId] || []}
+            />
+          )}
+
+          {!isLoading && sortedVisibleTasks.length === 0 && (
+            <section className="task-empty-state">
+              <Icon name="view_kanban" />
+              <h2>Không có công việc phù hợp</h2>
+              <p>Bộ lọc hiện tại không có task nào. Xóa lọc hoặc tạo task mới.</p>
+              <div className="task-empty-actions">
+                <button type="button" onClick={resetFilters} className="task-secondary-button">
+                  <Icon name="restart_alt" />
+                  Xóa lọc
+                </button>
+                {canCreateTasks && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setTaskForm(EMPTY_TASK_FORM);
+                      setCreateModalOpen(true);
+                    }}
+                    className="task-primary-button"
+                  >
+                    <Icon name="add_task" />
+                    Tạo task
+                  </button>
+                )}
+              </div>
+            </section>
+          )}
         </div>
 
-        <select
-          value={filters.priority}
-          onChange={(event) =>
-            setFilters((current) => ({ ...current, priority: event.target.value }))
-          }
-          className="task-toolbar-select"
-        >
-          <option value="all">Mọi ưu tiên</option>
-          {TASK_PRIORITIES.map((priority) => (
-            <option key={priority.id} value={priority.id}>
-              {priority.label}
-            </option>
-          ))}
-        </select>
-
-        {canViewOrganizationTasks && members.length > 0 && (
-          <select
-            value={filters.assigneeId}
-            onChange={(event) =>
-              setFilters((current) => ({
-                ...current,
-                assigneeId: event.target.value,
-              }))
-            }
-            className="task-toolbar-select"
-          >
-            <option value="all">Mọi phụ trách</option>
-            <option value="mine">Liên quan tới tôi</option>
-            {members.map((member) => {
-              const memberId = getMemberUserId(member);
-              return (
-                <option key={memberId} value={memberId}>
-                  {getMemberName(member)}
-                </option>
-              );
-            })}
-          </select>
-        )}
-      </section>
-
-      <section
-        className={cx("task-board", dropTargetStatus && "task-board--dropping")}
-        style={{ "--drop-target-status": dropTargetStatus }}
-      >
-        {TASK_STATUSES.map((status) => (
-          <TaskColumn
-            key={status.id}
-            draggingTaskId={draggingTaskId}
-            onCardClick={openTaskDetail}
-            onDragEnd={() => {
-              setDraggingTaskId("");
-              setDropTargetStatus("");
-            }}
-            onDragEnter={(statusId) => setDropTargetStatus(statusId)}
-            onDragLeave={() => setDropTargetStatus("")}
-            onDragStart={handleDragStart}
-            onDrop={handleDrop}
-            status={status}
-            tasks={tasksByStatus[status.id] || []}
-          />
-        ))}
+        <TaskInsightPanel
+          insights={insights}
+          onSelectQuickFilter={setQuickFilter}
+          sortedTasks={sortedVisibleTasks}
+          workload={workload}
+        />
       </section>
 
       {isLoading && (
@@ -1351,14 +2197,6 @@ const TasksPage = () => {
           <span />
           <p>Đang tải bảng công việc</p>
         </div>
-      )}
-
-      {!isLoading && visibleTasks.length === 0 && (
-        <section className="task-empty-state">
-          <Icon name="view_kanban" />
-          <h2>Chưa có công việc phù hợp</h2>
-          <p>Bộ lọc hiện tại không có task nào để hiển thị.</p>
-        </section>
       )}
 
       {createModalOpen && (

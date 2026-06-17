@@ -61,11 +61,17 @@ test("normalizeOrganizationRolePayload normalizes role badge colors safely", () 
   const payload = normalizeOrganizationRolePayload({
     name: "  Moderator  ",
     color: "url(javascript:bad)",
-    permissions: { viewMembers: true },
+    permissions: {
+      manageJoinApproval: true,
+      viewBannedMembers: true,
+      viewMembers: true,
+    },
   });
 
   assert.equal(payload.name, "Moderator");
   assert.equal(payload.color, "#2563eb");
+  assert.equal(payload.permissions.manageJoinApproval, true);
+  assert.equal(payload.permissions.viewBannedMembers, true);
   assert.equal(payload.permissions.viewMembers, true);
 });
 
@@ -75,6 +81,8 @@ test("manager permission grants regular organization permissions", () => {
   });
 
   assert.equal(permissions.manageOrganization, true);
+  assert.equal(permissions.manageJoinApproval, true);
+  assert.equal(permissions.viewBannedMembers, true);
   assert.equal(permissions.manageRoles, true);
   assert.equal(
     hasOrganizationPermission({ permissions }, "manageMembers"),

@@ -138,8 +138,13 @@ const OrganizationAdvancedSection = ({
   const questionTypeButtonRef = useRef(null);
   const questionTypePickerRef = useRef(null);
   const canManageSettings = hasPermission(organization, "manageSettings");
+  const canManageJoinApproval = hasPermission(
+    organization,
+    "manageJoinApproval",
+  );
   const canManageAppearance = hasPermission(organization, "manageOrganization");
   const canManageMembers = hasPermission(organization, "manageMembers");
+  const canViewBannedMembers = hasPermission(organization, "viewBannedMembers");
   const canLeave = !organization?.isOwner;
   const canTransferOwner = Boolean(organization?.isOwner);
   const questions = useMemo(
@@ -326,7 +331,7 @@ const OrganizationAdvancedSection = ({
     placement = "before",
   ) => {
     if (
-      !canManageSettings ||
+      !canManageJoinApproval ||
       !sourceQuestionId ||
       !targetQuestionId ||
       sourceQuestionId === targetQuestionId
@@ -512,7 +517,7 @@ const OrganizationAdvancedSection = ({
                   </span>
                   <textarea
                     value={form?.joinMessage || ""}
-                    disabled={!canManageSettings}
+                    disabled={!canManageJoinApproval}
                     onChange={(event) =>
                       updateForm({ joinMessage: event.target.value })
                     }
@@ -526,7 +531,12 @@ const OrganizationAdvancedSection = ({
               <div className="mt-5 flex justify-end">
                 <button
                   type="submit"
-                  disabled={(!canManageSettings && !canManageAppearance) || isSaving}
+                  disabled={
+                    (!canManageSettings &&
+                      !canManageJoinApproval &&
+                      !canManageAppearance) ||
+                    isSaving
+                  }
                   className="inline-flex items-center gap-2 rounded-2xl bg-blue-600 px-5 py-3 text-sm font-black text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   <Icon name={isSaving ? "progress_activity" : "save"} />
@@ -563,6 +573,7 @@ const OrganizationAdvancedSection = ({
           </aside>
         </div>
 
+        {canManageJoinApproval && (
         <form
           onSubmit={onSubmit}
           className="overflow-hidden rounded-[2rem] bg-white shadow-sm ring-1 ring-slate-200"
@@ -581,7 +592,7 @@ const OrganizationAdvancedSection = ({
             <div className="flex shrink-0 flex-wrap items-center gap-2">
               <ToggleSwitch
                 checked={Boolean(form?.requireApproval)}
-                disabled={!canManageSettings}
+                disabled={!canManageJoinApproval}
                 label="Bật duyệt"
                 onChange={(checked) => updateForm({ requireApproval: checked })}
               />
@@ -646,9 +657,9 @@ const OrganizationAdvancedSection = ({
                   >
                     <div className="grid gap-3 xl:grid-cols-[28px_minmax(280px,1fr)_190px_auto] xl:items-center">
                       <span
-                        draggable={canManageSettings}
+                        draggable={canManageJoinApproval}
                         onDragStart={(event) => {
-                          if (!canManageSettings) return;
+                          if (!canManageJoinApproval) return;
                           setDraggingQuestionId(question.id);
                           event.dataTransfer.effectAllowed = "move";
                           event.dataTransfer.setData(
@@ -668,7 +679,7 @@ const OrganizationAdvancedSection = ({
                         <span className="sr-only">Nội dung câu hỏi {index + 1}</span>
                         <input
                           value={question.label}
-                          disabled={!canManageSettings}
+                          disabled={!canManageJoinApproval}
                           onChange={(event) =>
                             updateQuestion(question.id, {
                               label: event.target.value,
@@ -690,7 +701,7 @@ const OrganizationAdvancedSection = ({
                         <button
                           type="button"
                           onClick={() => openQuestionEditor(question)}
-                          disabled={!canManageSettings}
+                          disabled={!canManageJoinApproval}
                           className="grid size-11 place-items-center rounded-2xl bg-blue-50 text-blue-700 ring-1 ring-blue-100 transition hover:-translate-y-0.5 hover:bg-blue-100 active:translate-y-0 active:scale-95 disabled:cursor-not-allowed disabled:opacity-50"
                           aria-label={
                             question.type === "rules"
@@ -708,7 +719,7 @@ const OrganizationAdvancedSection = ({
                         <button
                           type="button"
                           onClick={() => removeQuestion(question.id)}
-                          disabled={!canManageSettings}
+                          disabled={!canManageJoinApproval}
                           className="grid size-11 place-items-center rounded-2xl bg-rose-50 text-rose-700 ring-1 ring-rose-100 transition hover:-translate-y-0.5 hover:bg-rose-100 active:translate-y-0 active:scale-95 disabled:cursor-not-allowed disabled:opacity-50"
                           aria-label="Xóa câu hỏi"
                           title="Xóa câu hỏi"
@@ -727,7 +738,7 @@ const OrganizationAdvancedSection = ({
                             </span>
                             <textarea
                               value={question.description || ""}
-                              disabled={!canManageSettings}
+                              disabled={!canManageJoinApproval}
                               onChange={(event) =>
                                 updateQuestion(question.id, {
                                   description: event.target.value,
@@ -745,7 +756,7 @@ const OrganizationAdvancedSection = ({
                                 required: !question.required,
                               })
                             }
-                            disabled={!canManageSettings}
+                            disabled={!canManageJoinApproval}
                             className={`inline-flex min-h-11 items-center justify-center gap-2 rounded-2xl px-4 text-sm font-black ring-1 transition md:mt-7 ${
                               question.required
                                 ? "bg-emerald-50 text-emerald-700 ring-emerald-100"
@@ -776,7 +787,7 @@ const OrganizationAdvancedSection = ({
                                 />
                                 <input
                                   value={option.label}
-                                  disabled={!canManageSettings}
+                                  disabled={!canManageJoinApproval}
                                   onChange={(event) =>
                                     updateOption(
                                       question,
@@ -791,7 +802,8 @@ const OrganizationAdvancedSection = ({
                                   type="button"
                                   onClick={() => removeOption(question, option.id)}
                                   disabled={
-                                    !canManageSettings || question.options.length <= 1
+                                    !canManageJoinApproval ||
+                                    question.options.length <= 1
                                   }
                                   className="grid size-8 place-items-center rounded-xl text-rose-600 transition hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-40"
                                   aria-label="Xóa lựa chọn"
@@ -805,7 +817,8 @@ const OrganizationAdvancedSection = ({
                               type="button"
                               onClick={() => addOption(question)}
                               disabled={
-                                !canManageSettings || question.options?.length >= 10
+                                !canManageJoinApproval ||
+                                question.options?.length >= 10
                               }
                               className="inline-flex w-fit items-center gap-2 rounded-2xl bg-violet-50 px-3 py-2 text-xs font-black text-violet-700 ring-1 ring-violet-100 transition hover:bg-violet-100 disabled:cursor-not-allowed disabled:opacity-50"
                             >
@@ -825,7 +838,7 @@ const OrganizationAdvancedSection = ({
                   ref={questionTypeButtonRef}
                   type="button"
                   onClick={toggleQuestionTypePicker}
-                  disabled={!canManageSettings || questions.length >= 5}
+                  disabled={!canManageJoinApproval || questions.length >= 5}
                   aria-expanded={isQuestionTypePickerOpen}
                   className="inline-flex min-h-20 w-full items-center justify-center gap-3 rounded-[1.35rem] border border-dashed border-slate-300 bg-white px-4 py-4 text-lg font-black text-slate-600 transition hover:border-blue-200 hover:bg-blue-50 hover:text-blue-700 active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-45"
                 >
@@ -845,7 +858,7 @@ const OrganizationAdvancedSection = ({
                     key={question}
                     type="button"
                     onClick={() => addQuestion("short_text", question)}
-                    disabled={!canManageSettings || questions.length >= 5}
+                    disabled={!canManageJoinApproval || questions.length >= 5}
                     className="rounded-full bg-slate-50 px-4 py-2 text-sm font-bold text-slate-600 ring-1 ring-slate-200 transition hover:bg-blue-50 hover:text-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     {question}
@@ -862,7 +875,7 @@ const OrganizationAdvancedSection = ({
             </p>
             <button
               type="submit"
-              disabled={!canManageSettings || isSaving}
+              disabled={!canManageJoinApproval || isSaving}
               className="inline-flex items-center justify-center gap-2 rounded-2xl bg-emerald-600 px-5 py-3 text-sm font-black text-white shadow-sm shadow-emerald-950/20 transition hover:bg-emerald-500 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50"
             >
               <Icon name={isSaving ? "progress_activity" : "save"} />
@@ -870,8 +883,10 @@ const OrganizationAdvancedSection = ({
             </button>
           </div>
         </form>
+        )}
 
         <div className="grid gap-5 lg:grid-cols-2">
+          {canViewBannedMembers && (
           <div className="rounded-[1.75rem] bg-white p-5 ring-1 ring-slate-200 lg:col-span-2">
             <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
               <div>
@@ -939,7 +954,9 @@ const OrganizationAdvancedSection = ({
               )}
             </div>
           </div>
+          )}
 
+          {canTransferOwner && (
           <div className="rounded-[1.75rem] bg-amber-50 p-5 ring-1 ring-amber-100">
             <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
               <div>
@@ -954,7 +971,7 @@ const OrganizationAdvancedSection = ({
               <button
                 type="button"
                 onClick={onOpenTransferOwner}
-                disabled={!canTransferOwner || !eligibleTransferMembers.length}
+                disabled={!eligibleTransferMembers.length}
                 className="inline-flex shrink-0 items-center justify-center gap-2 rounded-2xl bg-amber-500 px-4 py-3 text-sm font-black text-white transition hover:bg-amber-600 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50"
               >
                 <Icon name="swap_horiz" />
@@ -962,6 +979,7 @@ const OrganizationAdvancedSection = ({
               </button>
             </div>
           </div>
+          )}
 
           <div className="rounded-[1.75rem] bg-red-50 p-5 ring-1 ring-red-100">
             <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">

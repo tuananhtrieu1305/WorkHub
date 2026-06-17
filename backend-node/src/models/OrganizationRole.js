@@ -11,6 +11,8 @@ const organizationRolePermissionsSchema = new Schema(
     manageRoles: { type: Boolean, default: false },
     manageInvites: { type: Boolean, default: false },
     manageSettings: { type: Boolean, default: false },
+    manageJoinApproval: { type: Boolean, default: false },
+    viewBannedMembers: { type: Boolean, default: false },
     createInvites: { type: Boolean, default: false },
     pauseInvites: { type: Boolean, default: false },
     viewDocumentInsights: { type: Boolean, default: false },
